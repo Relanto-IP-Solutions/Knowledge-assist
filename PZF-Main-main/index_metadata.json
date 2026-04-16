@@ -1,0 +1,9 @@
+{
+  "contentsDeltaUri": "",
+  "config": {
+    "dimensions": 768,
+    "approximateNeighborsCount": 150,
+    "distanceMeasureType": "DOT_PRODUCT_DISTANCE",
+    "shardSize": "SHARD_SIZE_SO_DYNAMIC"
+  }
+}

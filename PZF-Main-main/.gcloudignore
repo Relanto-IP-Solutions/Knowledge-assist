@@ -1,0 +1,20 @@
+# Exclude secrets and local-only files from Cloud Function deployment
+.gcloudignore
+.git
+.gitignore
+
+# Secrets — never deploy key files
+configs/secrets/
+
+# Dev artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+logs/
+.venv/
+*.egg-info/
+
+# IDE
+.cursor/
+.vscode/

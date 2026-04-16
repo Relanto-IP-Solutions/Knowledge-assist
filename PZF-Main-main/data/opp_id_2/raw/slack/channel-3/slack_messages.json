@@ -1,0 +1,939 @@
+[
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "subtype": "channel_join",
+    "user": "U6VLT001SAL",
+    "text": "<@U6VLT001SAL> has joined the channel",
+    "type": "message",
+    "ts": "1774000000.100001"
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "subtype": "channel_join",
+    "user": "U6VLT002CSO",
+    "text": "<@U6VLT002CSO> has joined the channel",
+    "type": "message",
+    "ts": "1774000012.100002"
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "subtype": "channel_join",
+    "user": "U6VLT003DPO",
+    "text": "<@U6VLT003DPO> has joined the channel",
+    "type": "message",
+    "ts": "1774000024.100003"
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "subtype": "channel_join",
+    "user": "U6VLT004SEC",
+    "text": "<@U6VLT004SEC> has joined the channel",
+    "type": "message",
+    "ts": "1774000036.100004"
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT001SAL",
+    "type": "message",
+    "ts": "1774000400.200001",
+    "client_msg_id": "f6a7b8c9-0001-0006-0001-000000000001",
+    "text": "Hi all — I've set this channel up for the Veltrix security and legal deep dive for Meridian Group.\nI've added Marcus from our security team who can handle the technical specifics directly.\nAisha, Reza, and Thomas — over to you.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2001",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Hi all — I've set this channel up for the Veltrix security and legal deep dive for Meridian Group.\nI've added Marcus from our security team who can handle the technical specifics directly.\nAisha, Reza, and Thomas — over to you."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT002CSO",
+    "type": "message",
+    "ts": "1774000640.300001",
+    "client_msg_id": "f6a7b8c9-0002-0006-0001-000000000002",
+    "text": "Aisha here — CISO.\nWe process employee payroll data, salary information, and health-related records.\nFirst question — how is sensitive HR data protected beyond standard at-rest encryption?",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2002",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Aisha here — CISO.\nWe process employee payroll data, salary information, and health-related records.\nFirst question — how is sensitive HR data protected beyond standard at-rest encryption?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT004SEC",
+    "type": "message",
+    "ts": "1774000820.400001",
+    "client_msg_id": "f6a7b8c9-0003-0006-0001-000000000003",
+    "text": "Marcus here.\nStandard at-rest: AES-256-GCM on all stored data, TLS 1.3 in transit.\nBut for the exact fields you mentioned — we have a second layer.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2003",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Marcus here.\nStandard at-rest: AES-256-GCM on all stored data, TLS 1.3 in transit.\nBut for the exact fields you mentioned — we have a second layer."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT004SEC",
+    "type": "message",
+    "ts": "1774000830.400002",
+    "client_msg_id": "f6a7b8c9-0003-0006-0001-000000000004",
+    "text": "Field-level encryption at the application layer on: national identification numbers, bank account details, salary figures, and health-related employee records.\nThese fields are encrypted with a separate key — even a Veltrix support engineer with database access sees ciphertext, not values.\nDecryption requires application-layer role-controlled key access.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2004",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Field-level encryption at the application layer on: national identification numbers, bank account details, salary figures, and health-related employee records.\nThese fields are encrypted with a separate key — even a Veltrix support engineer with database access sees ciphertext, not values.\nDecryption requires application-layer role-controlled key access."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT002CSO",
+    "type": "message",
+    "ts": "1774001000.500001",
+    "client_msg_id": "f6a7b8c9-0004-0006-0001-000000000005",
+    "text": "Field-level encryption on health records is important — we have GDPR Article 9 obligations.\nDo you support BYOK?",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2005",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Field-level encryption on health records is important — we have GDPR Article 9 obligations.\nDo you support BYOK?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT004SEC",
+    "type": "message",
+    "ts": "1774001180.600001",
+    "client_msg_id": "f6a7b8c9-0005-0006-0001-000000000006",
+    "text": "Yes — BYOK on Enterprise plans.\nWe support HashiCorp Vault, AWS KMS, Azure Key Vault, and Google Cloud KMS.\nWith BYOK: Veltrix never holds a copy of your encryption keys.\nEvery decryption operation requires a live call to your own KMS — creating an audit event in your own key management system that you control independently of us.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2006",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes — BYOK on Enterprise plans.\nWe support HashiCorp Vault, AWS KMS, Azure Key Vault, and Google Cloud KMS.\nWith BYOK: Veltrix never holds a copy of your encryption keys.\nEvery decryption operation requires a live call to your own KMS — creating an audit event in your own key management system that you control independently of us."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT002CSO",
+    "type": "message",
+    "ts": "1774001360.700001",
+    "client_msg_id": "f6a7b8c9-0006-0006-0001-000000000007",
+    "text": "Good.\nWhat certifications do you hold?",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2007",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Good.\nWhat certifications do you hold?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT004SEC",
+    "type": "message",
+    "ts": "1774001540.800001",
+    "client_msg_id": "f6a7b8c9-0007-0006-0001-000000000008",
+    "text": "Active certifications:\n- ISO 27001:2022 (renewed February 2025)\n- SOC 2 Type II (audit period ending April 2025)\n- ISO 27701:2019 — Privacy Information Management System (renewed February 2025)\n- GDPR Article 28 DPA compliant\n- Cyber Essentials Plus (UK, renewed March 2025)\n- HIPAA BAA available on Enterprise",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2008",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Active certifications:\n- ISO 27001:2022 (renewed February 2025)\n- SOC 2 Type II (audit period ending April 2025)\n- ISO 27701:2019 — Privacy Information Management System (renewed February 2025)\n- GDPR Article 28 DPA compliant\n- Cyber Essentials Plus (UK, renewed March 2025)\n- HIPAA BAA available on Enterprise"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT002CSO",
+    "type": "message",
+    "ts": "1774001720.900001",
+    "client_msg_id": "f6a7b8c9-0008-0006-0001-000000000009",
+    "text": "ISO 27701 is not something I've seen from an HRIS vendor before.\nCan you explain what that covers?",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2009",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "ISO 27701 is not something I've seen from an HRIS vendor before.\nCan you explain what that covers?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT004SEC",
+    "type": "message",
+    "ts": "1774001900.100001",
+    "client_msg_id": "f6a7b8c9-0009-0006-0001-000000000010",
+    "text": "ISO 27701 is the Privacy Information Management System standard — it extends ISO 27001 with specific controls for personal data processing.\nMost HRIS vendors hold ISO 27001 (information security) but not 27701 (privacy management).\nFor an HRIS specifically — which processes employee salaries, health data, performance reviews, disciplinary records — 27701 is the independently audited assurance that privacy controls are continuously operative, not just designed.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2010",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "ISO 27701 is the Privacy Information Management System standard — it extends ISO 27001 with specific controls for personal data processing.\nMost HRIS vendors hold ISO 27001 (information security) but not 27701 (privacy management).\nFor an HRIS specifically — which processes employee salaries, health data, performance reviews, disciplinary records — 27701 is the independently audited assurance that privacy controls are continuously operative, not just designed."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT002CSO",
+    "type": "message",
+    "ts": "1774002080.110001",
+    "client_msg_id": "f6a7b8c9-0010-0006-0001-000000000011",
+    "text": "That's a meaningful differentiator.\nOur DPO will want to see the 27701 certificate and the SOC 2 Type II report.\nCan we get both?",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2011",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "That's a meaningful differentiator.\nOur DPO will want to see the 27701 certificate and the SOC 2 Type II report.\nCan we get both?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT004SEC",
+    "type": "message",
+    "ts": "1774002260.120001",
+    "client_msg_id": "f6a7b8c9-0011-0006-0001-000000000012",
+    "text": "Yes — SOC 2 Type II available under NDA, ISO 27701 certificate directly.\nI'll also include the ISO 27001 certificate and pen test executive summary from our most recent CREST-accredited third-party test.\nJust need the NDA countersigned — Ryan can send that today.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2012",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes — SOC 2 Type II available under NDA, ISO 27701 certificate directly.\nI'll also include the ISO 27001 certificate and pen test executive summary from our most recent CREST-accredited third-party test.\nJust need the NDA countersigned — Ryan can send that today."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT003DPO",
+    "type": "message",
+    "ts": "1774002440.130001",
+    "client_msg_id": "f6a7b8c9-0012-0006-0001-000000000013",
+    "text": "Reza here — DPO.\nWe're EU-headquartered with UK and US subsidiaries.\nWhere would our data be stored and how does residency work across those three jurisdictions?",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2013",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Reza here — DPO.\nWe're EU-headquartered with UK and US subsidiaries.\nWhere would our data be stored and how does residency work across those three jurisdictions?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT004SEC",
+    "type": "message",
+    "ts": "1774002620.140001",
+    "client_msg_id": "f6a7b8c9-0013-0006-0001-000000000014",
+    "text": "We have four AWS regions: EU West (Ireland) for EU, US East (Virginia) for US, Asia-Pacific (Sydney) for ANZ, and Southeast Asia (Singapore) for other APAC.\nFor your structure: EU employees stored in EU West, US employees in US East.\nUK employees can go to either EU West or a dedicated UK region — your choice, specified in the DPA.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2014",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "We have four AWS regions: EU West (Ireland) for EU, US East (Virginia) for US, Asia-Pacific (Sydney) for ANZ, and Southeast Asia (Singapore) for other APAC.\nFor your structure: EU employees stored in EU West, US employees in US East.\nUK employees can go to either EU West or a dedicated UK region — your choice, specified in the DPA."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT004SEC",
+    "type": "message",
+    "ts": "1774002630.140002",
+    "client_msg_id": "f6a7b8c9-0013-0006-0001-000000000015",
+    "text": "Cross-region replication for DR: EU-to-EU only, US-to-US only.\nNo EU personal data ever replicates to the US region — maintained even in a failover scenario.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2015",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Cross-region replication for DR: EU-to-EU only, US-to-US only.\nNo EU personal data ever replicates to the US region — maintained even in a failover scenario."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT003DPO",
+    "type": "message",
+    "ts": "1774002800.150001",
+    "client_msg_id": "f6a7b8c9-0014-0006-0001-000000000016",
+    "text": "Good — cross-border transfers are our biggest GDPR risk.\nIs the DPA included in the standard MSA?",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2016",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Good — cross-border transfers are our biggest GDPR risk.\nIs the DPA included in the standard MSA?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT001SAL",
+    "type": "message",
+    "ts": "1774002980.160001",
+    "client_msg_id": "f6a7b8c9-0015-0006-0001-000000000017",
+    "text": "Yes — GDPR Article 28 compliant DPA is a standard exhibit in all MSAs, included at no cost.\nCovers: controller-processor obligations, sub-processor disclosure, data subject rights support, breach notification timeline, and deletion obligations.\nSub-processor list is at privacy.veltrix.io — publicly accessible, always current.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2017",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes — GDPR Article 28 compliant DPA is a standard exhibit in all MSAs, included at no cost.\nCovers: controller-processor obligations, sub-processor disclosure, data subject rights support, breach notification timeline, and deletion obligations.\nSub-processor list is at privacy.veltrix.io — publicly accessible, always current."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT003DPO",
+    "type": "message",
+    "ts": "1774003160.170001",
+    "client_msg_id": "f6a7b8c9-0016-0006-0001-000000000018",
+    "text": "We'll need a custom DPA — we have specific Article 9 clauses for health data and transfer mechanism clauses for the UK-EU relationship post-Brexit.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2018",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "We'll need a custom DPA — we have specific Article 9 clauses for health data and transfer mechanism clauses for the UK-EU relationship post-Brexit."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT001SAL",
+    "type": "message",
+    "ts": "1774003340.180001",
+    "client_msg_id": "f6a7b8c9-0017-0006-0001-000000000019",
+    "text": "Custom DPAs are supported.\nTypically adds 2–4 weeks to the deal cycle while our legal team reviews.\nFee waived on Business and Enterprise plans.\nTo kick it off: email legal@veltrix.io with subject \"Custom DPA Request — Meridian Group\".\nOur DPA already includes the EU SCCs and the UK IDTA as standard — your Article 9 health data clauses are the main addition to negotiate.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2019",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Custom DPAs are supported.\nTypically adds 2–4 weeks to the deal cycle while our legal team reviews.\nFee waived on Business and Enterprise plans.\nTo kick it off: email legal@veltrix.io with subject \"Custom DPA Request — Meridian Group\".\nOur DPA already includes the EU SCCs and the UK IDTA as standard — your Article 9 health data clauses are the main addition to negotiate."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT003DPO",
+    "type": "message",
+    "ts": "1774003520.190001",
+    "client_msg_id": "f6a7b8c9-0018-0006-0001-000000000020",
+    "text": "Good to know the SCCs and IDTA are already in the standard DPA.\nThread question — what's the breach notification process?",
+    "team": "T6VELTRIX003",
+    "thread_ts": "1774003520.190001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2020",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Good to know the SCCs and IDTA are already in the standard DPA.\nThread question — what's the breach notification process?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT004SEC",
+    "type": "message",
+    "ts": "1774003700.200001",
+    "client_msg_id": "f6a7b8c9-0019-0006-0001-000000000021",
+    "text": "72 hours from confirmed breach — aligned with GDPR Article 33.\nNotification includes: nature of the incident, data categories affected, estimated records involved, likely consequences, and measures taken or proposed.\nA named Veltrix security contact is assigned to your team for the duration of the incident response — not a generic inbox.",
+    "team": "T6VELTRIX003",
+    "thread_ts": "1774003520.190001",
+    "parent_user_id": "U6VLT003DPO",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2021",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "72 hours from confirmed breach — aligned with GDPR Article 33.\nNotification includes: nature of the incident, data categories affected, estimated records involved, likely consequences, and measures taken or proposed.\nA named Veltrix security contact is assigned to your team for the duration of the incident response — not a generic inbox."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT003DPO",
+    "type": "message",
+    "ts": "1774003880.210001",
+    "client_msg_id": "f6a7b8c9-0020-0006-0001-000000000022",
+    "text": "Named contact is important — in a breach situation the last thing I want is a support ticket queue.",
+    "team": "T6VELTRIX003",
+    "thread_ts": "1774003520.190001",
+    "parent_user_id": "U6VLT003DPO",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2022",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Named contact is important — in a breach situation the last thing I want is a support ticket queue."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT002CSO",
+    "type": "message",
+    "ts": "1774004060.220001",
+    "client_msg_id": "f6a7b8c9-0021-0006-0001-000000000023",
+    "text": "What's the uptime guarantee and what happens if it's breached?",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2023",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "What's the uptime guarantee and what happens if it's breached?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT001SAL",
+    "type": "message",
+    "ts": "1774004240.230001",
+    "client_msg_id": "f6a7b8c9-0022-0006-0001-000000000024",
+    "text": "Uptime by plan:\nBusiness: 99.95% monthly (~22 mins allowable downtime/month)\nEnterprise dedicated: up to 99.99% (~4 mins)\nScheduled maintenance excluded — communicated 72hrs in advance at status.veltrix.io.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2024",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Uptime by plan:\nBusiness: 99.95% monthly (~22 mins allowable downtime/month)\nEnterprise dedicated: up to 99.99% (~4 mins)\nScheduled maintenance excluded — communicated 72hrs in advance at status.veltrix.io."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT001SAL",
+    "type": "message",
+    "ts": "1774004250.230002",
+    "client_msg_id": "f6a7b8c9-0022-0006-0001-000000000025",
+    "text": "If uptime falls below the guaranteed threshold: credits applied to the next invoice.\nFor P1 (Critical) support — platform down or payroll data at risk:\nBusiness: 2-hour response, 24/7\nEnterprise: 1-hour response, 24/7 with named Technical Account Manager.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2025",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "If uptime falls below the guaranteed threshold: credits applied to the next invoice.\nFor P1 (Critical) support — platform down or payroll data at risk:\nBusiness: 2-hour response, 24/7\nEnterprise: 1-hour response, 24/7 with named Technical Account Manager."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT002CSO",
+    "type": "message",
+    "ts": "1774004420.240001",
+    "client_msg_id": "f6a7b8c9-0023-0006-0001-000000000026",
+    "text": "Payroll runs on the last day of each month.\nIf the system goes down on a payroll run day that would be a P1 by definition.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2026",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Payroll runs on the last day of each month.\nIf the system goes down on a payroll run day that would be a P1 by definition."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT004SEC",
+    "type": "message",
+    "ts": "1774004600.250001",
+    "client_msg_id": "f6a7b8c9-0024-0006-0001-000000000027",
+    "text": "Correct — payroll module unavailability on a scheduled run day is classified as P1 regardless of whether the rest of the platform is accessible.\nOn Business plan that's a 2-hour response with 24/7 coverage.\nFor critical payroll customers we also recommend flagging your payroll run date in onboarding so our infrastructure team can note it for proactive monitoring.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2027",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Correct — payroll module unavailability on a scheduled run day is classified as P1 regardless of whether the rest of the platform is accessible.\nOn Business plan that's a 2-hour response with 24/7 coverage.\nFor critical payroll customers we also recommend flagging your payroll run date in onboarding so our infrastructure team can note it for proactive monitoring."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT003DPO",
+    "type": "message",
+    "ts": "1774004780.260001",
+    "client_msg_id": "f6a7b8c9-0025-0006-0001-000000000028",
+    "text": "What happens to our data if we ever terminate the contract?",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2028",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "What happens to our data if we ever terminate the contract?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT001SAL",
+    "type": "message",
+    "ts": "1774004960.270001",
+    "client_msg_id": "f6a7b8c9-0026-0006-0001-000000000029",
+    "text": "60 days post-termination to export all data — CSV, JSON, PDF — via Admin Console or API.\nNo per-GB export fees.\nAfter the 60-day window: production data deleted within 14 days, backup data within 90 days.\nWe automatically send a signed deletion certificate when the process is complete.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2029",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "60 days post-termination to export all data — CSV, JSON, PDF — via Admin Console or API.\nNo per-GB export fees.\nAfter the 60-day window: production data deleted within 14 days, backup data within 90 days.\nWe automatically send a signed deletion certificate when the process is complete."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT003DPO",
+    "type": "message",
+    "ts": "1774005140.280001",
+    "client_msg_id": "f6a7b8c9-0027-0006-0001-000000000030",
+    "text": "60 days is better than the 30-day standard I've seen elsewhere.\nAnd the deletion certificate is something our GDPR audit trail requires.\nGood.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2030",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "60 days is better than the 30-day standard I've seen elsewhere.\nAnd the deletion certificate is something our GDPR audit trail requires.\nGood."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT002CSO",
+    "type": "message",
+    "ts": "1774005320.290001",
+    "client_msg_id": "f6a7b8c9-0028-0006-0001-000000000031",
+    "text": "I think we have enough to progress.\nMarcus — can you send the NDA, SOC 2 report, and both ISO certificates as soon as it's countersigned?",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2031",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "I think we have enough to progress.\nMarcus — can you send the NDA, SOC 2 report, and both ISO certificates as soon as it's countersigned?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT004SEC",
+    "type": "message",
+    "ts": "1774005500.300001",
+    "client_msg_id": "f6a7b8c9-0029-0006-0001-000000000032",
+    "text": "Confirmed — will have the full security pack out within 24 hours of NDA signature.",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2032",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Confirmed — will have the full security pack out within 24 hours of NDA signature."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C6VLT3C4DFG",
+    "fetched_at": "2026-03-19 09:00:00 UTC",
+    "user": "U6VLT001SAL",
+    "type": "message",
+    "ts": "1774005680.310001",
+    "client_msg_id": "f6a7b8c9-0030-0006-0001-000000000033",
+    "text": "Thanks everyone — really productive session.\nI'll get the NDA out to Aisha within the hour.\nReza — I'll action the custom DPA email as well to get that process started in parallel.\nMore questions any time :white_check_mark:",
+    "team": "T6VELTRIX003",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT2033",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Thanks everyone — really productive session.\nI'll get the NDA out to Aisha within the hour.\nReza — I'll action the custom DPA email as well to get that process started in parallel.\nMore questions any time "
+              },
+              {
+                "type": "emoji",
+                "name": "white_check_mark",
+                "unicode": "2705"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

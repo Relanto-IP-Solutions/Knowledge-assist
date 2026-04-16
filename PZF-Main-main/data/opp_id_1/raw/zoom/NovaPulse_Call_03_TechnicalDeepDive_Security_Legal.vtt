@@ -1,0 +1,321 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:05.000
+Ryan (Sales): Thanks everyone for joining. Today is our technical and compliance deep dive, so I've brought Priya from Solutions Engineering and our security team lead, David.
+
+2
+00:00:05.000 --> 00:00:11.000
+James (IT Director): Appreciate that. I'm James, IT Director at Hartwell Group. And I've got Karen from our legal team and Dev, our CISO, also on the call.
+
+3
+00:00:11.000 --> 00:00:16.000
+Dev (CISO): Yeah, Dev here. I'll be asking the uncomfortable security questions so, uh, apologies in advance.
+
+4
+00:00:16.000 --> 00:00:21.000
+David (NovaPulse Security): Ha, please do. That's exactly why I'm here. No uncomfortable questions in, um, my experience, only uncomfortable answers if you're hiding something, which we're not.
+
+5
+00:00:21.000 --> 00:00:27.000
+Karen (Legal): And I'll be focused on the contractual side, the DPA, MSA terms, and, uh, the data portability clauses specifically.
+
+6
+00:00:27.000 --> 00:00:33.000
+Ryan (Sales): Perfect. Let me suggest we, um, work through this in three blocks: infrastructure and architecture, security and compliance, then legal and contractual. Does that work for everyone?
+
+7
+00:00:33.000 --> 00:00:38.000
+James (IT Director): That works. Let me start with infrastructure. We're a UK-headquartered company with EMEA operations. Where is our data actually stored?
+
+8
+00:00:38.000 --> 00:00:45.000
+David (NovaPulse Security): For UK and EU customers, your data is stored in the EU Central region on AWS, specifically Frankfurt, Germany, by default. We also have a UK option if you prefer, and EU to EU disaster recovery only.
+
+9
+00:00:45.000 --> 00:00:51.000
+James (IT Director): So our data never leaves the EU jurisdiction for any reason?
+
+10
+00:00:51.000 --> 00:00:58.000
+David (NovaPulse Security): Correct. Cross-region replication for disaster recovery happens only within the same regulatory jurisdiction. EU stays EU. We don't replicate EU data to US East or any non-EU region without, uh, explicit customer authorisation.
+
+11
+00:00:58.000 --> 00:01:04.000
+Dev (CISO): What's the hosting model? Multi-tenant or can we get dedicated infrastructure?
+
+12
+00:01:04.000 --> 00:01:11.000
+David (NovaPulse Security): By default on Business plan you're on multi-tenant SaaS. Logical data isolation at the application and database layers. Enterprise plan gives you single-tenant dedicated cloud, physically separate infrastructure. And for, uh, the highest sovereignty requirement we also have a self-hosted option.
+
+13
+00:01:11.000 --> 00:01:17.000
+Dev (CISO): We're not air-gapped so multi-tenant is fine as long as the isolation is robust. What does logical isolation actually mean technically?
+
+14
+00:01:17.000 --> 00:01:24.000
+David (NovaPulse Security): Every tenant's data is partitioned at the application layer with tenant ID-scoped queries, and at the database layer with row-level security enforced by PostgreSQL's RLS policies. A query from your tenant context, um, cannot access another tenant's rows even if someone found a way to bypass the application layer.
+
+15
+00:01:24.000 --> 00:01:30.000
+Dev (CISO): What's the maximum concurrent user limit before we'd need dedicated infra?
+
+16
+00:01:30.000 --> 00:01:36.000
+Priya (Solutions Eng): Five hundred concurrent active sessions on multi-tenant. At your current projected headcount of 220 users you're well within that. If you ever approach the threshold we proactively migrate you to dedicated, which, uh, scales to five thousand plus concurrent users.
+
+17
+00:01:36.000 --> 00:01:42.000
+James (IT Director): What's the self-hosted minimum spec if we ever wanted to go down that route?
+
+18
+00:01:42.000 --> 00:01:49.000
+Priya (Solutions Eng): For a production self-hosted deployment we'd recommend 32 GB RAM per application node, 16 vCPUs, 100 GB SSD, on Ubuntu 22.04 LTS, orchestrated by Kubernetes 1.27 or above. Database node, PostgreSQL 15 plus, separate 32 GB RAM and 500 GB SSD minimum.
+
+19
+00:01:49.000 --> 00:01:55.000
+James (IT Director): And for high availability, like a proper HA cluster?
+
+20
+00:01:55.000 --> 00:02:02.000
+Priya (Solutions Eng): Three-node application cluster, 64 GB RAM per node, same vCPU spec, NVMe storage preferred. Database primary with streaming replica. A standard three-node cluster handles around, um, 1500 concurrent users comfortably. Full specs are in the deployment guide.
+
+21
+00:02:02.000 --> 00:02:08.000
+Dev (CISO): Let's move to encryption. How is data encrypted at rest and who manages the keys?
+
+22
+00:02:08.000 --> 00:02:15.000
+David (NovaPulse Security): All data at rest is encrypted with AES-256-GCM. Keys are managed via AWS KMS with automatic rotation every 365 days by default. On Enterprise plans you can configure 90-day rotation.
+
+23
+00:02:15.000 --> 00:02:21.000
+Dev (CISO): Can we manage our own keys? We have a strict policy that sensitive data keys should not be held by the vendor.
+
+24
+00:02:21.000 --> 00:02:28.000
+David (NovaPulse Security): Yes, that's exactly what BYOK gives you. Available on Enterprise. You integrate your own KMS, whether that's HashiCorp Vault, your own AWS KMS, Azure Key Vault, or Google Cloud KMS, and we never hold a copy of your encryption keys.
+
+25
+00:02:28.000 --> 00:02:34.000
+Dev (CISO): So if a NovaPulse engineer needed to troubleshoot our database, could they see our data?
+
+26
+00:02:34.000 --> 00:02:42.000
+David (NovaPulse Security): No. Even without BYOK, sensitive fields have an additional field-level encryption layer at the application tier. A support engineer with database access would see AES ciphertext, not readable values. With BYOK on Enterprise, the decryption requires a live call to your own KMS, which creates an audit event in your key management system. So you'd, um, see any access attempt independently.
+
+27
+00:02:42.000 --> 00:02:48.000
+Dev (CISO): What about data in transit?
+
+28
+00:02:48.000 --> 00:02:54.000
+David (NovaPulse Security): TLS 1.2 minimum, TLS 1.3 enforced by default on all new tenant configurations. All traffic between client, whether browser, mobile app, or API, and the platform goes over TLS.
+
+29
+00:02:54.000 --> 00:03:00.000
+Dev (CISO): What certifications do you hold? I need specifics, not, uh, marketing language.
+
+30
+00:03:00.000 --> 00:03:08.000
+David (NovaPulse Security): SOC 2 Type II, most recent report covering the period April 2024 to March 2025, renewed annually. ISO 27001 colon 2022, issued January 2025. GDPR Article 28 DPA compliance. EU US Data Privacy Framework listed. HIPAA BAA available for healthcare customers on Business and Enterprise.
+
+31
+00:03:08.000 --> 00:03:14.000
+Dev (CISO): The difference between SOC 2 Type I and Type II matters to us. Can you explain it?
+
+32
+00:03:14.000 --> 00:03:21.000
+David (NovaPulse Security): Type I is a point-in-time assessment confirming controls were appropriately designed at the audit date. Type II covers an extended period, typically 6 to 12 months, and confirms those controls were continuously operative and effective throughout. It's, uh, the difference between checking that a fire suppression system was installed correctly versus checking it actually worked every day for a year.
+
+33
+00:03:21.000 --> 00:03:27.000
+Dev (CISO): Good. Can we get a copy of the Type II report?
+
+34
+00:03:27.000 --> 00:03:33.000
+David (NovaPulse Security): Yes, available under NDA for qualified prospects. I'll send that alongside the ISO 27001 certificate and the penetration test executive summary from our most recent third-party assessment.
+
+35
+00:03:33.000 --> 00:03:39.000
+Dev (CISO): Who does your pen testing?
+
+36
+00:03:39.000 --> 00:03:45.000
+David (NovaPulse Security): We use an independent CREST-accredited firm, annual testing on the full platform scope. We also run, um, a continuous bug bounty programme. I can share the scope and recent findings summary under NDA.
+
+37
+00:03:45.000 --> 00:03:51.000
+Dev (CISO): Okay. What's the access control model? We have complex permissions requirements.
+
+38
+00:03:51.000 --> 00:03:58.000
+David (NovaPulse Security): Role-based access control across all modules with attribute-based extensions on Enterprise. On Enterprise you can restrict data visibility by attributes like, uh, department or region without creating a separate role per organisational unit. SCIM 2.0 for automated provisioning and de-provisioning tied to your identity provider.
+
+39
+00:03:58.000 --> 00:04:04.000
+James (IT Director): What identity providers do you support for SSO?
+
+40
+00:04:04.000 --> 00:04:10.000
+Priya (Solutions Eng): SAML 2.0 and OIDC, compatible with any standards-compliant IdP. Okta, Azure AD, Ping Identity, Google Workspace. Enterprise supports up to five simultaneous IdP connections, useful if you have a post-merger environment.
+
+41
+00:04:10.000 --> 00:04:16.000
+James (IT Director): We use Azure AD. Is there, like, any gotcha in that integration?
+
+42
+00:04:16.000 --> 00:04:22.000
+Priya (Solutions Eng): None at all, it's one of the most common integrations we configure. Standard SAML or OIDC setup, SCIM for auto-provisioning, typically takes an hour to, um, configure during onboarding.
+
+43
+00:04:22.000 --> 00:04:28.000
+Karen (Legal): Can I jump in on the legal side now? First question, what's the notice period to terminate a contract?
+
+44
+00:04:28.000 --> 00:04:34.000
+Ryan (Sales): Annual contracts require 60 days notice before the renewal date. If notice isn't given within that window the contract auto-renews for 12 months. Multi-year Enterprise contracts require 90 days.
+
+45
+00:04:34.000 --> 00:04:40.000
+Karen (Legal): And termination for cause?
+
+46
+00:04:40.000 --> 00:04:47.000
+Ryan (Sales): Either party can terminate immediately on written notice if the other party materially breaches the agreement and fails to cure within 30 days of receiving written notice of the breach. Notice goes to legal at novapulse.io.
+
+47
+00:04:47.000 --> 00:04:53.000
+Karen (Legal): Does the MSA include an IP indemnification clause? We've had a vendor try to, um, foist all IP liability onto us before.
+
+48
+00:04:53.000 --> 00:05:01.000
+Ryan (Sales): Yes, mutual indemnification. Under Section 12.1 of the standard MSA, NovaPulse defends and indemnifies the customer against third-party claims that the platform infringes a patent, copyright, trademark, or trade secret, as long as the customer notifies us promptly and grants us control of the defence.
+
+49
+00:05:01.000 --> 00:05:07.000
+Karen (Legal): What's excluded from the indemnity?
+
+50
+00:05:07.000 --> 00:05:14.000
+Ryan (Sales): Three exclusions under Section 12.3: claims arising from customer-created content, third-party integrations configured by the customer, and modifications to the platform made without NovaPulse authorisation. Those are pretty standard carve-outs.
+
+51
+00:05:14.000 --> 00:05:20.000
+Karen (Legal): What's the liability cap?
+
+52
+00:05:20.000 --> 00:05:26.000
+Ryan (Sales): Standard MSA caps indemnity liability at 12 months of fees paid. Enterprise customers can negotiate higher caps, and our, uh, legal team is open to that discussion.
+
+53
+00:05:26.000 --> 00:05:32.000
+Karen (Legal): We'll want to negotiate that. Now the GDPR question. We process EU employee and customer data. How does the DPA work?
+
+54
+00:05:32.000 --> 00:05:39.000
+David (NovaPulse Security): A GDPR Article 28 compliant DPA is included as a standard exhibit in all MSAs at no cost. NovaPulse acts as Data Processor, you remain the Data Controller. Sub-processors are disclosed at privacy.novapulse.io with 30 days advance written notice of any changes.
+
+55
+00:05:39.000 --> 00:05:45.000
+Karen (Legal): Can we request a custom DPA? We have specific clauses our Data Protection Officer requires.
+
+56
+00:05:45.000 --> 00:05:52.000
+David (NovaPulse Security): Yes. Custom DPAs are reviewed by our legal team. Typically adds two to four weeks to the deal cycle. On Business and Enterprise plans the legal review fee is waived. You'd initiate by emailing legal at novapulse.io with the subject line, Custom DPA Request, and your company name.
+
+57
+00:05:52.000 --> 00:05:58.000
+Karen (Legal): Good. Now, what happens to our data if we terminate the contract?
+
+58
+00:05:58.000 --> 00:06:05.000
+David (NovaPulse Security): Customers have 30 days post-termination to export all data via the Admin Console or API in CSV, JSON, and Parquet formats, completely free, no per-gigabyte charges. After that window, production data is permanently deleted within 14 days and backup data within 90 days.
+
+59
+00:06:05.000 --> 00:06:11.000
+Karen (Legal): We need written confirmation of deletion. Is that available?
+
+60
+00:06:11.000 --> 00:06:16.000
+David (NovaPulse Security): Yes, a deletion confirmation certificate is available on request. We'll send it automatically once the deletion process is complete.
+
+61
+00:06:16.000 --> 00:06:22.000
+Dev (CISO): What's your incident response policy? If there's a breach, how quickly do we get notified?
+
+62
+00:06:22.000 --> 00:06:29.000
+David (NovaPulse Security): Our incident response plan requires notification to affected customers within 72 hours of a confirmed breach, which is in line with GDPR Article 33 requirements. We have a dedicated security incident response team on-call 24/7.
+
+63
+00:06:29.000 --> 00:06:35.000
+Dev (CISO): What's covered in the notification? I've seen vendors send, like, a vague one-liner that satisfies the legal obligation but tells you nothing useful.
+
+64
+00:06:35.000 --> 00:06:43.000
+David (NovaPulse Security): The notification will include: the nature of the incident, the categories of data affected, the estimated number of records involved, likely consequences of the breach, and the measures we have taken or propose to take. We also assign a named contact from our security team for your DPO to liaise with throughout the response.
+
+65
+00:06:43.000 --> 00:06:49.000
+Dev (CISO): That's actually a solid answer. One more thing. What's the SLA if there's a P1 critical incident? We can't have our BI platform down during, like, peak trading periods.
+
+66
+00:06:49.000 --> 00:06:56.000
+Ryan (Sales): On the Business plan, P1 response is two hours, 24/7. On Enterprise it's one hour, 24/7, with a named Technical Account Manager as your escalation contact. Uptime on Business is guaranteed at 99.95 percent monthly.
+
+67
+00:06:56.000 --> 00:07:02.000
+Dev (CISO): 99.95 means about 21 minutes of allowable downtime per month. What happens if you breach that?
+
+68
+00:07:02.000 --> 00:07:08.000
+Ryan (Sales): SLA credits apply. Ten percent credit if uptime falls below 99.9 percent, 25 percent credit below 99.5 percent, 50 percent credit below 99 percent. Applied to the next invoice.
+
+69
+00:07:08.000 --> 00:07:14.000
+Karen (Legal): Are those credits the sole remedy or can we claim consequential damages?
+
+70
+00:07:14.000 --> 00:07:20.000
+Ryan (Sales): Under the standard MSA, credits are the sole contractual remedy for uptime failures. Consequential damages are excluded in the standard terms, but, uh, this is one of the clauses Enterprise customers often negotiate. We can discuss it.
+
+71
+00:07:20.000 --> 00:07:26.000
+Karen (Legal): We'll want to explore that. Okay I think we have enough to start the MSA redline process. When can we get a draft?
+
+72
+00:07:26.000 --> 00:07:32.000
+Ryan (Sales): I'll get a draft MSA out to you by end of week. I'll also include the SOC 2 Type II report under a standard NDA, the ISO 27001 certificate, and the pen test executive summary for Dev's team.
+
+73
+00:07:32.000 --> 00:07:38.000
+James (IT Director): One last thing. What does the onboarding for our IT team look like? Like, who configures the Azure AD integration and sets up the SCIM provisioning?
+
+74
+00:07:38.000 --> 00:07:45.000
+Priya (Solutions Eng): Your IT admin and our Implementation Specialist work through it together in the first week of onboarding. We have a step-by-step Azure AD setup guide and we've done this, uh, hundreds of times. Typically it's one to two hours of your IT admin's time.
+
+75
+00:07:45.000 --> 00:07:51.000
+James (IT Director): That's reassuringly quick. Okay, I think we're good. This has been, um, one of the more technically honest vendor calls I've been on.
+
+76
+00:07:51.000 --> 00:07:57.000
+Dev (CISO): Agreed. David, you answered the hard questions without ducking them. That's, like, noted.
+
+77
+00:07:57.000 --> 00:08:03.000
+David (NovaPulse Security): Appreciate that. We'd rather you find out everything now than be surprised later. That's, uh, just how we operate.
+
+78
+00:08:03.000 --> 00:08:09.000
+Ryan (Sales): Thank you all. Karen I'll follow up on the MSA. Dev I'll get the security pack out. James, Priya will send over the deployment spec sheet. Looking forward to, um, moving this forward.
+
+79
+00:08:09.000 --> 00:08:14.000
+Karen (Legal): Thanks everyone. We'll aim to have the MSA redline back within two weeks.
+
+80
+00:08:14.000 --> 00:08:18.000
+James (IT Director): Thanks all. Good call.

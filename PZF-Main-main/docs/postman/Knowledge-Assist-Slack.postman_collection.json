@@ -1,0 +1,115 @@
+{
+  "info": {
+    "name": "Knowledge-Assist — Slack & opportunities",
+    "description": "Local/dev API calls for Slack OAuth helpers, opportunity + slack source setup, and sync trigger.\n\n**Important:** `POST /opportunities/slack` does **not** take a Slack channel name. Pass `opportunity_id` (opportunity id), `name`, and `owner_email`. Channel names in Slack must *start with* the prefix derived from `opportunity_id` (see runbook).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "ownerEmail",
+      "value": "you@company.com"
+    },
+    {
+      "key": "driveRootFolderName",
+      "value": "Requirements"
+    },
+    {
+      "key": "redirectUriEncoded",
+      "value": "https%3A%2F%2FYOUR-NGROK.ngrok-free.app%2Foauth%2Fslack%2Fcallback"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth — Get Slack OAuth URL",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/auth/slack/url?redirect_uri={{redirectUriEncoded}}&user_email={{ownerEmail}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "slack", "url"],
+          "query": [
+            {
+              "key": "redirect_uri",
+              "value": "{{redirectUriEncoded}}",
+              "description": "URL-encoded full callback URL; must match Slack app Redirect URLs."
+            },
+            {
+              "key": "user_email",
+              "value": "{{ownerEmail}}",
+              "description": "Must match users.email; sent as OAuth state."
+            }
+          ]
+        },
+        "description": "**When:** First time connecting Slack (or after revoke). Open `auth_url` in a browser — not usually used as a simple POST/GET automation without browser.\n\n**Response:** `{\"auth_url\": \"https://slack.com/oauth/v2/authorize?...\"}`"
+      }
+    },
+    {
+      "name": "Opportunities — Ensure Slack opportunity (DB)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"opportunity_id\": \"oid1023\",\n  \"name\": \"Example deal name\",\n  \"owner_email\": \"{{ownerEmail}}\"\n}"
+        },
+        "url": "{{baseUrl}}/opportunities/slack",
+        "description": "**When:** New opportunity (`opportunity_id`) that should sync from Slack, OR existing opp missing `opportunity_sources` slack row.\n\n**Not when:** New Slack channel only, same `opportunity_id` — no DB call; just `POST /sync/trigger`.\n\n**Body fields:** `opportunity_id` = canonical opportunity id (e.g. `oid1023`). `name` = display name. `owner_email` = user who has `slack_access_token`.\n\nSlack channel names must **start with** the alphanumeric prefix derived from `opportunity_id` (e.g. `oid1023` → channels like `oid1023-general`)."
+      }
+    },
+    {
+      "name": "Sync — Trigger plugin sync (Slack → GCS)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/sync/trigger",
+        "description": "**When:** After OAuth + DB rows exist; and any time you want to pull latest Slack messages to GCS.\n\n**Response:** `status: completed`, `items_total`, and `results[]` with per-`opportunity_id` `items_synced` and `ok`. Request waits until sync finishes."
+      }
+    },
+    {
+      "name": "Slack — Discover channels (DB upsert)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/slack/discover",
+        "description": "**When:** You want to onboard opportunities from **existing** Slack channel names without calling `POST /opportunities/slack` per deal.\n\n**Body:** none.\n\n**Requires:** A user with `users.slack_access_token` (Slack OAuth). Optional env: `SLACK_CONNECTOR_USER_EMAIL`.\n\n**Response:** `channels_total`, `channels_matched`, `opportunities_created`, `opportunity_sources_created`, `skipped` (channels that did not match OID/prefix rules)."
+      }
+    },
+    {
+      "name": "Gmail — Discover threads by subject (DB upsert)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/gmail/discover",
+        "description": "**When:** Onboard `opportunities` + `gmail` source rows from threads whose **Subject** contains an opportunity id token (e.g. `oid1234`).\n\n**Body:** none.\n\n**Requires:** `users.google_refresh_token` (Google OAuth with gmail.readonly). Env: `GMAIL_DISCOVER_QUERY` (default subject search), optional `GMAIL_CONNECTOR_USER_EMAIL` or `DRIVE_CONNECTOR_USER_EMAIL`, `GMAIL_DISCOVER_MAX_THREADS`.\n\n**Response:** `threads_scanned`, `threads_with_oid`, `opportunities_created`, `opportunity_sources_created`, `skipped_thread_ids`."
+      }
+    },
+    {
+      "name": "Drive — Discover folders under Requirements (DB upsert)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/drive/discover",
+        "description": "**When:** Before `/sync/trigger` if you want to automatically onboard **new** Drive folders created under `DRIVE_ROOT_FOLDER_NAME` (e.g. `Requirements/`).\n\n**Body:** none.\n\n**Requires:**\n- `DRIVE_ROOT_FOLDER_NAME={{driveRootFolderName}}` set in env (configs)\n- A connector user has completed Google OAuth (users.google_refresh_token)\n\n**Response:** summary of discovered subfolders and DB rows created."
+      }
+    },
+    {
+      "name": "Sync — Run (Slack + Gmail + Drive discover + sync)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/sync/run",
+        "description": "**When:** Scheduler or one-shot full pipeline: Slack discover → Gmail discover → Drive discover → run all plugins (`opportunity_sources`).\n\n**Body:** none.\n\n**Response:** `slack_discover`, `gmail_discover`, `drive_discover`, and `sync` (same shape as `/sync/trigger`)."
+      }
+    }
+  ]
+}
