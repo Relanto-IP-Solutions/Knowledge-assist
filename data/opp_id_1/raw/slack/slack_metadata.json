@@ -1,0 +1,139 @@
+{
+  "opportunities": [
+    {
+      "opportunityId": "OPP-NVP-001",
+      "lastUpdatedAt": "2026-03-10T09:15:00.000000+00:00",
+      "channels": [
+        {
+          "id": "C1NVP9A3KFH",
+          "name": "novapulse-pricing-priya-anita",
+          "opportunityId": "OPP-NVP-001",
+          "isLinked": true,
+          "isPrivate": true,
+          "topic": "NovaPulse pricing and packaging discussion",
+          "purpose": "Async channel for Priya and Anita to ask pricing questions and review commercial terms between calls.",
+          "messageCount": 36,
+          "memberCount": 3,
+          "createdAt": "2026-03-10T09:00:00+00:00",
+          "linkedAt": "2026-03-10T09:05:00+00:00",
+          "lastSyncAt": "2026-03-10T09:15:00.000000+00:00",
+          "lastModifiedAt": "2026-03-10T09:15:00.000000+00:00",
+          "members": [
+            {
+              "id": "U1NVP001SAL",
+              "name": "Ryan-NovaPulse-Sales",
+              "isBot": false,
+              "addedAt": "2026-03-10T09:00:00+00:00"
+            },
+            {
+              "id": "U1NVP002CLI",
+              "name": "Priya-Client-HeadOfOps",
+              "isBot": false,
+              "addedAt": "2026-03-10T09:00:00+00:00"
+            },
+            {
+              "id": "U1NVP003CFO",
+              "name": "Anita-Client-CFO",
+              "isBot": false,
+              "addedAt": "2026-03-10T09:00:00+00:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "opportunityId": "OPP-NVP-002",
+      "lastUpdatedAt": "2026-03-12T11:00:00.000000+00:00",
+      "channels": [
+        {
+          "id": "C2NVP7B4LGK",
+          "name": "novapulse-security-legal-dev-karen",
+          "opportunityId": "OPP-NVP-002",
+          "isLinked": true,
+          "isPrivate": true,
+          "topic": "NovaPulse security, compliance and legal deep dive",
+          "purpose": "Technical and legal evaluation channel for Dev (CISO), Karen (Legal), and James (IT) to work through security certifications, GDPR DPA, and MSA terms with the NovaPulse team.",
+          "messageCount": 35,
+          "memberCount": 5,
+          "createdAt": "2026-03-12T10:45:00+00:00",
+          "linkedAt": "2026-03-12T10:50:00+00:00",
+          "lastSyncAt": "2026-03-12T11:00:00.000000+00:00",
+          "lastModifiedAt": "2026-03-12T11:00:00.000000+00:00",
+          "members": [
+            {
+              "id": "U2NVP001SAL",
+              "name": "Ryan-NovaPulse-Sales",
+              "isBot": false,
+              "addedAt": "2026-03-12T10:45:00+00:00"
+            },
+            {
+              "id": "U2NVP002SEC",
+              "name": "Dev-Client-CISO",
+              "isBot": false,
+              "addedAt": "2026-03-12T10:45:00+00:00"
+            },
+            {
+              "id": "U2NVP003LEG",
+              "name": "Karen-Client-Legal",
+              "isBot": false,
+              "addedAt": "2026-03-12T10:45:00+00:00"
+            },
+            {
+              "id": "U2NVP004ENG",
+              "name": "David-NovaPulse-Security",
+              "isBot": false,
+              "addedAt": "2026-03-12T10:45:00+00:00"
+            },
+            {
+              "id": "U2NVP005ITM",
+              "name": "James-Client-ITDirector",
+              "isBot": false,
+              "addedAt": "2026-03-12T10:46:00+00:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "opportunityId": "OPP-NVP-003",
+      "lastUpdatedAt": "2026-03-14T14:00:00.000000+00:00",
+      "channels": [
+        {
+          "id": "C3NVP5C6MHJ",
+          "name": "novapulse-eval-tom-melissa",
+          "opportunityId": "OPP-NVP-003",
+          "isLinked": true,
+          "isPrivate": true,
+          "topic": "NovaPulse competitive evaluation and ROI discussion",
+          "purpose": "Evaluation channel for Tom (VP Engineering) and Melissa (Ops Director) at a logistics company to compare NovaPulse against DataViz Pro and open-source alternatives, review ROI data and case studies, and work through adoption concerns.",
+          "messageCount": 34,
+          "memberCount": 3,
+          "createdAt": "2026-03-14T13:45:00+00:00",
+          "linkedAt": "2026-03-14T13:50:00+00:00",
+          "lastSyncAt": "2026-03-14T14:00:00.000000+00:00",
+          "lastModifiedAt": "2026-03-14T14:00:00.000000+00:00",
+          "members": [
+            {
+              "id": "U3NVP001SAL",
+              "name": "Ryan-NovaPulse-Sales",
+              "isBot": false,
+              "addedAt": "2026-03-14T13:45:00+00:00"
+            },
+            {
+              "id": "U3NVP002OPS",
+              "name": "Tom-Client-VPEngineering",
+              "isBot": false,
+              "addedAt": "2026-03-14T13:45:00+00:00"
+            },
+            {
+              "id": "U3NVP003VPE",
+              "name": "Melissa-Client-OpsDirector",
+              "isBot": false,
+              "addedAt": "2026-03-14T13:45:00+00:00"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

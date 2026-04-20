@@ -1,0 +1,124 @@
+# Cloud Workflows: ingestion pipeline DAG
+#
+# Chains two Cloud Functions in sequence:
+#   1. gcs-file-processor  — preprocess raw GCS files (documents, zoom, slack) → processed/ tier
+#   2. pubsub-dispatch     — publish processed files to Pub/Sub rag-ingestion-queue
+#
+# Files are uploaded directly to GCS raw/ (documents, zoom, slack). No Drive sync.
+#
+# Runtime arguments (all optional):
+#   lookback_minutes  int    Window passed to gcs-file-processor and pubsub-dispatch.
+#                            Default: 15. Pass 0 to process/dispatch all files regardless of age.
+#   opportunity_id    string Scope gcs-file-processor and pubsub-dispatch to one opportunity.
+#                            Default: "" (process all opportunities).
+#
+# Deploy:
+#   gcloud workflows deploy ingestion-pipeline \
+#       --source=workflows/ingestion_pipeline.yaml \
+#       --location=us-central1 \
+#       --project=YOUR_PROJECT_ID \
+#       --service-account=pzf-app@YOUR_PROJECT_ID.iam.gserviceaccount.com
+#
+# The service account needs roles/run.invoker on gcs-file-processor and pubsub-dispatch.
+# NOTE: The workflow uses direct Cloud Run URLs (*.a.run.app) rather than the
+# cloudfunctions.net aliases to avoid auth routing issues with gen2 functions.
+# Update the build_urls step below with the Cloud Run URLs for the new project:
+#   gcloud run services describe gcs-file-processor --region=us-central1 --project=YOUR_PROJECT_ID --format='value(status.url)'
+#   gcloud run services describe pubsub-dispatch --region=us-central1 --project=YOUR_PROJECT_ID --format='value(status.url)'
+#
+# Scheduled run (every 15 min, via Cloud Scheduler):
+#   gcloud scheduler jobs create http ingestion-pipeline-job \
+#       --schedule="*/15 * * * *" \
+#       --location=us-central1 \
+#       --uri="https://workflowexecutions.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/workflows/ingestion-pipeline/executions" \
+#       --message-body='{"argument": "{\"lookback_minutes\": 15}"}' \
+#       --oauth-service-account-email=pzf-app@YOUR_PROJECT_ID.iam.gserviceaccount.com
+#
+# Manual demo run (60-minute window, scoped to one opportunity):
+#   gcloud workflows run ingestion-pipeline \
+#       --location=us-central1 \
+#       --project=YOUR_PROJECT_ID \
+#       --data='{"lookback_minutes": 60, "opportunity_id": "OPP-001"}'
+
+main:
+  params: [args]
+  steps:
+
+    # ------------------------------------------------------------------
+    # 1. Set defaults — used when no args are passed or a key is absent
+    # ------------------------------------------------------------------
+    - init:
+        assign:
+          - project: "eighth-bivouac-490806-s2"   # TODO: replace with your GCP project ID
+          - region: "us-central1"
+          - lookback_minutes: 15
+          - opportunity_id: ""
+
+    # ------------------------------------------------------------------
+    # 2. Override defaults from runtime args (skip entirely if args null)
+    # ------------------------------------------------------------------
+    - parse_args:
+        switch:
+          - condition: ${args != null}
+            next: override_from_args
+        next: build_urls
+
+    - override_from_args:
+        assign:
+          - lookback_minutes: ${default(map.get(args, "lookback_minutes"), 15)}
+          - opportunity_id: ${default(map.get(args, "opportunity_id"), "")}
+
+    # ------------------------------------------------------------------
+    # 3. Build Cloud Function URLs and optional query params
+    #
+    # Using direct Cloud Run URLs (*.a.run.app) to avoid the
+    # cloudfunctions.net routing layer which can reject OIDC tokens
+    # even when allUsers invoker is granted.
+    # ------------------------------------------------------------------
+    - build_urls:
+        assign:
+          # TODO: replace with your Cloud Run URLs after deploying the services.
+          # Example (shape only):
+          # - gcs_processor_url: "https://gcs-file-processor-<CLOUD_RUN_HASH>.us-central1.run.app"
+          # - pubsub_dispatch_url: "https://pubsub-dispatch-<CLOUD_RUN_HASH>.us-central1.run.app"
+          - gcs_processor_url: "https://gcs-file-processor-ufb3j3baea-uc.a.run.app"
+          - pubsub_dispatch_url: "https://pubsub-dispatch-ufb3j3baea-uc.a.run.app"
+          - opp_param: ${if(opportunity_id != "", "&opportunity_id=" + opportunity_id, "")}
+
+    # ------------------------------------------------------------------
+    # 4. Step 1 — GCS file processor
+    #    Preprocesses raw files written within the lookback window
+    #    (Zoom VTT → transcript, Slack JSON → summary) into processed/.
+    # ------------------------------------------------------------------
+    - call_gcs_processor:
+        call: http.post
+        args:
+          url: ${gcs_processor_url + "?lookback_minutes=" + string(lookback_minutes) + opp_param}
+          auth:
+            type: OIDC
+            audience: ${gcs_processor_url}
+          timeout: 540
+        result: gcs_result
+
+    # ------------------------------------------------------------------
+    # 5. Step 2 — Pub/Sub dispatch
+    #    Scans processed/ objects within the lookback window and publishes
+    #    a RAG ingestion message per file to the appropriate topic.
+    # ------------------------------------------------------------------
+    - call_pubsub_dispatch:
+        call: http.post
+        args:
+          url: ${pubsub_dispatch_url + "?lookback_minutes=" + string(lookback_minutes) + opp_param}
+          auth:
+            type: OIDC
+            audience: ${pubsub_dispatch_url}
+          timeout: 300
+        result: pubsub_result
+
+    # ------------------------------------------------------------------
+    # 6. Return combined summary
+    # ------------------------------------------------------------------
+    - return_summary:
+        return:
+          gcs_synced: ${gcs_result.body.synced}
+          pubsub_published: ${pubsub_result.body.published}

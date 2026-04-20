@@ -1,0 +1,82 @@
+[
+  {
+    "channel": "C0SYNTHSAAS01",
+    "fetched_at": "2026-03-29 12:00:00 UTC",
+    "user": "U0ALEXCHAMP01",
+    "type": "message",
+    "ts": "1711705200.000100",
+    "text": "Jordan — kicking off discovery for our SaaS evaluation. Can you explain multi-tenant vs single-tenant in plain terms? We're comparing two vendors."
+  },
+  {
+    "channel": "C0SYNTHSAAS01",
+    "fetched_at": "2026-03-29 12:00:00 UTC",
+    "user": "U0JORDANSE01",
+    "type": "message",
+    "ts": "1711705260.000200",
+    "text": "Multi-tenant: one shared stack serves many customers with logical isolation. Single-tenant: dedicated instance or cluster for one customer — stronger isolation, usually higher cost. For regulated workloads some buyers mandate single-tenant or dedicated cells."
+  },
+  {
+    "channel": "C0SYNTHSAAS01",
+    "fetched_at": "2026-03-29 12:00:00 UTC",
+    "user": "U0ALEXCHAMP01",
+    "type": "message",
+    "ts": "1711705320.000300",
+    "text": "Our CISO asked about SOC 2 — what's the real difference between Type I and Type II for us?"
+  },
+  {
+    "channel": "C0SYNTHSAAS01",
+    "fetched_at": "2026-03-29 12:00:00 UTC",
+    "user": "U0JORDANSE01",
+    "type": "message",
+    "ts": "1711705380.000400",
+    "text": "Type I is a point-in-time: controls are *designed* appropriately. Type II covers a period (e.g. 6–12 months) and says controls operated *effectively*. Procurement teams usually want Type II for production vendors."
+  },
+  {
+    "channel": "C0SYNTHSAAS01",
+    "fetched_at": "2026-03-29 12:00:00 UTC",
+    "user": "U0ALEXCHAMP01",
+    "type": "message",
+    "ts": "1711705440.000500",
+    "text": "Finance wants TCO, not just per-seat price. What should we include beyond licence fees?"
+  },
+  {
+    "channel": "C0SYNTHSAAS01",
+    "fetched_at": "2026-03-29 12:00:00 UTC",
+    "user": "U0JORDANSE01",
+    "type": "message",
+    "ts": "1711705500.000600",
+    "text": "Add implementation/SI, SSO/SCIM, sandbox, premium support, data egress, backup retention add-ons, API overage, training, and annual uplift. Model 3-year cash flow with ramp seats — that's the CFO conversation."
+  },
+  {
+    "channel": "C0SYNTHSAAS01",
+    "fetched_at": "2026-03-29 12:00:00 UTC",
+    "user": "U0ALEXCHAMP01",
+    "type": "message",
+    "ts": "1711705560.000700",
+    "text": "IT asked about iPaaS vs native CRM integration — when do we push them to an integration hub?"
+  },
+  {
+    "channel": "C0SYNTHSAAS01",
+    "fetched_at": "2026-03-29 12:00:00 UTC",
+    "user": "U0JORDANSE01",
+    "type": "message",
+    "ts": "1711705620.000800",
+    "text": "Native is great for standard objects. Use iPaaS when you have many SaaS endpoints, complex transforms, or central governance. For 14 tools with spaghetti integrations, a hub-and-spoke or iPaaS is usually the architectural answer."
+  },
+  {
+    "channel": "C0SYNTHSAAS01",
+    "fetched_at": "2026-03-29 12:00:00 UTC",
+    "user": "U0ALEXCHAMP01",
+    "type": "message",
+    "ts": "1711705680.000900",
+    "text": "Sales leadership wants to know if we should qualify this with BANT or MEDDIC — we're multi-stakeholder and ~$400k ARR."
+  },
+  {
+    "channel": "C0SYNTHSAAS01",
+    "fetched_at": "2026-03-29 12:00:00 UTC",
+    "user": "U0JORDANSE01",
+    "type": "message",
+    "ts": "1711705740.001000",
+    "text": "BANT is a quick lens. MEDDIC helps when multiple buyers, technical proof, and paper process matter. Here I'd run MEDDIC-style multithreading: champion, economic buyer, IT security, and a mutual success plan for the PoC."
+  }
+]
