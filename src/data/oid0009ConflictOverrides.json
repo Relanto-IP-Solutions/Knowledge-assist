@@ -1,0 +1,275 @@
+{
+  "QID-005": {
+    "conflicts": [
+      {
+        "answer_value": "99.99%",
+        "confidence_score": 0.4789464326265629,
+        "citations": [
+          {
+            "source_document": "_pre_xlsx_overview_NovaPulse_Data.txt",
+            "source_chunk": "SLA | 99.99%",
+            "chunk_id": "oid0009/processed/documents/_pre_xlsx_overview_NovaPulse_Data_txt__0",
+            "source_type": "gdrive_doc",
+            "source_file": "oid0009/processed/documents/_pre_xlsx_overview_NovaPulse_Data.txt",
+            "similarity_score": 0.4789464326265629,
+            "rerank_score": 0.038
+          }
+        ]
+      },
+      {
+        "answer_value": "99.99% Enterprise Uptime SLA",
+        "confidence_score": 0.4944004715312875,
+        "citations": [
+          {
+            "source_document": "NovaPulse_Contradictions.txt",
+            "source_chunk": "Statement A (Page 1 — Key statistics banner):\n\"99.99% Enterprise Uptime SLA\"",
+            "chunk_id": "oid0009/processed/documents/NovaPulse_Contradictions_txt__4",
+            "source_type": "gdrive_doc",
+            "source_file": "oid0009/processed/documents/NovaPulse_Contradictions.txt",
+            "similarity_score": 0.4944004715312875,
+            "rerank_score": 0.0441
+          }
+        ]
+      },
+      {
+        "answer_value": "up to 99.99%",
+        "confidence_score": 0.4944004715312875,
+        "citations": [
+          {
+            "source_document": "NovaPulse_Contradictions.txt",
+            "source_chunk": "Statement B (Section 3.4 — Service Level Agreements):\n\"Enterprise plans on dedicated infrastructure provide up to 99.99% uptime\"",
+            "chunk_id": "oid0009/processed/documents/NovaPulse_Contradictions_txt__4",
+            "source_type": "gdrive_doc",
+            "source_file": "oid0009/processed/documents/NovaPulse_Contradictions.txt",
+            "similarity_score": 0.4944004715312875,
+            "rerank_score": 0.0441
+          }
+        ]
+      },
+      {
+        "answer_value": "Up to 99.99%",
+        "confidence_score": 0.4944004715312875,
+        "citations": [
+          {
+            "source_document": "NovaPulse_Contradictions.txt",
+            "source_chunk": "Statement C (Section 4.1 — Pricing table, Uptime SLA row):\n\"Enterprise: Up to 99.99%\"",
+            "chunk_id": "oid0009/processed/documents/NovaPulse_Contradictions_txt__4",
+            "source_type": "gdrive_doc",
+            "source_file": "oid0009/processed/documents/NovaPulse_Contradictions.txt",
+            "similarity_score": 0.4944004715312875,
+            "rerank_score": 0.0441
+          }
+        ]
+      }
+    ]
+  },
+  "QID-015": {
+    "conflicts": [
+      {
+        "answer_value": "Annual billing is 45 dollars per user per month. Monthly billing is 54 dollars per user per month. New users added mid-year on an annual contract are billed pro-rata for the remaining months of the term. A 14-day free trial on the Professional plan feature set is available for up to five users, one gigabyte storage. A formal 30-day Proof of Concept with a dedicated Solutions Engineer and up to ten pilot users is also available and completely free.",
+        "confidence_score": 0.49879300740049726,
+        "citations": [
+          {
+            "source_document": "NovaPulse_Call_02_Pricing_Competitive_ROI.txt",
+            "source_chunk": "Annual billing is 45 dollars per user per month. Monthly billing is 54 dollars per user per month. So the annual saving is about, 15 percent. Linda: And if we grow headcount during the year, how are new users priced? Ryan: New users added mid-year on an annual contract are billed pro-rata for the remaining months of the term. So if you add 20 users in month six, you pay, for 20 users for the remaining six months.",
+            "chunk_id": "oid0009_zoom_NovaPulse_Call_02_Pricing_Competitive_ROI_txt_idx_2",
+            "source_type": "zoom_transcript",
+            "source_file": "oid0009/zoom_transcripts/NovaPulse_Call_02_Pricing_Competitive_ROI.txt",
+            "similarity_score": 0.4876497494034936,
+            "rerank_score": 0.0571
+          },
+          {
+            "source_document": "NovaPulse_Call_02_Pricing_Competitive_ROI.txt",
+            "source_chunk": "We have a 14-day free trial on the Professional plan feature set, no credit card required. Up to five users, one gigabyte storage. Or for a more meaningful evaluation, we can run a formal 30-day Proof of Concept with a dedicated Solutions Engineer, your actual use cases, and up to ten pilot users. Linda: The 30-day PoC sounds more substantive. Is that free? Ryan: Completely free, dedicated Solutions Engineer included.",
+            "chunk_id": "oid0009_zoom_NovaPulse_Call_02_Pricing_Competitive_ROI_txt_idx_2",
+            "source_type": "zoom_transcript",
+            "source_file": "oid0009/zoom_transcripts/NovaPulse_Call_02_Pricing_Competitive_ROI.txt",
+            "similarity_score": 0.4876497494034936,
+            "rerank_score": 0.0571
+          }
+        ]
+      },
+      {
+        "answer_value": "Annual billing is 45 dollars per user per month. Monthly billing is 54 dollars per user per month. New users added mid-year on an annual contract are billed pro-rata for the remaining months of the term.",
+        "confidence_score": 0.49879300740049726,
+        "citations": [
+          {
+            "source_document": "NovaPulse_Call_02_Pricing_Competitive_ROI.txt",
+            "source_chunk": "Annual billing is 45 dollars per user per month. Monthly billing is 54 dollars per user per month.",
+            "chunk_id": "oid0009_zoom_NovaPulse_Call_02_Pricing_Competitive_ROI_txt_idx_2",
+            "source_type": "zoom_transcript",
+            "source_file": "oid0009/zoom_transcripts/NovaPulse_Call_02_Pricing_Competitive_ROI.txt",
+            "similarity_score": 0.4876497494034936,
+            "rerank_score": 0.0571
+          },
+          {
+            "source_document": "NovaPulse_Call_02_Pricing_Competitive_ROI.txt",
+            "source_chunk": "New users added mid-year on an annual contract are billed pro-rata for the remaining months of the term. So if you add 20 users in month six, you pay, for 20 users for the remaining six months.",
+            "chunk_id": "oid0009_zoom_NovaPulse_Call_02_Pricing_Competitive_ROI_txt_idx_2",
+            "source_type": "zoom_transcript",
+            "source_file": "oid0009/zoom_transcripts/NovaPulse_Call_02_Pricing_Competitive_ROI.txt",
+            "similarity_score": 0.4876497494034936,
+            "rerank_score": 0.0571
+          }
+        ]
+      },
+      {
+        "answer_value": "Annual billing is 45 dollars per user per month. Monthly billing is 54 dollars per user per month. So the annual saving is about, 15 percent.",
+        "confidence_score": 0.4876497494034936,
+        "citations": [
+          {
+            "source_document": "NovaPulse_Call_02_Pricing_Competitive_ROI.txt",
+            "source_chunk": "Annual billing is 45 dollars per user per month. Monthly billing is 54 dollars per user per month. So the annual saving is about, 15 percent.",
+            "chunk_id": "oid0009_zoom_NovaPulse_Call_02_Pricing_Competitive_ROI_txt_idx_2",
+            "source_type": "zoom_transcript",
+            "source_file": "oid0009/zoom_transcripts/NovaPulse_Call_02_Pricing_Competitive_ROI.txt",
+            "similarity_score": 0.4876497494034936,
+            "rerank_score": 0.0571
+          }
+        ]
+      }
+    ]
+  },
+  "QID-031": {
+    "conflicts": [
+      {
+        "answer_value": "Custom",
+        "confidence_score": 0.49838293811291323,
+        "citations": [
+          {
+            "source_document": "NovaPulse_Call_02_Pricing_Competitive_ROI.txt",
+            "source_chunk": "We have a 14-day free trial on the Professional plan feature set, no credit card required. Up to five users, one gigabyte storage. Or for a more meaningful evaluation, we can run a formal 30-day Proof of Concept with a dedicated Solutions Engineer, your actual use cases, and up to ten pilot users.",
+            "chunk_id": "oid0009_zoom_NovaPulse_Call_02_Pricing_Competitive_ROI_txt_idx_2",
+            "source_type": "zoom_transcript",
+            "source_file": "oid0009/zoom_transcripts/NovaPulse_Call_02_Pricing_Competitive_ROI.txt",
+            "similarity_score": 0.48985555313712315,
+            "rerank_score": 0.1071
+          },
+          {
+            "source_document": "NovaPulse_Product_Reference.txt",
+            "source_chunk": "NovaPulse's standard Proof of Concept runs for 30 days and is offered free of charge with a dedicated Solutions Engineer assigned to the engagement. The structured PoC programme is divided into four phases: environment setup and integration configuration in week one; custom dashboard development for up to three agreed use cases and pilot user onboarding (up to ten users) in week two; user feedback collection and workflow automation configuration in week three; and an executive showcase of PoC outcomes with ROI quantification and commercial proposal presentation in week four. PoC success criteria are agreed in writing at kick-off using the NovaPulse PoC Success Criteria template. Extended 60-day PoCs are available for Enterprise prospects with complex integration requirements, subject to VP of Sales approval.",
+            "chunk_id": "oid0009/processed/documents/NovaPulse_Product_Reference_txt__90",
+            "source_type": "gdrive_doc",
+            "source_file": "oid0009/processed/documents/NovaPulse_Product_Reference.txt",
+            "similarity_score": 0.4643610560500173,
+            "rerank_score": 0.0232
+          },
+          {
+            "source_document": "NovaPulse_Product_Reference_2.txt",
+            "source_chunk": "NovaPulse's standard Proof of Concept runs for 30 days and is offered free of charge with a dedicated Solutions Engineer assigned to the engagement. The structured PoC programme is divided into four phases: environment setup and integration configuration in week one; custom dashboard development for up to three agreed use cases and pilot user onboarding (up to ten users) in week two; user feedback collection and workflow automation configuration in week three; and an executive showcase of PoC outcomes with ROI quantification and commercial proposal presentation in week four. PoC success criteria are agreed in writing at kick-off using the NovaPulse PoC Success Criteria template. Extended 60-day PoCs are available for Enterprise prospects with complex integration requirements, subject to VP of Sales approval.",
+            "chunk_id": "oid0009/processed/documents/NovaPulse_Product_Reference_2_txt__89",
+            "source_type": "gdrive_doc",
+            "source_file": "oid0009/processed/documents/NovaPulse_Product_Reference_2.txt",
+            "similarity_score": 0.43127077172824,
+            "rerank_score": 0.0226
+          }
+        ]
+      }
+    ]
+  },
+  "QID-038": {
+    "conflicts": [
+      {
+        "answer_value": "The conversation revolved around NovaPulse's security and compliance posture, addressing data residency (AWS EU Central 1 Frankfurt by default, UK option available), certifications (SOC 2 Type II, ISO 27001, GDPR DPF, HIPAA), data encryption (AES 256 GCM at rest, TLS 1.3 in transit), Bring Your Own Key (BYOK) support for enterprise plans, DPA terms, sub-processor list, custom DPA process, data export and deletion policies post-termination, Multi-factor authentication (MFA) methods (including FIDO2), 72-hour breach notification timeline, P1 response SLAs, and availability of a pen test executive summary.",
+        "confidence_score": 0.49967463553852715,
+        "citations": [
+          {
+            "source_document": "summary.txt",
+            "source_chunk": "The conversation revolves around novapulse's security and compliance posture, with customer representatives James (Security) and Karen (Legal) posing questions to David (novapulse Engineering) and Ryan (novapulse Sales). Key topics included data residency for EU/UK customers (AWS EU Central 1 Frankfurt by default, UK option available), certifications (SOC 2 Type II, ISO 27001, GDPR DPF, HIPAA), data encryption (AES 256 GCM at rest, TLS 1.3 in transit) and Bring Your Own Key (BYOK) support for enterprise plans, including integration with Azure Key Vault. Legal questions covered the standard Data Processing Addendum (DPA) as part of the MSA, the publicly accessible sub-processor list, and the process for requesting a custom DPA. Data export and deletion policies post-termination, including a signed deletion certificate, were also clarified. Multi-factor authentication (MFA) methods, including FIDO2 hardware key support, were discussed, as was the 72-hour breach notification timeline. Finally, P1 response SLAs and the availability of a pen test executive summary were addressed. The customer's security and legal teams found the responses satisfactory, leading to a recommendation for formal evaluation and a request for several documents to initiate the process.",
+            "chunk_id": "oid0009_slack_summary_txt_SUMMARY_part_1",
+            "source_type": "slack_messages",
+            "source_file": "oid0009/slack_messages/summary.txt",
+            "similarity_score": 0.4928899735641983,
+            "rerank_score": 0.0874
+          },
+          {
+            "source_document": "NovaPulse_Call_03_TechnicalDeepDive_Security_Legal.txt",
+            "source_chunk": "David: For UK and EU customers, your data is stored in the EU Central region on AWS, specifically Frankfurt, Germany, by default. We also have a UK option if you prefer, and EU to EU disaster recovery only. James: So our data never leaves the EU jurisdiction for any reason? David: Correct. Cross-region replication for disaster recovery happens only within the same regulatory jurisdiction. EU stays EU. We don't replicate EU data to US East or any non-EU region without, explicit customer authorisation. Dev: What's the hosting model? Multi-tenant or can we get dedicated infrastructure? David: By default on Business plan you're on multi-tenant SaaS. Logical data isolation at the application and database layers. Enterprise plan gives you single-tenant dedicated cloud, physically separate infrastructure. And for, the highest sovereignty requirement we also have a self-hosted option. Dev: We're not air-gapped so multi-tenant is fine as long as the isolation is robust. What does logical isolation actually mean technically? David: Every tenant's data is partitioned at the application layer with tenant ID-scoped queries, and at the database layer with row-level security enforced by PostgreSQL's RLS policies. A query from your tenant context, cannot access another tenant's rows even if someone found a way to bypass the application layer. Dev: What's the maximum concurrent user limit before we'd need dedicated infra? Priya: Five hundred concurrent active sessions on multi-tenant. At your current projected headcount of 220 users you're well within that. If you ever approach the threshold we proactively migrate you to dedicated, which, scales to five thousand plus concurrent users. James: What's the self-hosted minimum spec if we ever wanted to go down that route? Priya: For a production self-hosted deployment we'd recommend 32 GB RAM per application node, 16 vCPUs, 100 GB SSD, on Ubuntu 22.04 LTS, orchestrated by Kubernetes 1.27 or above. Database node, PostgreSQL 15 plus, separate 32 GB RAM and 500 GB SSD minimum. James: And for high availability, like a proper HA cluster? Priya: Three-node application cluster, 64 GB RAM per node, same vCPU spec, NVMe storage preferred. Database primary with streaming replica. A standard three-node cluster handles around, 1500 concurrent users comfortably. Full specs are in the deployment guide. Dev: Let's move to encryption. How is data encrypted at rest and who manages the keys? David: All data at rest is encrypted with AES-256-GCM. Keys are managed via AWS KMS with automatic rotation every 365 days by default. On Enterprise plans you can configure 90-day rotation. Dev: Can we manage our own keys? We have a strict policy that sensitive data keys should not be held by the vendor. David: Yes, that's exactly what BYOK gives you. Available on Enterprise. You integrate your own KMS, whether that's HashiCorp Vault, your own AWS KMS, Azure Key Vault, or Google Cloud KMS, and we never hold a copy of your encryption keys. Dev: So if a NovaPulse engineer needed to troubleshoot our database, could they see our data? David: No. Even without BYOK, sensitive fields have an additional field-level encryption layer at the application tier. A support engineer with database access would see AES ciphertext, not readable values. With BYOK on Enterprise, the decryption requires a live call to your own KMS, which creates an audit event in your key management system. So you'd, see any access attempt independently. Dev: What about data in transit? David: TLS 1.2 minimum, TLS 1.3 enforced by default on all new tenant configurations. All traffic between client, whether browser, mobile app, or API, and the platform goes over TLS. Dev: What certifications do you hold? I need specifics, not, marketing language.",
+            "chunk_id": "oid0009_zoom_NovaPulse_Call_03_TechnicalDeepDive_Security_Legal_txt_idx_0",
+            "source_type": "zoom_transcript",
+            "source_file": "oid0009/zoom_transcripts/NovaPulse_Call_03_TechnicalDeepDive_Security_Legal.txt",
+            "similarity_score": 0.4487179988055314,
+            "rerank_score": 0.0831
+          }
+        ]
+      },
+      {
+        "answer_value": "Security objection handling involves addressing concerns regarding data residency (EU Central 1 Frankfurt by default, UK option available, EU to EU disaster recovery), hosting model (multi-tenant with logical isolation, single-tenant dedicated cloud, self-hosted option), data isolation (tenant ID-scoped queries, row-level security), encryption at rest (AES-256-GCM, AWS KMS, 365-day rotation, 90-day for Enterprise), Bring Your Own Key (BYOK) support for Enterprise plans (integration with customer's KMS), field-level encryption for sensitive data, encryption in transit (TLS 1.2 minimum, TLS 1.3 enforced), certifications (SOC 2 Type II, ISO 27001, GDPR DPF, HIPAA), incident response (72-hour breach notification, dedicated team, detailed notification content, named contact), and P1 critical incident SLAs (Business: 2 hours 24/7, Enterprise: 1 hour 24/7).",
+        "confidence_score": 0.49967463553852715,
+        "citations": [
+          {
+            "source_document": "NovaPulse_Call_03_TechnicalDeepDive_Security_Legal.txt",
+            "source_chunk": "David: For UK and EU customers, your data is stored in the EU Central region on AWS, specifically Frankfurt, Germany, by default. We also have a UK option if you prefer, and EU to EU disaster recovery only. James: So our data never leaves the EU jurisdiction for any reason? David: Correct. Cross-region replication for disaster recovery happens only within the same regulatory jurisdiction. EU stays EU. We don't replicate EU data to US East or any non-EU region without, explicit customer authorisation. Dev: What's the hosting model? Multi-tenant or can we get dedicated infrastructure? David: By default on Business plan you're on multi-tenant SaaS. Logical data isolation at the application and database layers. Enterprise plan gives you single-tenant dedicated cloud, physically separate infrastructure. And for, the highest sovereignty requirement we also have a self-hosted option. Dev: We're not air-gapped so multi-tenant is fine as long as the isolation is robust. What does logical isolation actually mean technically? David: Every tenant's data is partitioned at the application layer with tenant ID-scoped queries, and at the database layer with row-level security enforced by PostgreSQL's RLS policies. A query from your tenant context, cannot access another tenant's rows even if someone found a way to bypass the application layer. Dev: Let's move to encryption. How is data encrypted at rest and who manages the keys? David: All data at rest is encrypted with AES-256-GCM. Keys are managed via AWS KMS with automatic rotation every 365 days by default. On Enterprise plans you can configure 90-day rotation. Dev: Can we manage our own keys? We have a strict policy that sensitive data keys should not be held by the vendor. David: Yes, that's exactly what BYOK gives you. Available on Enterprise. You integrate your own KMS, whether that's HashiCorp Vault, your own AWS KMS, Azure Key Vault, or Google Cloud KMS, and we never hold a copy of your encryption keys. Dev: So if a NovaPulse engineer needed to troubleshoot our database, could they see our data? David: No. Even without BYOK, sensitive fields have an additional field-level encryption layer at the application tier. A support engineer with database access would see AES ciphertext, not readable values. With BYOK on Enterprise, the decryption requires a live call to your own KMS, which creates an audit event in your key management system. So you'd, see any access attempt independently. Dev: What about data in transit? David: TLS 1.2 minimum, TLS 1.3 enforced by default on all new tenant configurations. All traffic between client, whether browser, mobile app, or API, and the platform goes over TLS. Dev: What certifications do you hold? I need specifics, not, marketing language. ... David: Our incident response plan requires notification to affected customers within 72 hours of a confirmed breach, which is in line with GDPR Article 33 requirements. We have a dedicated security incident response team on-call 24/7. Dev: What's covered in the notification? I've seen vendors send, like, a vague one-liner that satisfies the legal obligation but tells you nothing useful. David: The notification will include: the nature of the incident, the categories of data affected, the estimated number of records involved, likely consequences of the breach, and the measures we have taken or propose to take. We also assign a named contact from our security team for your DPO to liaise with throughout the response. Dev: That's actually a solid answer. One more thing. What's the SLA if there's a P1 critical incident? We can't have our BI platform down during, like, peak trading periods. Ryan: On the Business plan, P1 response is two hours, 24/7. On Enterprise it's one hour, 24/7, with a named Technical Account Manager as your escalation contact.",
+            "chunk_id": "oid0009_zoom_NovaPulse_Call_03_TechnicalDeepDive_Security_Legal_txt_idx_0",
+            "source_type": "zoom_transcript",
+            "source_file": "oid0009/zoom_transcripts/NovaPulse_Call_03_TechnicalDeepDive_Security_Legal.txt",
+            "similarity_score": 0.4487179988055314,
+            "rerank_score": 0.0831
+          },
+          {
+            "source_document": "summary.txt",
+            "source_chunk": "The conversation revolves around novapulse's security and compliance posture, with customer representatives James (Security) and Karen (Legal) posing questions to David (novapulse Engineering) and Ryan (novapulse Sales). Key topics included data residency for EU/UK customers (AWS EU Central 1 Frankfurt by default, UK option available), certifications (SOC 2 Type II, ISO 27001, GDPR DPF, HIPAA), data encryption (AES 256 GCM at rest, TLS 1.3 in transit) and Bring Your Own Key (BYOK) support for enterprise plans, including integration with Azure Key Vault. Legal questions covered the standard Data Processing Addendum (DPA) as part of the MSA, the publicly accessible sub-processor list, and the process for requesting a custom DPA. Data export and deletion policies post-termination, including a signed deletion certificate, were also clarified. Multi-factor authentication (MFA) methods, including FIDO2 hardware key support, were discussed, as was the 72-hour breach notification timeline. Finally, P1 response SLAs and the availability of a pen test executive summary were addressed. The customer's security and legal teams found the responses satisfactory, leading to a recommendation for formal evaluation and a request for several documents to initiate the process.",
+            "chunk_id": "oid0009_slack_summary_txt_SUMMARY_part_1",
+            "source_type": "slack_messages",
+            "source_file": "oid0009/slack_messages/summary.txt",
+            "similarity_score": 0.4928899735641983,
+            "rerank_score": 0.0874
+          }
+        ]
+      }
+    ]
+  },
+  "QID-039": {
+    "conflicts": [
+      {
+        "answer_value": "eight-week implementation",
+        "confidence_score": 0.5074517841675991,
+        "citations": [
+          {
+            "source_document": "NovaPulse_Contradictions.txt",
+            "source_chunk": "GFP: \"eight-week implementation\"",
+            "chunk_id": "oid0009/processed/documents/NovaPulse_Contradictions_txt__6",
+            "source_type": "gdrive_doc",
+            "source_file": "oid0009/processed/documents/NovaPulse_Contradictions.txt",
+            "similarity_score": 0.5074517841675991,
+            "rerank_score": 0.1432
+          }
+        ]
+      }
+    ]
+  },
+  "QID-042": {
+    "conflicts": [
+      {
+        "answer_value": "up to 99.99%",
+        "confidence_score": 0.5074517841675991,
+        "citations": [
+          {
+            "source_document": "NovaPulse_Contradictions.txt",
+            "source_chunk": "Statement B (Section 3.4 — Service Level Agreements):\n\"Enterprise plans on dedicated infrastructure provide up to 99.99% uptime\"",
+            "chunk_id": "oid0009/processed/documents/NovaPulse_Contradictions_txt__6",
+            "source_type": "gdrive_doc",
+            "source_file": "oid0009/processed/documents/NovaPulse_Contradictions.txt",
+            "similarity_score": 0.5074517841675991,
+            "rerank_score": 0.1432
+          }
+        ]
+      },
+      {
+        "answer_value": "Up to 99.99%",
+        "confidence_score": 0.5074517841675991,
+        "citations": [
+          {
+            "source_document": "NovaPulse_Contradictions.txt",
+            "source_chunk": "Statement C (Section 4.1 — Pricing table, Uptime SLA row):\n\"Enterprise: Up to 99.99%\"",
+            "chunk_id": "oid0009/processed/documents/NovaPulse_Contradictions_txt__6",
+            "source_type": "gdrive_doc",
+            "source_file": "oid0009/processed/documents/NovaPulse_Contradictions.txt",
+            "similarity_score": 0.5074517841675991,
+            "rerank_score": 0.1432
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,476 @@
+[
+  {
+    "id": "1",
+    "q_id": "QID-001",
+    "option_value": "Multi-tenant",
+    "sort_order": "1"
+  },
+  {
+    "id": "2",
+    "q_id": "QID-001",
+    "option_value": "Single-tenant",
+    "sort_order": "2"
+  },
+  {
+    "id": "3",
+    "q_id": "QID-001",
+    "option_value": "Hybrid",
+    "sort_order": "3"
+  },
+  {
+    "id": "4",
+    "q_id": "QID-001",
+    "option_value": "Other",
+    "sort_order": "4"
+  },
+  {
+    "id": "5",
+    "q_id": "QID-002",
+    "option_value": "Fully Cloud-Native",
+    "sort_order": "1"
+  },
+  {
+    "id": "6",
+    "q_id": "QID-002",
+    "option_value": "Lift-and-Shift",
+    "sort_order": "2"
+  },
+  {
+    "id": "7",
+    "q_id": "QID-002",
+    "option_value": "Legacy",
+    "sort_order": "3"
+  },
+  {
+    "id": "8",
+    "q_id": "QID-003",
+    "option_value": "Horizontal",
+    "sort_order": "1"
+  },
+  {
+    "id": "9",
+    "q_id": "QID-003",
+    "option_value": "Vertical",
+    "sort_order": "2"
+  },
+  {
+    "id": "10",
+    "q_id": "QID-003",
+    "option_value": "None",
+    "sort_order": "3"
+  },
+  {
+    "id": "11",
+    "q_id": "QID-004",
+    "option_value": "REST",
+    "sort_order": "1"
+  },
+  {
+    "id": "12",
+    "q_id": "QID-004",
+    "option_value": "GraphQL",
+    "sort_order": "2"
+  },
+  {
+    "id": "13",
+    "q_id": "QID-004",
+    "option_value": "SOAP",
+    "sort_order": "3"
+  },
+  {
+    "id": "14",
+    "q_id": "QID-004",
+    "option_value": "gRPC",
+    "sort_order": "4"
+  },
+  {
+    "id": "15",
+    "q_id": "QID-007",
+    "option_value": "AES-256",
+    "sort_order": "1"
+  },
+  {
+    "id": "16",
+    "q_id": "QID-007",
+    "option_value": "RSA",
+    "sort_order": "2"
+  },
+  {
+    "id": "17",
+    "q_id": "QID-007",
+    "option_value": "TLS 1.3",
+    "sort_order": "3"
+  },
+  {
+    "id": "18",
+    "q_id": "QID-007",
+    "option_value": "PGP",
+    "sort_order": "4"
+  },
+  {
+    "id": "19",
+    "q_id": "QID-008",
+    "option_value": "RBAC",
+    "sort_order": "1"
+  },
+  {
+    "id": "20",
+    "q_id": "QID-008",
+    "option_value": "ABAC",
+    "sort_order": "2"
+  },
+  {
+    "id": "21",
+    "q_id": "QID-008",
+    "option_value": "MAC",
+    "sort_order": "3"
+  },
+  {
+    "id": "22",
+    "q_id": "QID-008",
+    "option_value": "DAC",
+    "sort_order": "4"
+  },
+  {
+    "id": "23",
+    "q_id": "QID-008",
+    "option_value": "Other",
+    "sort_order": "5"
+  },
+  {
+    "id": "24",
+    "q_id": "QID-009",
+    "option_value": "Row-level",
+    "sort_order": "1"
+  },
+  {
+    "id": "25",
+    "q_id": "QID-009",
+    "option_value": "Schema-level",
+    "sort_order": "2"
+  },
+  {
+    "id": "26",
+    "q_id": "QID-009",
+    "option_value": "Shared",
+    "sort_order": "3"
+  },
+  {
+    "id": "27",
+    "q_id": "QID-011",
+    "option_value": "Daily",
+    "sort_order": "1"
+  },
+  {
+    "id": "28",
+    "q_id": "QID-011",
+    "option_value": "Weekly",
+    "sort_order": "2"
+  },
+  {
+    "id": "29",
+    "q_id": "QID-011",
+    "option_value": "Monthly",
+    "sort_order": "3"
+  },
+  {
+    "id": "30",
+    "q_id": "QID-011",
+    "option_value": "Real-time",
+    "sort_order": "4"
+  },
+  {
+    "id": "31",
+    "q_id": "QID-012",
+    "option_value": "Quarterly",
+    "sort_order": "1"
+  },
+  {
+    "id": "32",
+    "q_id": "QID-012",
+    "option_value": "Semi-Annually",
+    "sort_order": "2"
+  },
+  {
+    "id": "33",
+    "q_id": "QID-012",
+    "option_value": "Annually",
+    "sort_order": "3"
+  },
+  {
+    "id": "34",
+    "q_id": "QID-012",
+    "option_value": "Continuous",
+    "sort_order": "4"
+  },
+  {
+    "id": "35",
+    "q_id": "QID-013",
+    "option_value": "Type 1",
+    "sort_order": "1"
+  },
+  {
+    "id": "36",
+    "q_id": "QID-013",
+    "option_value": "Type 2",
+    "sort_order": "2"
+  },
+  {
+    "id": "37",
+    "q_id": "QID-013",
+    "option_value": "Not Compliant",
+    "sort_order": "3"
+  },
+  {
+    "id": "38",
+    "q_id": "QID-013",
+    "option_value": "In Progress",
+    "sort_order": "4"
+  },
+  {
+    "id": "39",
+    "q_id": "QID-014",
+    "option_value": "Per User",
+    "sort_order": "1"
+  },
+  {
+    "id": "40",
+    "q_id": "QID-014",
+    "option_value": "Consumption-based",
+    "sort_order": "2"
+  },
+  {
+    "id": "41",
+    "q_id": "QID-014",
+    "option_value": "Flat Fee",
+    "sort_order": "3"
+  },
+  {
+    "id": "42",
+    "q_id": "QID-016",
+    "option_value": "Yes",
+    "sort_order": "1"
+  },
+  {
+    "id": "43",
+    "q_id": "QID-016",
+    "option_value": "No",
+    "sort_order": "2"
+  },
+  {
+    "id": "44",
+    "q_id": "QID-016",
+    "option_value": "Not Stated",
+    "sort_order": "3"
+  },
+  {
+    "id": "45",
+    "q_id": "QID-017",
+    "option_value": "Yes",
+    "sort_order": "1"
+  },
+  {
+    "id": "46",
+    "q_id": "QID-017",
+    "option_value": "No",
+    "sort_order": "2"
+  },
+  {
+    "id": "47",
+    "q_id": "QID-017",
+    "option_value": "Not Stated",
+    "sort_order": "3"
+  },
+  {
+    "id": "48",
+    "q_id": "QID-018",
+    "option_value": "Yes",
+    "sort_order": "1"
+  },
+  {
+    "id": "49",
+    "q_id": "QID-018",
+    "option_value": "No",
+    "sort_order": "2"
+  },
+  {
+    "id": "50",
+    "q_id": "QID-018",
+    "option_value": "Not Stated",
+    "sort_order": "3"
+  },
+  {
+    "id": "51",
+    "q_id": "QID-022",
+    "option_value": "Yes",
+    "sort_order": "1"
+  },
+  {
+    "id": "52",
+    "q_id": "QID-022",
+    "option_value": "No",
+    "sort_order": "2"
+  },
+  {
+    "id": "53",
+    "q_id": "QID-022",
+    "option_value": "Mutual",
+    "sort_order": "3"
+  },
+  {
+    "id": "54",
+    "q_id": "QID-023",
+    "option_value": "Limitation of Liability",
+    "sort_order": "1"
+  },
+  {
+    "id": "55",
+    "q_id": "QID-023",
+    "option_value": "IP Rights",
+    "sort_order": "2"
+  },
+  {
+    "id": "56",
+    "q_id": "QID-023",
+    "option_value": "Privacy",
+    "sort_order": "3"
+  },
+  {
+    "id": "57",
+    "q_id": "QID-023",
+    "option_value": "Jurisdiction",
+    "sort_order": "4"
+  },
+  {
+    "id": "58",
+    "q_id": "QID-023",
+    "option_value": "Audit",
+    "sort_order": "5"
+  },
+  {
+    "id": "59",
+    "q_id": "QID-024",
+    "option_value": "Yes",
+    "sort_order": "1"
+  },
+  {
+    "id": "60",
+    "q_id": "QID-024",
+    "option_value": "No",
+    "sort_order": "2"
+  },
+  {
+    "id": "61",
+    "q_id": "QID-024",
+    "option_value": "Private Only",
+    "sort_order": "3"
+  },
+  {
+    "id": "62",
+    "q_id": "QID-025",
+    "option_value": "Webhooks",
+    "sort_order": "1"
+  },
+  {
+    "id": "63",
+    "q_id": "QID-025",
+    "option_value": "Polling",
+    "sort_order": "2"
+  },
+  {
+    "id": "64",
+    "q_id": "QID-025",
+    "option_value": "Event Stream",
+    "sort_order": "3"
+  },
+  {
+    "id": "65",
+    "q_id": "QID-025",
+    "option_value": "None",
+    "sort_order": "4"
+  },
+  {
+    "id": "66",
+    "q_id": "QID-026",
+    "option_value": "Native Integration",
+    "sort_order": "1"
+  },
+  {
+    "id": "67",
+    "q_id": "QID-026",
+    "option_value": "iPaaS",
+    "sort_order": "2"
+  },
+  {
+    "id": "68",
+    "q_id": "QID-026",
+    "option_value": "Hybrid",
+    "sort_order": "3"
+  },
+  {
+    "id": "69",
+    "q_id": "QID-026",
+    "option_value": "Other",
+    "sort_order": "4"
+  },
+  {
+    "id": "70",
+    "q_id": "QID-027",
+    "option_value": "Native",
+    "sort_order": "1"
+  },
+  {
+    "id": "71",
+    "q_id": "QID-027",
+    "option_value": "Third-party",
+    "sort_order": "2"
+  },
+  {
+    "id": "72",
+    "q_id": "QID-027",
+    "option_value": "Both",
+    "sort_order": "3"
+  },
+  {
+    "id": "73",
+    "q_id": "QID-029",
+    "option_value": "Yes",
+    "sort_order": "1"
+  },
+  {
+    "id": "74",
+    "q_id": "QID-029",
+    "option_value": "No",
+    "sort_order": "2"
+  },
+  {
+    "id": "75",
+    "q_id": "QID-029",
+    "option_value": "Planned",
+    "sort_order": "3"
+  },
+  {
+    "id": "76",
+    "q_id": "QID-029",
+    "option_value": "Not Started",
+    "sort_order": "4"
+  },
+  {
+    "id": "77",
+    "q_id": "QID-031",
+    "option_value": "Standard",
+    "sort_order": "1"
+  },
+  {
+    "id": "78",
+    "q_id": "QID-031",
+    "option_value": "Custom",
+    "sort_order": "2"
+  },
+  {
+    "id": "79",
+    "q_id": "QID-031",
+    "option_value": "None",
+    "sort_order": "3"
+  }
+]
