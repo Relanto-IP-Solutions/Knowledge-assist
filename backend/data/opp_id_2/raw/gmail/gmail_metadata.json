@@ -1,0 +1,19 @@
+{
+  "account": "ryan.mitchell@veltrix.io",
+  "fetched_at": "2026-03-15 10:00:00 UTC",
+  "threads": [
+    {
+      "thread_id": "thread-1",
+      "subject": "Veltrix Follow-Up — Apex Case Study, Demo Availability & Pricing Summary",
+      "participants": [
+        "ryan.mitchell@veltrix.io",
+        "jamira.okonkwo@hartwellgroup.co.uk",
+        "tom.fletcher@hartwellgroup.co.uk",
+        "chloe.barnes@hartwellgroup.co.uk",
+        "marcus.reid@hartwellgroup.co.uk"
+      ],
+      "message_count": 4,
+      "last_message_at": "2026-03-13 16:32:00 UTC"
+    }
+  ]
+}

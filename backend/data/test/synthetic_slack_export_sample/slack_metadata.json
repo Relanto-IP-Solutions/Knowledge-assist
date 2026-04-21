@@ -1,0 +1,12 @@
+{
+  "channels": [
+    {
+      "id": "C0SYNTHSAAS01",
+      "name": "dor2026001-saas-discovery",
+      "members": [
+        {"id": "U0ALEXCHAMP01", "name": "Alex (Champion)"},
+        {"id": "U0JORDANSE01", "name": "Jordan (SE)"}
+      ]
+    }
+  ]
+}

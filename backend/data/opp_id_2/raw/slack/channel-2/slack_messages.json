@@ -1,0 +1,914 @@
+[
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "subtype": "channel_join",
+    "user": "U5VLT001SAL",
+    "text": "<@U5VLT001SAL> has joined the channel",
+    "type": "message",
+    "ts": "1773800000.100001"
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "subtype": "channel_join",
+    "user": "U5VLT002HRD",
+    "text": "<@U5VLT002HRD> has joined the channel",
+    "type": "message",
+    "ts": "1773800012.100002"
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "subtype": "channel_join",
+    "user": "U5VLT003ITM",
+    "text": "<@U5VLT003ITM> has joined the channel",
+    "type": "message",
+    "ts": "1773800024.100003"
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "subtype": "channel_join",
+    "user": "U5VLT004OPS",
+    "text": "<@U5VLT004OPS> has joined the channel",
+    "type": "message",
+    "ts": "1773800036.100004"
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773800400.200001",
+    "client_msg_id": "e5f6a7b8-0001-0005-0001-000000000001",
+    "text": "Morning everyone — welcome to the Veltrix evaluation channel for Hartwell Group.\nI have Priya from our Solutions Engineering team here to handle the deeper technical questions.\nJamira, Sam, Kevin — feel free to use this async between our formal calls.",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1001",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Morning everyone — welcome to the Veltrix evaluation channel for Hartwell Group.\nI have Priya from our Solutions Engineering team here to handle the deeper technical questions.\nJamira, Sam, Kevin — feel free to use this async between our formal calls."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT002HRD",
+    "type": "message",
+    "ts": "1773800640.300001",
+    "client_msg_id": "e5f6a7b8-0002-0005-0001-000000000002",
+    "text": "Hi all — Jamira here, HR Director.\nWe're currently on BambooHR and honestly outgrowing it.\nFirst question — what does Veltrix do that BambooHR doesn't?",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1002",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Hi all — Jamira here, HR Director.\nWe're currently on BambooHR and honestly outgrowing it.\nFirst question — what does Veltrix do that BambooHR doesn't?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773800820.400001",
+    "client_msg_id": "e5f6a7b8-0003-0005-0001-000000000003",
+    "text": "Good starting point.\nFour core gaps where BambooHR consistently falls short at your scale:",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1003",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Good starting point.\nFour core gaps where BambooHR consistently falls short at your scale:"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773800840.400002",
+    "client_msg_id": "e5f6a7b8-0003-0005-0001-000000000004",
+    "text": "1. No native payroll outside the US — Veltrix has native payroll in 6 countries\n2. No LMS with compliance tracking — Veltrix has 5,000+ courses with mandatory completion tracking and escalation\n3. No calibration workflow in performance reviews — Veltrix supports full calibration sessions and OKR frameworks\n4. No predictive people analytics — Veltrix has attrition modelling and a natural language query interface (Veltrix Ask)",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1004",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "1. No native payroll outside the US — Veltrix has native payroll in 6 countries\n2. No LMS with compliance tracking — Veltrix has 5,000+ courses with mandatory completion tracking and escalation\n3. No calibration workflow in performance reviews — Veltrix supports full calibration sessions and OKR frameworks\n4. No predictive people analytics — Veltrix has attrition modelling and a natural language query interface (Veltrix Ask)"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT002HRD",
+    "type": "message",
+    "ts": "1773801000.500001",
+    "client_msg_id": "e5f6a7b8-0004-0005-0001-000000000005",
+    "text": "The calibration gap is real — our managers all rate differently and there's no way to normalise.\nCan you tell me more about how calibration works in Veltrix?",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1005",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "The calibration gap is real — our managers all rate differently and there's no way to normalise.\nCan you tell me more about how calibration works in Veltrix?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773801180.600001",
+    "client_msg_id": "e5f6a7b8-0005-0005-0001-000000000006",
+    "text": "The calibration workflow in Veltrix brings all managers together in a single session view — they can see each other's rating distributions side by side before finalising.\nAn HR Business Partner facilitates the session in the platform, and the dashboard shows rating bell curve, outlier flags, and cross-team comparisons in real time.",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1006",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "The calibration workflow in Veltrix brings all managers together in a single session view — they can see each other's rating distributions side by side before finalising.\nAn HR Business Partner facilitates the session in the platform, and the dashboard shows rating bell curve, outlier flags, and cross-team comparisons in real time."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773801190.600002",
+    "client_msg_id": "e5f6a7b8-0005-0005-0001-000000000007",
+    "text": "We have a customer — Apex Engineering Solutions, 620 staff across 4 offices — who had this exact problem.\nAfter deploying Veltrix: performance review completion hit 97% and they ran their first ever data-backed promotion cycle.\nEmployee NPS jumped 18 points with \"clarity on career progression\" as the primary driver.",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1007",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "We have a customer — Apex Engineering Solutions, 620 staff across 4 offices — who had this exact problem.\nAfter deploying Veltrix: performance review completion hit 97% and they ran their first ever data-backed promotion cycle.\nEmployee NPS jumped 18 points with \"clarity on career progression\" as the primary driver."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT002HRD",
+    "type": "message",
+    "ts": "1773801360.700001",
+    "client_msg_id": "e5f6a7b8-0006-0005-0001-000000000008",
+    "text": "That Apex case is really relevant to us.\nCan we speak to them?",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1008",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "That Apex case is really relevant to us.\nCan we speak to them?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773801480.800001",
+    "client_msg_id": "e5f6a7b8-0007-0005-0001-000000000009",
+    "text": "Yes — they're referenceable and open to prospect calls.\nI'll send a warm intro to their Chief People Officer who led the deployment.\nUsually get a 30-min call set up within a week.",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1009",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes — they're referenceable and open to prospect calls.\nI'll send a warm intro to their Chief People Officer who led the deployment.\nUsually get a 30-min call set up within a week."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT003ITM",
+    "type": "message",
+    "ts": "1773801660.900001",
+    "client_msg_id": "e5f6a7b8-0008-0005-0001-000000000010",
+    "text": "Sam here — IT Manager.\nWe also looked at Rippling.\nHow does Veltrix compare to them?",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1010",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Sam here — IT Manager.\nWe also looked at Rippling.\nHow does Veltrix compare to them?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773801840.100001",
+    "client_msg_id": "e5f6a7b8-0009-0005-0001-000000000011",
+    "text": "Honest comparison.\nRippling's differentiator is IT and device management alongside HR — it combines HR, payroll, and IT provisioning in one platform.\nIf device management and software provisioning are a primary use case for you, Rippling is worth considering.",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1011",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Honest comparison.\nRippling's differentiator is IT and device management alongside HR — it combines HR, payroll, and IT provisioning in one platform.\nIf device management and software provisioning are a primary use case for you, Rippling is worth considering."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773801850.100002",
+    "client_msg_id": "e5f6a7b8-0009-0005-0001-000000000012",
+    "text": "But if IT provisioning is not the primary driver — and for most organisations it isn't — Rippling's implementation runs 8–12 weeks because of the IT configuration layer.\nVeltrix runs 4–6 weeks for your size.\nFor HR-specific depth: performance calibration, learning compliance, attrition prediction — Veltrix is materially deeper.",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1012",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "But if IT provisioning is not the primary driver — and for most organisations it isn't — Rippling's implementation runs 8–12 weeks because of the IT configuration layer.\nVeltrix runs 4–6 weeks for your size.\nFor HR-specific depth: performance calibration, learning compliance, attrition prediction — Veltrix is materially deeper."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT003ITM",
+    "type": "message",
+    "ts": "1773802020.110001",
+    "client_msg_id": "e5f6a7b8-0010-0005-0001-000000000013",
+    "text": "We're not a tech company so device management isn't the priority.\nBut I do care about SSO and identity integration.\nWhat does Veltrix support?",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1013",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "We're not a tech company so device management isn't the priority.\nBut I do care about SSO and identity integration.\nWhat does Veltrix support?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT004OPS",
+    "type": "message",
+    "ts": "1773802200.120001",
+    "client_msg_id": "e5f6a7b8-0011-0005-0001-000000000014",
+    "text": "Priya here — SAML 2.0 and OIDC for SSO, compatible with any standards-compliant IdP.\nOkta, Azure AD, Google Workspace, Ping Identity all work natively.\nSCIM 2.0 is available on Business and Enterprise plans for automated user provisioning and de-provisioning.\nWhich IdP are you on?",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1014",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Priya here — SAML 2.0 and OIDC for SSO, compatible with any standards-compliant IdP.\nOkta, Azure AD, Google Workspace, Ping Identity all work natively.\nSCIM 2.0 is available on Business and Enterprise plans for automated user provisioning and de-provisioning.\nWhich IdP are you on?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT003ITM",
+    "type": "message",
+    "ts": "1773802380.130001",
+    "client_msg_id": "e5f6a7b8-0012-0005-0001-000000000015",
+    "text": "Azure AD.",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1015",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Azure AD."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT004OPS",
+    "type": "message",
+    "ts": "1773802500.140001",
+    "client_msg_id": "e5f6a7b8-0013-0005-0001-000000000016",
+    "text": "Perfect — one of our most common integrations.\nSAML or OIDC, SCIM for auto-provisioning, usually configured in about an hour during onboarding.\nWhen an employee leaves and is deactivated in Azure AD, their Veltrix access is revoked automatically via SCIM — no manual de-provisioning step.",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1016",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Perfect — one of our most common integrations.\nSAML or OIDC, SCIM for auto-provisioning, usually configured in about an hour during onboarding.\nWhen an employee leaves and is deactivated in Azure AD, their Veltrix access is revoked automatically via SCIM — no manual de-provisioning step."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT003ITM",
+    "type": "message",
+    "ts": "1773802680.150001",
+    "client_msg_id": "e5f6a7b8-0014-0005-0001-000000000017",
+    "text": "That auto de-provisioning is actually something we struggle with in BambooHR — we've had leavers with active accounts for weeks.\nWhat's the mobile app situation?",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1017",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "That auto de-provisioning is actually something we struggle with in BambooHR — we've had leavers with active accounts for weeks.\nWhat's the mobile app situation?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773802860.160001",
+    "client_msg_id": "e5f6a7b8-0015-0005-0001-000000000018",
+    "text": "Native iOS (14+) and Android (10+) apps — no extra cost for paid subscribers.\nEmployees: payslips, time off requests, learning modules, company directory\nManagers: leave approvals, expense requests, team dashboards, performance feedback\nBiometric auth (Face ID, fingerprint) supported.\nOffline access to cached payslips and policy docs.",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1018",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Native iOS (14+) and Android (10+) apps — no extra cost for paid subscribers.\nEmployees: payslips, time off requests, learning modules, company directory\nManagers: leave approvals, expense requests, team dashboards, performance feedback\nBiometric auth (Face ID, fingerprint) supported.\nOffline access to cached payslips and policy docs."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT002HRD",
+    "type": "message",
+    "ts": "1773803040.170001",
+    "client_msg_id": "e5f6a7b8-0016-0005-0001-000000000019",
+    "text": "Thread on the LMS — we have compliance training requirements for a few roles.\nHow does mandatory training tracking work?",
+    "team": "T5VELTRIX002",
+    "thread_ts": "1773803040.170001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1019",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Thread on the LMS — we have compliance training requirements for a few roles.\nHow does mandatory training tracking work?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773803220.180001",
+    "client_msg_id": "e5f6a7b8-0017-0005-0001-000000000020",
+    "text": "You configure mandatory training tracks per role type in the Learning module.\nVeltrix automatically assigns the right track when an employee's job role is set in their Core HR record.\nEscalation chain: automated reminder at 30, 14, and 7 days before deadline → manager notification at 3 days → HRBP notification on deadline day.\nCompliance reports generate in minutes — not days.",
+    "team": "T5VELTRIX002",
+    "thread_ts": "1773803040.170001",
+    "parent_user_id": "U5VLT002HRD",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1020",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "You configure mandatory training tracks per role type in the Learning module.\nVeltrix automatically assigns the right track when an employee's job role is set in their Core HR record.\nEscalation chain: automated reminder at 30, 14, and 7 days before deadline → manager notification at 3 days → HRBP notification on deadline day.\nCompliance reports generate in minutes — not days."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT002HRD",
+    "type": "message",
+    "ts": "1773803400.190001",
+    "client_msg_id": "e5f6a7b8-0018-0005-0001-000000000021",
+    "text": "The automated escalation to managers is exactly what we're missing today.\nWe're chasing people on email manually.",
+    "team": "T5VELTRIX002",
+    "thread_ts": "1773803040.170001",
+    "parent_user_id": "U5VLT002HRD",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1021",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "The automated escalation to managers is exactly what we're missing today.\nWe're chasing people on email manually."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773803520.200001",
+    "client_msg_id": "e5f6a7b8-0019-0005-0001-000000000022",
+    "text": "We have a healthcare customer — Northgate Healthcare Network, 3,200 employees — who went from 78% compliance to 99% in 6 months just from automated escalation replacing manual email chasing.\nCQC compliance reports that previously took 3 days now take 4 minutes.",
+    "team": "T5VELTRIX002",
+    "thread_ts": "1773803040.170001",
+    "parent_user_id": "U5VLT002HRD",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1022",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "We have a healthcare customer — Northgate Healthcare Network, 3,200 employees — who went from 78% compliance to 99% in 6 months just from automated escalation replacing manual email chasing.\nCQC compliance reports that previously took 3 days now take 4 minutes."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT004OPS",
+    "type": "message",
+    "ts": "1773803700.210001",
+    "client_msg_id": "e5f6a7b8-0020-0005-0001-000000000023",
+    "text": "Kevin here — Ops.\nWe have a Slack and Microsoft Teams environment.\nDo you integrate with those?",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1023",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Kevin here — Ops.\nWe have a Slack and Microsoft Teams environment.\nDo you integrate with those?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT004OPS",
+    "type": "message",
+    "ts": "1773803880.220001",
+    "client_msg_id": "e5f6a7b8-0021-0005-0001-000000000024",
+    "text": "Both are in our 120+ certified integration library.\nPractical examples: Slack message when a new hire's onboarding is complete, Teams notification for pending leave approvals, Slack alert when a mandatory training deadline is approaching.\nFor more custom workflow automation between Veltrix and other tools, we have a Zapier and Workato iPaaS connector — no-code.",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1024",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Both are in our 120+ certified integration library.\nPractical examples: Slack message when a new hire's onboarding is complete, Teams notification for pending leave approvals, Slack alert when a mandatory training deadline is approaching.\nFor more custom workflow automation between Veltrix and other tools, we have a Zapier and Workato iPaaS connector — no-code."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT004OPS",
+    "type": "message",
+    "ts": "1773804060.230001",
+    "client_msg_id": "e5f6a7b8-0022-0005-0001-000000000025",
+    "text": "We use Slack heavily so the Veltrix-to-Slack notifications would actually get used.\nDoes the Veltrix Ask thing work the way I think it does?\nLike — can I type \"how many people left the London office last quarter\" and get an answer?",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1025",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "We use Slack heavily so the Veltrix-to-Slack notifications would actually get used.\nDoes the Veltrix Ask thing work the way I think it does?\nLike — can I type \"how many people left the London office last quarter\" and get an answer?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773804240.240001",
+    "client_msg_id": "e5f6a7b8-0023-0005-0001-000000000026",
+    "text": "Yes — exactly that.\nVeltrix Ask is a natural language query interface in the Analytics module.\nYou type the question in plain English, it queries the live workforce data, and returns the answer with a breakdown.\nNo report building, no filters to configure — just ask and get the data.",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1026",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes — exactly that.\nVeltrix Ask is a natural language query interface in the Analytics module.\nYou type the question in plain English, it queries the live workforce data, and returns the answer with a breakdown.\nNo report building, no filters to configure — just ask and get the data."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773804250.240002",
+    "client_msg_id": "e5f6a7b8-0023-0005-0001-000000000027",
+    "text": "It also has predictive attrition modelling — flags employees at elevated flight risk based on engagement, tenure, compensation position relative to market band, and manager relationship signals.\nHRBPs get a dashboard showing who's at risk and why, so they can act before the resignation lands.",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1027",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "It also has predictive attrition modelling — flags employees at elevated flight risk based on engagement, tenure, compensation position relative to market band, and manager relationship signals.\nHRBPs get a dashboard showing who's at risk and why, so they can act before the resignation lands."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT002HRD",
+    "type": "message",
+    "ts": "1773804420.250001",
+    "client_msg_id": "e5f6a7b8-0024-0005-0001-000000000028",
+    "text": "The attrition prediction is something I've wanted for years but assumed we'd need a data science team to build.\nIs that available on the plan you've been quoting us?",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1028",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "The attrition prediction is something I've wanted for years but assumed we'd need a data science team to build.\nIs that available on the plan you've been quoting us?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773804600.260001",
+    "client_msg_id": "e5f6a7b8-0025-0005-0001-000000000029",
+    "text": "Yes — Veltrix Ask and attrition modelling are both included in the Business plan.\nNo data science team required, no separate add-on fee.\nIt's trained on our broader customer base data and calibrated per tenant using your own historical patterns.",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1029",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes — Veltrix Ask and attrition modelling are both included in the Business plan.\nNo data science team required, no separate add-on fee.\nIt's trained on our broader customer base data and calibrated per tenant using your own historical patterns."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT002HRD",
+    "type": "message",
+    "ts": "1773804780.270001",
+    "client_msg_id": "e5f6a7b8-0026-0005-0001-000000000030",
+    "text": "Okay I think I've heard enough to be genuinely interested.\nCan you send me a summary of the seven modules with one-liners on each?",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1030",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Okay I think I've heard enough to be genuinely interested.\nCan you send me a summary of the seven modules with one-liners on each?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT001SAL",
+    "type": "message",
+    "ts": "1773804960.280001",
+    "client_msg_id": "e5f6a7b8-0027-0005-0001-000000000031",
+    "text": "The seven Veltrix modules:\n1. Recruit & Talent Acquisition — end-to-end ATS, 120+ job boards, structured interview scorecards, DEI analytics\n2. Onboard & Lifecycle Management — preboarding tasks, policy acknowledgements, role transitions, offboarding checklists\n3. Core HR & Employee Records — single system of record for all employee data, self-service portal, manager self-service\n4. Payroll & Compensation — native payroll in 6 countries, merit cycle admin, total comp statements\n5. Performance & Goals — OKR framework, calibration workflows, 360 feedback, PIP tracking\n6. Learning & Development — 5,000+ course LMS, mandatory compliance tracking, automated escalation\n7. Analytics & Workforce Intelligence — Veltrix Ask natural language queries, attrition prediction, real-time workforce dashboards",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1031",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "The seven Veltrix modules:\n1. Recruit & Talent Acquisition — end-to-end ATS, 120+ job boards, structured interview scorecards, DEI analytics\n2. Onboard & Lifecycle Management — preboarding tasks, policy acknowledgements, role transitions, offboarding checklists\n3. Core HR & Employee Records — single system of record for all employee data, self-service portal, manager self-service\n4. Payroll & Compensation — native payroll in 6 countries, merit cycle admin, total comp statements\n5. Performance & Goals — OKR framework, calibration workflows, 360 feedback, PIP tracking\n6. Learning & Development — 5,000+ course LMS, mandatory compliance tracking, automated escalation\n7. Analytics & Workforce Intelligence — Veltrix Ask natural language queries, attrition prediction, real-time workforce dashboards"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C5VLT2B3CEF",
+    "fetched_at": "2026-03-17 10:00:00 UTC",
+    "user": "U5VLT002HRD",
+    "type": "message",
+    "ts": "1773805140.290001",
+    "client_msg_id": "e5f6a7b8-0028-0005-0001-000000000032",
+    "text": "Perfect — that's going straight into the evaluation deck.\nThanks Ryan and Priya :+1:",
+    "team": "T5VELTRIX002",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT1032",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Perfect — that's going straight into the evaluation deck.\nThanks Ryan and Priya "
+              },
+              {
+                "type": "emoji",
+                "name": "+1",
+                "unicode": "1f44d"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

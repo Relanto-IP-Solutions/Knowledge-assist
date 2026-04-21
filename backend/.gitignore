@@ -1,0 +1,86 @@
+# ====================
+# Python
+# ====================
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+CLAUDE.md
+docs/
+# ====================
+# Environment & Secrets
+# ====================
+.env
+.env.*
+!.env.example
+configs/.env
+configs/.env.*
+!configs/.env.example
+configs/secrets/.env
+!**/.env.example
+configs/secrets/*
+!configs/secrets/*.example
+configs/secrets/*.json
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+deploy_config.json
+configs/secrets/gcp-service-account-key.json.example
+configs/secrets/gcp-service-account-key.json
+deploy_config.json
+configs/secrets/gcp-service-account-key.json.example
+configs/secrets/gcp-service-account-key.json
+docs/GCP_REDEPLOY_COMMANDS.md
+
+# ====================
+# IDE & Editors
+# ====================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ====================
+# OS
+# ====================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ====================
+# Testing & Quality
+# ====================
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+
+# ====================
+# Logs & Local Data
+# ====================
+*.log
+logs/
+output/
+
+# Cursor
+.cursor/*
+data/output
+
+# Local schema drift baseline (regenerate with apply_modular_schema.py)
+db/schema/last_schema_baseline.json
+
+# Node (if present at repo root)
+node_modules/
