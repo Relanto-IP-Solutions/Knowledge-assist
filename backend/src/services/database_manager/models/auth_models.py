@@ -121,6 +121,7 @@ class OpportunitySource(Base):
     source_type = Column(
         String, nullable=False
     )  # e.g., "slack", "gmail", "zoom", "drive"
+    channel_id = Column(String, nullable=True, index=True)
 
     # Last synced tracker for generic plugins
     last_synced_at = Column(DateTime(timezone=True), nullable=True)

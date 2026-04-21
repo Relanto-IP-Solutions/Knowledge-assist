@@ -169,6 +169,24 @@ async def _fetch_channel_history(
     return pages
 
 
+async def _get_channel_info(
+    client: httpx.AsyncClient,
+    headers: dict,
+    channel_id: str,
+) -> dict | None:
+    r = await client.get(
+        f"{SLACK_API_BASE}/conversations.info",
+        headers=headers,
+        params={"channel": channel_id},
+    )
+    if r.status_code != 200:
+        return None
+    data = r.json()
+    if not data.get("ok"):
+        return None
+    return data.get("channel")
+
+
 def _load_existing_channel_export(
     storage: Storage,
     db_opportunity_id: str,
@@ -196,6 +214,7 @@ async def sync_slack_source(db: Session, source: OpportunitySource) -> int:
     prefix = _oid_to_slack_channel_prefix(opp.opportunity_id)
     if not prefix:
         return 0
+    preferred_channel_id = (source.channel_id or "").strip()
 
     # GCS object names are case-sensitive; always use canonical prefix (e.g. oid1023) so we
     # never duplicate raw/slack under OID1023 vs oid1023 when DB casing varies.
@@ -229,9 +248,22 @@ async def sync_slack_source(db: Session, source: OpportunitySource) -> int:
             if not cursor:
                 break
 
-        matching = [
-            c for c in channels if prefix in (c.get("name") or "").lower()
-        ]
+        matching: list[dict] = []
+        if preferred_channel_id:
+            preferred = next((c for c in channels if (c.get("id") or "") == preferred_channel_id), None)
+            if not preferred:
+                preferred = await _get_channel_info(client, headers, preferred_channel_id)
+            if preferred:
+                matching = [preferred]
+            else:
+                logger.warning(
+                    "Stored Slack channel_id {} not found for opportunity {}; falling back to prefix match.",
+                    preferred_channel_id,
+                    opp.opportunity_id,
+                )
+
+        if not matching:
+            matching = [c for c in channels if prefix in (c.get("name") or "").lower()]
         if not matching:
             logger.info(
                 "No Slack channels match prefix {} for opportunity {}",
@@ -311,6 +343,9 @@ async def sync_slack_source(db: Session, source: OpportunitySource) -> int:
                 len(new_ts),
                 len(existing_ts),
             )
+
+            if not source.channel_id:
+                source.channel_id = ch_id
 
         meta_doc = {"channels": meta_channels}
         storage.write(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 
 import httpx
@@ -14,7 +15,7 @@ from src.services.database_manager.models.auth_models import Opportunity, Opport
 from src.services.database_manager.opportunity_state import STATUS_DISCOVERED
 from src.services.database_manager.orm import get_db, get_engine
 from src.services.storage import Storage
-from src.services.plugins.slack_plugin import _oid_to_slack_channel_prefix, sync_slack_source
+from src.services.plugins.slack_plugin import sync_slack_source
 from src.utils.logger import get_logger
 from src.utils.opportunity_id import (
     find_opportunity_oid,
@@ -27,6 +28,7 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/slack", tags=["slack"])
 integrations_slack_router = APIRouter(prefix="/integrations/slack", tags=["slack"])
 SLACK_API_BASE = "https://slack.com/api"
+STRICT_OID_IN_CHANNEL_RE = re.compile(r"(?:^|[^a-z0-9])(oid\d{4})(?=[^a-z0-9]|$)", re.IGNORECASE)
 
 
 def _slack_bot_token() -> str:
@@ -108,16 +110,157 @@ def _list_all_channels(token: str) -> list[dict]:
 
 
 def _oid_from_channel_name(name: str) -> str | None:
-    """Return canonical opportunities.opportunity_id if the channel name contains an opportunity id token."""
-    return find_opportunity_oid(name or "")
+    """Return canonical opportunities.opportunity_id when strict oid#### token is present."""
+    raw_name = (name or "").strip().lower()
+    if not raw_name:
+        return None
+    match = STRICT_OID_IN_CHANNEL_RE.search(raw_name)
+    if not match:
+        return None
+    return find_opportunity_oid(match.group(1))
 
 
 def _channel_matches_oid_plugin(name: str, oid: str) -> bool:
-    """Same filter as slack_plugin: name must contain alphanumeric oid prefix."""
-    prefix = _oid_to_slack_channel_prefix(oid)
-    if not prefix:
+    """Strict matcher: channel must contain exact oid#### token equal to oid."""
+    parsed_oid = _oid_from_channel_name(name)
+    if not parsed_oid:
         return False
-    return prefix in (name or "").lower()
+    return parsed_oid == normalize_opportunity_oid(oid)
+
+
+def _normalize_channel_name(name: str) -> str:
+    return (name or "").strip().lower()
+
+
+def _find_channel_by_exact_name(channels: list[dict], channel_name: str) -> dict | None:
+    target = _normalize_channel_name(channel_name)
+    if not target:
+        return None
+    for ch in channels:
+        current = _normalize_channel_name(ch.get("name") or "")
+        if current == target:
+            return ch
+    return None
+
+
+def _create_channel(token: str, channel_name: str) -> dict:
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    with httpx.Client(timeout=60.0) as client:
+        r = client.post(
+            f"{SLACK_API_BASE}/conversations.create",
+            headers=headers,
+            json={"name": channel_name, "is_private": True},
+        )
+    if r.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Slack conversations.create HTTP {r.status_code}",
+        )
+    data = r.json()
+    if not data.get("ok"):
+        err = str(data.get("error") or "unknown")
+        raise HTTPException(status_code=502, detail=f"Slack API error: {err}")
+    return data.get("channel") or {}
+
+
+def _join_channel(token: str, channel_id: str) -> bool:
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(
+            f"{SLACK_API_BASE}/conversations.join",
+            headers=headers,
+            json={"channel": channel_id},
+        )
+    return r.json().get("ok", False)
+
+
+def _batch_invite_members(token: str, channel_id: str, member_ids: list[str]) -> int:
+    unique_ids = sorted({str(m).strip() for m in member_ids if str(m).strip()})
+    if not unique_ids:
+        return 0
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+
+    def try_invite():
+        with httpx.Client(timeout=60.0) as client:
+            return client.post(
+                f"{SLACK_API_BASE}/conversations.invite",
+                headers=headers,
+                json={"channel": channel_id, "users": ",".join(unique_ids)},
+            )
+
+    r = try_invite()
+    if r.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Slack conversations.invite HTTP {r.status_code}",
+        )
+    data = r.json()
+    if not data.get("ok"):
+        err = str(data.get("error") or "unknown")
+
+        if err == "not_in_channel":
+            # Attempt to join and retry
+            if _join_channel(token, channel_id):
+                r = try_invite()
+                data = r.json()
+                if data.get("ok"):
+                    return len(unique_ids)
+
+            # If still fails or join failed, explain the likely Private Channel issue
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Slack Bot not in channel '{channel_id}'. If this is a PRIVATE channel "
+                    "created by another user, please manually invite this bot to the channel first."
+                ),
+            )
+
+        if err != "already_in_channel":
+            raise HTTPException(status_code=502, detail=f"Slack API error: {err}")
+    return len(unique_ids)
+
+
+def _lookup_slack_id_by_email(token: str, email: str) -> str | None:
+    normalized_email = (email or "").strip().lower()
+    if not normalized_email:
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    with httpx.Client(timeout=60.0) as client:
+        r = client.get(
+            f"{SLACK_API_BASE}/users.lookupByEmail",
+            headers=headers,
+            params={"email": normalized_email},
+        )
+
+    if r.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Slack users.lookupByEmail HTTP {r.status_code}",
+        )
+
+    data = r.json()
+    if not data.get("ok"):
+        err = str(data.get("error") or "unknown")
+        if err == "users_not_found":
+            return None
+        raise HTTPException(status_code=502, detail=f"Slack API error: {err}")
+
+    user = data.get("user") or {}
+    user_id = (user.get("id") or "").strip()
+    return user_id or None
 
 
 class SlackDiscoverResponse(BaseModel):
@@ -155,6 +298,22 @@ class SlackConnectRequest(BaseModel):
 
     active: bool = Field(default=True)
     note: str | None = Field(default=None)
+
+
+class SlackOrchestrateRequest(BaseModel):
+    custom_channel_name: str | None = Field(default=None)
+    team_emails: list[str] = Field(default_factory=list)
+
+
+class SlackOrchestrateResponse(BaseModel):
+    message: str
+    oid: str
+    opportunity_created: bool
+    source_created: bool
+    channel_created: bool
+    channel_name: str
+    channel_id: str
+    invited_count: int
 
 
 def discover_slack_channels(
@@ -243,11 +402,13 @@ def discover_slack_channels(
             )
             .first()
         )
+        channel_id = (ch.get("id") or "").strip()
         if not src:
             db.add(
                 OpportunitySource(
                     opportunity_id=opp.id,
                     source_type="slack",
+                    channel_id=channel_id or None,
                     status="PENDING_AUTHORIZATION",
                 )
             )
@@ -255,6 +416,8 @@ def discover_slack_channels(
             logger.info(
                 "Slack discover created slack source for opportunity_id={}", opp.id
             )
+        elif channel_id and not src.channel_id:
+            src.channel_id = channel_id
 
     db.commit()
 
@@ -312,6 +475,54 @@ def _ensure_slack_source(db: Session, opp: Opportunity) -> OpportunitySource:
     return source
 
 
+def _ensure_opportunity_and_source_for_channel(
+    db: Session,
+    *,
+    oid: str,
+    channel_id: str,
+) -> tuple[Opportunity, OpportunitySource, bool, bool]:
+    opp = db.query(Opportunity).filter(Opportunity.opportunity_id == oid).first()
+    opportunity_created = False
+    source_created = False
+
+    if not opp:
+        owner = _default_owner(db)
+        opp = Opportunity(
+            opportunity_id=oid,
+            name=oid,
+            owner_id=owner.id,
+            status=STATUS_DISCOVERED,
+            total_documents=0,
+            processed_documents=0,
+        )
+        db.add(opp)
+        db.flush()
+        opportunity_created = True
+
+    source = (
+        db.query(OpportunitySource)
+        .filter(
+            OpportunitySource.opportunity_id == opp.id,
+            OpportunitySource.source_type == "slack",
+        )
+        .first()
+    )
+    if not source:
+        source = OpportunitySource(
+            opportunity_id=opp.id,
+            source_type="slack",
+            channel_id=channel_id,
+            status="PENDING_AUTHORIZATION",
+        )
+        db.add(source)
+        db.flush()
+        source_created = True
+    elif not source.channel_id:
+        source.channel_id = channel_id
+
+    return opp, source, opportunity_created, source_created
+
+
 async def _run_slack_sync_background(oid: str) -> None:
     with Session(get_engine()) as db:
         opp = db.query(Opportunity).filter(Opportunity.opportunity_id == oid).first()
@@ -333,6 +544,85 @@ async def _run_slack_sync_background(oid: str) -> None:
             logger.warning("Slack sync_start skipped: no source row for oid={}", oid)
             return
         await sync_slack_source(db, source)
+
+
+@integrations_slack_router.post("/orchestrate/{oid}", response_model=SlackOrchestrateResponse)
+def orchestrate_slack_channel(
+    oid: str,
+    body: Annotated[SlackOrchestrateRequest, Body(default_factory=SlackOrchestrateRequest)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    token = _slack_bot_token()
+    try:
+        normalized_oid = normalize_opportunity_oid(oid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    requested_name = (body.custom_channel_name or normalized_oid).strip().lower()
+    parsed_oid = _oid_from_channel_name(requested_name)
+    if not parsed_oid or parsed_oid != normalized_oid:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Channel name must include strict signature '{normalized_oid}' "
+                "using oid#### format."
+            ),
+        )
+
+    channels = _list_all_channels(token)
+    existing = _find_channel_by_exact_name(channels, requested_name)
+    channel_created = False
+    channel = existing or {}
+    if not existing:
+        channel = _create_channel(token, requested_name)
+        channel_created = True
+
+    channel_id = (channel.get("id") or "").strip()
+    if not channel_id:
+        raise HTTPException(status_code=502, detail="Slack channel ID missing from API response.")
+
+    # Harden email input: handle potential comma-separated strings inside the list
+    raw_emails = []
+    for item in body.team_emails:
+        raw_emails.extend(str(item).split(","))
+
+    valid_relanto_emails = sorted(
+        {
+            email.strip().lower()
+            for email in raw_emails
+            if email.strip().lower().endswith("@relanto.ai")
+        }
+    )
+    resolved_member_ids: list[str] = []
+    for email in valid_relanto_emails:
+        slack_id = _lookup_slack_id_by_email(token, email)
+        if slack_id:
+            resolved_member_ids.append(slack_id)
+
+    invited_count = _batch_invite_members(token, channel_id, resolved_member_ids)
+    _, source, opp_created, src_created = _ensure_opportunity_and_source_for_channel(
+        db,
+        oid=normalized_oid,
+        channel_id=channel_id,
+    )
+    source.channel_id = channel_id
+    db.commit()
+
+    if channel_created:
+        msg = f"New private channel '{requested_name}' created and team invited successfully."
+    else:
+        msg = f"Existing channel '{requested_name}' matched; bot verified membership and invited team."
+
+    return SlackOrchestrateResponse(
+        message=msg,
+        oid=normalized_oid,
+        opportunity_created=opp_created,
+        source_created=src_created,
+        channel_created=channel_created,
+        channel_name=requested_name,
+        channel_id=channel_id,
+        invited_count=invited_count,
+    )
 
 
 @integrations_slack_router.post("/discover")
