@@ -39,6 +39,7 @@ _CORE_MODULES: tuple[str, ...] = (
     "20_opportunities.sql",
     "25_user_connections.sql",
     "30_opportunity_sources.sql",
+    "35_opportunity_requests.sql",
     "40_document_registry.sql",
     "50_chunk_registry.sql",
     "60_sase_batches.sql",

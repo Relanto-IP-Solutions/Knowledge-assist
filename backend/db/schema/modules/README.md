@@ -9,20 +9,21 @@ This folder is the source of truth for PostgreSQL schema DDL.
 3. `20_opportunities.sql`
 4. `25_user_connections.sql`
 5. `30_opportunity_sources.sql`
-6. `40_document_registry.sql`
-7. `50_chunk_registry.sql`
-8. `60_sase_batches.sql`
-9. `65_sase_questions.sql`
-10. `70_sase_picklist_options.sql`
-11. `80_answers.sql`
-12. `85_answer_versions.sql`
-13. `90_citations.sql`
-14. `95_conflicts.sql`
-15. `97_opportunity_question_answers.sql`
-16. `98_feedback.sql`
-17. `99_teams.sql`
-18. `99_team_members.sql`
-19. `99_audit_log.sql`
+6. `35_opportunity_requests.sql`
+7. `40_document_registry.sql`
+8. `50_chunk_registry.sql`
+9. `60_sase_batches.sql`
+10. `65_sase_questions.sql`
+11. `70_sase_picklist_options.sql`
+12. `80_answers.sql`
+13. `85_answer_versions.sql`
+14. `90_citations.sql`
+15. `95_conflicts.sql`
+16. `97_opportunity_question_answers.sql`
+17. `98_feedback.sql`
+18. `99_teams.sql`
+19. `99_team_members.sql`
+20. `99_audit_log.sql`
 
 ## Current apply script behavior
 
