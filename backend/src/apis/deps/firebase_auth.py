@@ -88,28 +88,33 @@ def _raw_user_lookup_by_firebase_uid(uid: str) -> tuple[int, str, str | None, li
 def _lookup_user_tuple_by_firebase_uid(
     uid: str, db: Session
 ) -> tuple[int, str, str | None, list[str] | None] | None:
-    """Resolve user row by ``firebase_uid``: raw pool first, then SQLAlchemy fallback.
+    """Resolve user row by ``firebase_uid``.
 
-    Raw ``pg8000`` lookups occasionally fail while the ORM session still succeeds; the fallback
-    avoids spurious 503s when the DB is actually healthy.
+    Prefer the request-scoped SQLAlchemy Session first (reuses the already-checked-out
+    connection for this request). Fall back to a raw pooled connection only when the ORM
+    path fails (e.g. transient session checkout/driver errors).
     """
     try:
-        return _raw_user_lookup_by_firebase_uid(uid)
-    except Exception as exc_raw:
-        logger.warning("firebase_uid raw DB lookup failed; trying ORM | uid={} err={}", uid, exc_raw)
+        u = db.query(User).filter(User.firebase_uid == uid).first()
+        if not u:
+            return None
+        return int(u.id), str(u.email), u.name, u.roles_assigned
+    except Exception as exc_orm:
+        logger.warning(
+            "firebase_uid ORM lookup failed; trying raw DB | uid={} err={}",
+            uid,
+            exc_orm,
+        )
         try:
-            u = db.query(User).filter(User.firebase_uid == uid).first()
-            if not u:
-                return None
-            return int(u.id), str(u.email), u.name, u.roles_assigned
-        except Exception as exc_orm:
-            logger.exception("firebase_uid ORM lookup also failed | uid={}", uid)
+            return _raw_user_lookup_by_firebase_uid(uid)
+        except Exception as exc_raw:
+            logger.exception("firebase_uid raw DB lookup also failed | uid={}", uid)
             raise HTTPException(
                 status_code=503,
                 detail=(
                     "Database unavailable while validating user. "
-                    f"raw={type(exc_raw).__name__}: {exc_raw}; "
-                    f"orm={type(exc_orm).__name__}: {exc_orm}"
+                    f"orm={type(exc_orm).__name__}: {exc_orm}; "
+                    f"raw={type(exc_raw).__name__}: {exc_raw}"
                 ),
             ) from None
 

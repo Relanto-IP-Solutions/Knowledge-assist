@@ -11,6 +11,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from src.services.database_manager.orm import Base
@@ -133,3 +134,20 @@ class OpportunitySource(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     opportunity = relationship("Opportunity", back_populates="sources")
+
+
+class OpportunityRequest(Base):
+    __tablename__ = "opportunity_requests"
+
+    request_id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    opportunity_title = Column(String(512), nullable=False)
+    submitted_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    status = Column(String(16), nullable=False, server_default="PENDING")
+
+    admin_remarks = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_opportunity_id = Column(
+        Integer, ForeignKey("opportunities.id", ondelete="SET NULL"), nullable=True
+    )

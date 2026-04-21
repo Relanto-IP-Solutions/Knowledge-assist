@@ -25,6 +25,7 @@ from configs.settings import get_settings
 from src.services.database_manager.orm import get_db
 from src.services.plugins import oauth_service
 from src.apis.routes import (
+    admin_routes,
     auth_routes,
     drive_routes,
     gmail_routes,
@@ -179,6 +180,7 @@ app.include_router(gmail_routes.integrations_gmail_router)
 app.include_router(gmail_routes.dashboard_gmail_router)
 app.include_router(slack_routes.router)
 app.include_router(slack_routes.integrations_slack_router)
+app.include_router(admin_routes.router)
 app.include_router(opportunity_routes.router)
 app.include_router(opportunity_routes.public_router)
 app.include_router(sync_routes.router)
