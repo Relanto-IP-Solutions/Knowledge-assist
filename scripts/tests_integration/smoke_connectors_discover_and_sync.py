@@ -36,11 +36,11 @@ Examples
 
   # Save all HTTP JSON responses to a file (connector log lines still print on the API server)
   python scripts/tests_integration/smoke_connectors_discover_and_sync.py \\
-    --base-url http://127.0.0.1:8080 --save-json output/discover_sync_report.json
+    --base-url http://0.0.0.0:8080 --save-json output/discover_sync_report.json
 
   # After smoke, verify DB rows for one opportunity (same PG_* / CLOUDSQL_* as the API)
   uv run python scripts/tests_integration/smoke_connectors_discover_and_sync.py \\
-    --base-url http://127.0.0.1:8080 --validate-oid oid1111 --save-json output/report.json
+    --base-url http://0.0.0.0:8080 --validate-oid oid1111 --save-json output/report.json
 
 Why ``gcloud logging read`` can show nothing
 ---------------------------------------------
@@ -148,7 +148,7 @@ def main() -> int:
     default_base = (
         os.environ.get("SMOKE_API_BASE_URL")
         or os.environ.get("API_BASE_URL")
-        or "http://127.0.0.1:8080"
+        or "http://0.0.0.0:8080"
     ).rstrip("/")
     p.add_argument(
         "--base-url",

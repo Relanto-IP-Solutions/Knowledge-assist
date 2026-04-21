@@ -89,7 +89,7 @@ def main() -> int:
     default_base = (
         os.environ.get("SMOKE_API_BASE_URL")
         or os.environ.get("API_BASE_URL")
-        or "http://127.0.0.1:8080"
+        or "http://0.0.0.0:8080"
     ).rstrip("/")
     p.add_argument("--base-url", default=default_base, help="API root for connector smoke")
     p.add_argument("--token", default=os.environ.get("SMOKE_API_TOKEN", ""))

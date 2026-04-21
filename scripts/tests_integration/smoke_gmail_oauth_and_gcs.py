@@ -215,7 +215,7 @@ def main() -> int:
         print(f"  ERROR: Database connection failed: {e}")
         print("\n  Troubleshooting:")
         print("    - For local Postgres: ensure PG_HOST, PG_USER, PG_PASSWORD are set")
-        print("    - For Cloud SQL: run 'cloud-sql-proxy' and set PG_HOST=127.0.0.1")
+        print("    - For Cloud SQL: run 'cloud-sql-proxy' and set PG_HOST=0.0.0.0")
         return 1
 
     inspector = inspect(engine)

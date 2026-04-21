@@ -328,7 +328,7 @@ def _restore_via_local(
             [
                 psql_path,
                 "-h",
-                "127.0.0.1",
+                "0.0.0.0",
                 "-p",
                 str(port),
                 "-U",

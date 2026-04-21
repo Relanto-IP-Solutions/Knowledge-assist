@@ -42,7 +42,7 @@ If Cloud SQL Connector fails with invalid_grant (stale gcloud user credentials),
     uv run python scripts/create_plugin_auth_tables.py
 
 When PLUGIN_AUTH_DDL_USE_PG_DIRECT=1, set PG_HOST, PG_PORT, PG_USER, PG_PASSWORD, PG_DATABASE
-(e.g. PG_HOST=127.0.0.1 while cloud-sql-proxy is running).
+(e.g. PG_HOST=0.0.0.0 while cloud-sql-proxy is running).
 """
 
 import os
@@ -74,7 +74,7 @@ def _direct_tcp_engine():
         print(
             "ERROR: Direct TCP selected but PG_HOST is empty.\n"
             "  Set PG_HOST, PG_USER, PG_PASSWORD, PG_DATABASE in configs (and PG_PORT if not 5432).\n"
-            "  For Cloud SQL, run Cloud SQL Auth Proxy locally and use PG_HOST=127.0.0.1.",
+            "  For Cloud SQL, run Cloud SQL Auth Proxy locally and use PG_HOST=0.0.0.0.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -117,7 +117,7 @@ def main() -> None:
             "    gcloud auth application-default login\n"
             "  Fix B — use TCP instead (proxy or local Postgres):\n"
             "    set PLUGIN_AUTH_DDL_USE_PG_DIRECT=1\n"
-            "    (set PG_HOST=127.0.0.1 if using cloud-sql-proxy; keep PG_USER/PG_PASSWORD)\n"
+            "    (set PG_HOST=0.0.0.0 if using cloud-sql-proxy; keep PG_USER/PG_PASSWORD)\n"
             f"\n  Details: {e}",
             file=sys.stderr,
         )

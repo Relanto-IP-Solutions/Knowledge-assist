@@ -111,7 +111,7 @@ def get_connection():
         import psycopg2
 
         conn = psycopg2.connect(
-            host=_env("PG_HOST", "127.0.0.1"),
+            host=_env("PG_HOST", "0.0.0.0"),
             port=int(_env("PG_PORT", "5432")),
             dbname=_env("PG_DATABASE", "postgres"),
             user=_env("PG_USER"),

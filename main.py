@@ -120,10 +120,10 @@ def health_db_raw():
 
 
 def _normalize_google_redirect_uri(uri: str) -> str:
-    """Normalize callback host to avoid localhost vs 127.0.0.1 mismatches."""
+    """Normalize callback host to avoid localhost vs 0.0.0.0 mismatches."""
     p = urlsplit(uri)
     host = (p.hostname or "").strip().lower()
-    if host != "127.0.0.1":
+    if host != "0.0.0.0":
         return uri
     port = f":{p.port}" if p.port else ""
     netloc = f"localhost{port}"

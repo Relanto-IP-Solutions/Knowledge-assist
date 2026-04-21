@@ -698,7 +698,7 @@ def main() -> None:
     else:
         import psycopg2
 
-        host = _env("PG_HOST", "127.0.0.1")
+        host = _env("PG_HOST", "0.0.0.0")
         port = int(_env("PG_PORT", "5432"))
         database = _env("PG_DATABASE", "pzf_dor")
         user = _env("PG_USER")
