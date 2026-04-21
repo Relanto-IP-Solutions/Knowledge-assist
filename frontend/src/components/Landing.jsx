@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { clearOpportunityIdsCache, fetchOpportunityIds } from '../services/opportunityIdsApi'
 import { createOpportunity } from '../services/opportunitiesApi'
 // ── Fiscal Quarter data ──────────────────────────────────────────────────────
@@ -20,6 +21,50 @@ const CURRENT_Q = QUARTERS.find(q => {
   const end   = new Date(q.year, q.startMonth + 2, 0)
   return TODAY >= start && TODAY <= end
 }) || QUARTERS[4] // Q1 FY2026
+const KNOWLEDGE_ASSIST_PAGE_SESSION_KEY = 'knowledgeAssist:lastPage'
+const KNOWLEDGE_ASSIST_FRESH_LOGIN_RESET_KEY = 'knowledgeAssist:freshLoginReset'
+
+function getStoredKnowledgeAssistPage() {
+  try {
+    const raw = sessionStorage.getItem(KNOWLEDGE_ASSIST_PAGE_SESSION_KEY)
+    const parsed = Number(raw)
+    if (Number.isInteger(parsed) && parsed > 0) return parsed
+    return null
+  } catch {
+    return null
+  }
+}
+
+function persistKnowledgeAssistPage(page) {
+  const parsed = Number(page)
+  if (!Number.isInteger(parsed) || parsed <= 0) return
+  try {
+    sessionStorage.setItem(KNOWLEDGE_ASSIST_PAGE_SESSION_KEY, String(parsed))
+  } catch {
+    /* noop */
+  }
+}
+
+function consumeKnowledgeAssistFreshLoginReset() {
+  try {
+    const shouldReset = sessionStorage.getItem(KNOWLEDGE_ASSIST_FRESH_LOGIN_RESET_KEY) === '1'
+    if (shouldReset) sessionStorage.removeItem(KNOWLEDGE_ASSIST_FRESH_LOGIN_RESET_KEY)
+    return shouldReset
+  } catch {
+    return false
+  }
+}
+
+function getKnowledgeAssistPageFromSearch(search) {
+  try {
+    const params = new URLSearchParams(String(search ?? ''))
+    const parsed = Number(params.get('page'))
+    if (Number.isInteger(parsed) && parsed > 0) return parsed
+    return null
+  } catch {
+    return null
+  }
+}
 
 function quarterStatus(q) {
   const end = new Date(q.year, q.startMonth + 2, 0)
@@ -405,6 +450,30 @@ function mapApiIdRowToOpportunity(r) {
 }
 
 export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onOpportunitiesRefresh }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const restoreStateRef = useRef(null)
+  if (restoreStateRef.current == null) {
+    const shouldStartFromFirstPage = consumeKnowledgeAssistFreshLoginReset()
+    const restoredPageFromSearch = getKnowledgeAssistPageFromSearch(location.search)
+    const restoredPageFromNavigation = Number(location.state?.knowledgeAssistPage)
+    const navigationPage = Number.isInteger(restoredPageFromNavigation) && restoredPageFromNavigation > 0
+      ? restoredPageFromNavigation
+      : null
+    const sessionPage = getStoredKnowledgeAssistPage()
+    const restoredPage = shouldStartFromFirstPage ? 1 : (navigationPage ?? restoredPageFromSearch ?? sessionPage)
+    const shouldRestorePage = shouldStartFromFirstPage || (Number.isInteger(restoredPage) && restoredPage > 0)
+    restoreStateRef.current = {
+      restoredPage,
+      shouldRestorePage,
+      initialPage: shouldRestorePage ? restoredPage : 1,
+    }
+  }
+  const { shouldRestorePage, initialPage } = restoreStateRef.current
+  const shouldForceRefresh = location.state?.forceRefresh === true || shouldRestorePage
+  const didApplyInitialRestoreRef = useRef(false)
+  const prevFilterSearchRef = useRef(null)
+  const PAGE_SIZE = 10
   const [filter, setFilter] = useState('all')
   const [opportunities, setOpportunities] = useState([])
   const [idsLoading, setIdsLoading] = useState(true)
@@ -415,7 +484,10 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
   const [createError, setCreateError] = useState('')
   const [createNotice, setCreateNotice] = useState('')
 
-  const loadDashboard = useCallback(async (forceRefresh = false) => {
+  const loadDashboard = useCallback(async (forceRefresh = false, requestedPage = 1) => {
+    const parsedRequestedPage = Number(requestedPage)
+    const safeRequestedPage =
+      Number.isInteger(parsedRequestedPage) && parsedRequestedPage > 0 ? parsedRequestedPage : 1
     try {
       setIdsLoading(true)
       setIdsError(null)
@@ -425,6 +497,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
       console.log('[List Refreshed]', {
         refreshKey,
         opportunityCount: baseRows.length,
+        page: safeRequestedPage,
       })
       console.log('[Dashboard Summary API]', baseRows.map(o => ({
         id: o.id,
@@ -442,8 +515,8 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
   }, [])
 
   useEffect(() => {
-    loadDashboard(refreshKey > 0)
-  }, [loadDashboard, refreshKey])
+    loadDashboard(refreshKey > 0 || shouldForceRefresh, initialPage)
+  }, [loadDashboard, refreshKey, shouldForceRefresh, initialPage])
 
   useEffect(() => {
     if (!createNotice) return
@@ -451,9 +524,20 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
     return () => window.clearTimeout(t)
   }, [createNotice])
 
-  const [page, setPage] = useState(1)
-  const PAGE_SIZE = 10
+  const [page, setPage] = useState(initialPage)
   const [oppSearch, setOppSearch] = useState('')
+
+  const setAndPersistPage = useCallback((nextPageOrUpdater) => {
+    setPage((prevPage) => {
+      const rawNext = typeof nextPageOrUpdater === 'function'
+        ? nextPageOrUpdater(prevPage)
+        : nextPageOrUpdater
+      const parsedNext = Number(rawNext)
+      if (!Number.isInteger(parsedNext) || parsedNext <= 0) return prevPage
+      persistKnowledgeAssistPage(parsedNext)
+      return parsedNext
+    })
+  }, [])
 
   const completedCount = useMemo(
     () => opportunities.filter(o => isOpportunityCompleted(o)).length,
@@ -483,8 +567,46 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
     })
   }, [filter, opportunities, oppSearch])
 
-  // Reset to page 1 whenever the active filter or search changes
-  useEffect(() => { setPage(1) }, [filter, oppSearch])
+  // Reset to page 1 only after an actual filter/search change (not on mount/restore).
+  useEffect(() => {
+    const prev = prevFilterSearchRef.current
+    prevFilterSearchRef.current = { filter, oppSearch }
+    if (!prev) return
+    if (prev.filter === filter && prev.oppSearch === oppSearch) return
+    setAndPersistPage(1)
+  }, [filter, oppSearch, setAndPersistPage])
+
+  useEffect(() => {
+    if (didApplyInitialRestoreRef.current) return
+    didApplyInitialRestoreRef.current = true
+    if (!shouldRestorePage) return
+    if (page === initialPage) return
+    setAndPersistPage(initialPage)
+  }, [initialPage, page, setAndPersistPage, shouldRestorePage])
+
+  useEffect(() => {
+    persistKnowledgeAssistPage(page)
+  }, [page])
+
+  useEffect(() => {
+    const parsedSearchPage = getKnowledgeAssistPageFromSearch(location.search)
+    const shouldUpdateSearch = parsedSearchPage !== page
+    const statePage = Number(location.state?.knowledgeAssistPage)
+    const shouldUpdateState = !Number.isInteger(statePage) || statePage !== page
+    if (!shouldUpdateSearch && !shouldUpdateState) return
+
+    const params = new URLSearchParams(location.search)
+    params.set('page', String(page))
+    const nextSearch = `?${params.toString()}`
+    const forceRefresh = location.state?.forceRefresh === true
+    navigate(
+      { pathname: location.pathname, search: nextSearch },
+      {
+        replace: true,
+        state: forceRefresh ? { knowledgeAssistPage: page, forceRefresh: true } : { knowledgeAssistPage: page },
+      },
+    )
+  }, [location.pathname, location.search, location.state, navigate, page])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const pageSlice  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -817,7 +939,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
                     key={o.id}
                     o={o}
                     last={i === pageSlice.length - 1}
-                    onOpen={() => onOpenOpp(o.id, o.name || o.id)}
+                    onOpen={() => onOpenOpp(o.id, o.name || o.id, page)}
                   />
                 ))
               )}
@@ -840,7 +962,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               <button
                 type="button"
                 disabled={page === 1}
-                onClick={() => setPage(p => p - 1)}
+                onClick={() => setAndPersistPage(p => p - 1)}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 5,
                   padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600,
@@ -869,7 +991,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
                     <button
                       key={n}
                       type="button"
-                      onClick={() => setPage(n)}
+                      onClick={() => setAndPersistPage(n)}
                       style={{
                         minWidth: 30, height: 30, borderRadius: 7, fontSize: 11, fontWeight: n === page ? 800 : 500,
                         border: n === page ? `1px solid rgba(27,38,79,.35)` : '1px solid var(--border)',
@@ -885,7 +1007,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               <button
                 type="button"
                 disabled={page === totalPages}
-                onClick={() => setPage(p => p + 1)}
+                onClick={() => setAndPersistPage(p => p + 1)}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 5,
                   padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600,
