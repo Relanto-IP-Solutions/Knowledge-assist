@@ -91,6 +91,7 @@ class OpportunitySummaryOut(BaseModel):
     opportunity_id: str
     name: str
     owner_id: int
+    status: str = ""
     human_count: int = 0
     ai_count: int = 0
     total_questions: int = 0
@@ -290,6 +291,7 @@ def list_opportunity_ids(
                     o.opportunity_id,
                     o.name,
                     o.owner_id,
+                    o.status,
                     o.created_at
                 FROM opportunities o
                 WHERE o.opportunity_id IS NOT NULL
@@ -312,6 +314,7 @@ def list_opportunity_ids(
                 ro.opportunity_id,
                 ro.name,
                 ro.owner_id,
+                ro.status,
                 COALESCE(a.human_count, 0) AS human_count,
                 COALESCE(a.ai_count, 0) AS ai_count,
                 CAST(:total_questions AS INTEGER) AS total_questions,
@@ -363,12 +366,13 @@ def list_opportunity_ids(
                 opportunity_id=str(r[0]),
                 name=str(r[1] or ""),
                 owner_id=int(r[2]),
-                human_count=int(r[3] or 0),
-                ai_count=int(r[4] or 0),
-                total_questions=int(r[5] or 0),
-                percentage=float(r[6] or 0.0),
-                human_percentage=float(r[7] or 0.0),
-                ai_percentage=float(r[8] or 0.0),
+                status=str(r[3] or ""),
+                human_count=int(r[4] or 0),
+                ai_count=int(r[5] or 0),
+                total_questions=int(r[6] or 0),
+                percentage=float(r[7] or 0.0),
+                human_percentage=float(r[8] or 0.0),
+                ai_percentage=float(r[9] or 0.0),
             )
             for r in rows
             if r[0] is not None
