@@ -2669,6 +2669,7 @@ def get_answers(
                 answer_text,
                 confidence_score,
                 status,
+                is_user_override,
                 is_active,
                 current_version
             FROM answers
@@ -2689,6 +2690,7 @@ def get_answers(
             answer_text,
             confidence_score,
             status,
+            is_user_override,
             is_active,
             current_version,
         ) in a_rows:
@@ -2698,6 +2700,7 @@ def get_answers(
                 "answer_value": answer_text,
                 "confidence_score": float(confidence_score or 0.0),
                 "status": status,
+                "is_user_override": bool(is_user_override) if is_user_override is not None else False,
                 "is_active": bool(is_active),
                 "current_version": int(current_version) if current_version is not None else 1,
             })
@@ -2830,6 +2833,7 @@ def get_answers(
                     "status": chosen.get("status"),
                     "confidence_score": chosen.get("confidence_score", 0.0),
                     "current_version": chosen.get("current_version", 1),
+                    "is_user_override": bool(chosen.get("is_user_override", False)),
                     "status": chosen.get("status"),
                     "citations": citations_by_answer.get(chosen["answer_id"], []),
                     "conflict_id": None,
@@ -2858,6 +2862,7 @@ def get_answers(
                             "status": a.get("status"),
                             "confidence_score": a.get("confidence_score", 0.0),
                             "current_version": a.get("current_version", 1),
+                            "is_user_override": bool(a.get("is_user_override", False)),
                             "status": a.get("status"),
                             "citations": citations_by_answer.get(a["answer_id"], []),
                         }
