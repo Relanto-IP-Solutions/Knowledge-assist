@@ -1,0 +1,970 @@
+[
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "subtype": "channel_join",
+    "user": "U4VLT001SAL",
+    "text": "<@U4VLT001SAL> has joined the channel",
+    "type": "message",
+    "ts": "1773600000.100001"
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "subtype": "channel_join",
+    "user": "U4VLT002CPO",
+    "text": "<@U4VLT002CPO> has joined the channel",
+    "type": "message",
+    "ts": "1773600012.100002"
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "subtype": "channel_join",
+    "user": "U4VLT003CFO",
+    "text": "<@U4VLT003CFO> has joined the channel",
+    "type": "message",
+    "ts": "1773600024.100003"
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773600300.200001",
+    "client_msg_id": "d4e5f6a7-0001-0004-0001-000000000001",
+    "text": "Hi Neha and Sanjay — good to have you both on here.\nLet's use this channel to work through the commercial and packaging questions that came up in our last call.\nNeha, I know you want to walk through the PEPM model in detail — happy to go line by line.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0001",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Hi Neha and Sanjay — good to have you both on here.\nLet's use this channel to work through the commercial and packaging questions that came up in our last call.\nNeha, I know you want to walk through the PEPM model in detail — happy to go line by line."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT002CPO",
+    "type": "message",
+    "ts": "1773600540.300001",
+    "client_msg_id": "d4e5f6a7-0002-0004-0001-000000000002",
+    "text": "Yes please.\nWe have 380 employees across the UK and Australia.\nFirst — what is PEPM exactly and how does it differ from per-user pricing?",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0002",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes please.\nWe have 380 employees across the UK and Australia.\nFirst — what is PEPM exactly and how does it differ from per-user pricing?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773600720.400001",
+    "client_msg_id": "d4e5f6a7-0003-0004-0001-000000000003",
+    "text": "Good question — it's actually a meaningful difference.\nPEPM = per employee per month.\nEvery person in your organisation counts as one unit, regardless of how many actively log in.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0003",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Good question — it's actually a meaningful difference.\nPEPM = per employee per month.\nEvery person in your organisation counts as one unit, regardless of how many actively log in."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773600730.400002",
+    "client_msg_id": "d4e5f6a7-0003-0004-0001-000000000004",
+    "text": "Per-user pricing creates a perverse incentive to restrict access — you pay less by giving fewer people the platform.\nPEPM removes that. All 380 employees have access to self-service payslips, leave requests, learning modules — included in what you've already committed to pay.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0004",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Per-user pricing creates a perverse incentive to restrict access — you pay less by giving fewer people the platform.\nPEPM removes that. All 380 employees have access to self-service payslips, leave requests, learning modules — included in what you've already committed to pay."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT002CPO",
+    "type": "message",
+    "ts": "1773600900.500001",
+    "client_msg_id": "d4e5f6a7-0004-0004-0001-000000000005",
+    "text": "That makes sense.\nSo for 380 employees — what plan and what cost?",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0005",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "That makes sense.\nSo for 380 employees — what plan and what cost?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773601080.600001",
+    "client_msg_id": "d4e5f6a7-0005-0004-0001-000000000006",
+    "text": "380 employees puts you on the Business plan (501–2,000 employee range) — so $11 PEPM on annual billing.\nWait — 380 is actually within the Professional band (101–500).\nProfessional is $14 PEPM annual.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0006",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "380 employees puts you on the Business plan (501–2,000 employee range) — so $11 PEPM on annual billing.\nWait — 380 is actually within the Professional band (101–500).\nProfessional is $14 PEPM annual."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773601090.600002",
+    "client_msg_id": "d4e5f6a7-0005-0004-0001-000000000007",
+    "text": "So: 380 x $14 x 12 = $63,840/year on annual billing.\nMonthly billing would be $17 PEPM = $77,520/year.\nAnnual saves you $13,680.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0007",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "So: 380 x $14 x 12 = $63,840/year on annual billing.\nMonthly billing would be $17 PEPM = $77,520/year.\nAnnual saves you $13,680."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT003CFO",
+    "type": "message",
+    "ts": "1773601260.700001",
+    "client_msg_id": "d4e5f6a7-0006-0004-0001-000000000008",
+    "text": "Hi — Sanjay here, CFO.\nWhat's included in the Professional plan vs Business?",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0008",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Hi — Sanjay here, CFO.\nWhat's included in the Professional plan vs Business?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773601440.800001",
+    "client_msg_id": "d4e5f6a7-0007-0004-0001-000000000009",
+    "text": "Here's the key differences for your consideration:\nProfessional ($14 PEPM): Core HR, full ATS, onboarding, basic LMS (50 courses), phone support business hours, 1 IdP for SSO, payroll available as add-on\nBusiness ($11 PEPM): Everything in Professional + full LMS with 5,000+ courses, Veltrix Ask analytics, SCIM provisioning, 24/7 phone support, 99.95% uptime SLA, native payroll included for 1 country",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0009",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Here's the key differences for your consideration:\nProfessional ($14 PEPM): Core HR, full ATS, onboarding, basic LMS (50 courses), phone support business hours, 1 IdP for SSO, payroll available as add-on\nBusiness ($11 PEPM): Everything in Professional + full LMS with 5,000+ courses, Veltrix Ask analytics, SCIM provisioning, 24/7 phone support, 99.95% uptime SLA, native payroll included for 1 country"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT003CFO",
+    "type": "message",
+    "ts": "1773601620.900001",
+    "client_msg_id": "d4e5f6a7-0008-0004-0001-000000000010",
+    "text": "So Business is actually cheaper per employee and includes more.\nWhy would anyone stay on Professional?",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0010",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "So Business is actually cheaper per employee and includes more.\nWhy would anyone stay on Professional?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773601800.100001",
+    "client_msg_id": "d4e5f6a7-0009-0004-0001-000000000011",
+    "text": "Exactly right — and honestly that's the conversation I like having :slightly_smiling_face:\nFor 380 employees we'd actually look at whether upgrading to Business makes commercial sense.\nAt 380 employees you're close to the 501 threshold where Business kicks in.\nIf you're expecting headcount growth past 500 in the next 12 months, we can structure a Business plan now at the lower PEPM and you lock in a better rate through your growth phase.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0011",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Exactly right — and honestly that's the conversation I like having "
+              },
+              {
+                "type": "emoji",
+                "name": "slightly_smiling_face",
+                "unicode": "1f642"
+              },
+              {
+                "type": "text",
+                "text": "\nFor 380 employees we'd actually look at whether upgrading to Business makes commercial sense.\nAt 380 employees you're close to the 501 threshold where Business kicks in.\nIf you're expecting headcount growth past 500 in the next 12 months, we can structure a Business plan now at the lower PEPM and you lock in a better rate through your growth phase."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT002CPO",
+    "type": "message",
+    "ts": "1773601980.110001",
+    "client_msg_id": "d4e5f6a7-0010-0004-0001-000000000012",
+    "text": "We're planning to hire about 80 people this year so yes we'll likely cross 500.\nWhat about payroll — we run payroll in both UK and Australia.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0012",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "We're planning to hire about 80 people this year so yes we'll likely cross 500.\nWhat about payroll — we run payroll in both UK and Australia."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773602160.120001",
+    "client_msg_id": "d4e5f6a7-0011-0004-0001-000000000013",
+    "text": "Good news — both UK and Australia are native Veltrix payroll countries.\nNative payroll means we run the full gross-to-net calculation in-platform, maintain the local tax tables automatically, and handle statutory filing (RTI for UK, Single Touch Payroll for Australia).",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0013",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Good news — both UK and Australia are native Veltrix payroll countries.\nNative payroll means we run the full gross-to-net calculation in-platform, maintain the local tax tables automatically, and handle statutory filing (RTI for UK, Single Touch Payroll for Australia)."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773602170.120002",
+    "client_msg_id": "d4e5f6a7-0011-0004-0001-000000000014",
+    "text": "On Business plan, one country's native payroll is bundled in.\nSecond country (Australia) is an add-on at $3 PEPM.\nFor 380 employees: $3 x 380 = $1,140/month for the second payroll country.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0014",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "On Business plan, one country's native payroll is bundled in.\nSecond country (Australia) is an add-on at $3 PEPM.\nFor 380 employees: $3 x 380 = $1,140/month for the second payroll country."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT003CFO",
+    "type": "message",
+    "ts": "1773602340.130001",
+    "client_msg_id": "d4e5f6a7-0012-0004-0001-000000000015",
+    "text": "So total would be: Business plan base + Australia payroll add-on?\nCan you give me a full annual number?",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0015",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "So total would be: Business plan base + Australia payroll add-on?\nCan you give me a full annual number?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773602520.140001",
+    "client_msg_id": "d4e5f6a7-0013-0004-0001-000000000016",
+    "text": "Full annual breakdown for 380 employees on Business plan:\nBase: 380 x $11 x 12 = $50,160\nAustralia payroll add-on: 380 x $3 x 12 = $13,680\nTotal: $63,840/year\nThat replaces your existing HRIS and both payroll systems in a single platform.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0016",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Full annual breakdown for 380 employees on Business plan:\nBase: 380 x $11 x 12 = $50,160\nAustralia payroll add-on: 380 x $3 x 12 = $13,680\nTotal: $63,840/year\nThat replaces your existing HRIS and both payroll systems in a single platform."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT003CFO",
+    "type": "message",
+    "ts": "1773602700.150001",
+    "client_msg_id": "d4e5f6a7-0014-0004-0001-000000000017",
+    "text": "We currently pay BambooHR about $40k/year, Xero Payroll for Australia roughly $8k, and ADP for UK around $15k.\nThat's $63k already and none of them talk to each other.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0017",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "We currently pay BambooHR about $40k/year, Xero Payroll for Australia roughly $8k, and ADP for UK around $15k.\nThat's $63k already and none of them talk to each other."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773602880.160001",
+    "client_msg_id": "d4e5f6a7-0015-0004-0001-000000000018",
+    "text": "So Veltrix is cost-neutral on licence alone — and that's before counting the HR admin time saved from eliminating manual reconciliation between three systems.\nOur Customer Impact Study puts that at 18 hours/week per HR FTE on average.\nHow many HR staff do you have?",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0018",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "So Veltrix is cost-neutral on licence alone — and that's before counting the HR admin time saved from eliminating manual reconciliation between three systems.\nOur Customer Impact Study puts that at 18 hours/week per HR FTE on average.\nHow many HR staff do you have?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT002CPO",
+    "type": "message",
+    "ts": "1773603060.170001",
+    "client_msg_id": "d4e5f6a7-0016-0004-0001-000000000019",
+    "text": "3 HR staff.\nAnd honestly one of them probably spends half their day just dealing with payroll queries and data updates between systems.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0019",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "3 HR staff.\nAnd honestly one of them probably spends half their day just dealing with payroll queries and data updates between systems."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773603240.180001",
+    "client_msg_id": "d4e5f6a7-0017-0004-0001-000000000020",
+    "text": "That half-day is roughly $20–25k/year in fully loaded staff cost — almost one-third of your entire Veltrix investment.\nThe net saving in year one isn't marginal — it's likely positive even before productivity gains.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0020",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "That half-day is roughly $20–25k/year in fully loaded staff cost — almost one-third of your entire Veltrix investment.\nThe net saving in year one isn't marginal — it's likely positive even before productivity gains."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT003CFO",
+    "type": "message",
+    "ts": "1773603420.190001",
+    "client_msg_id": "d4e5f6a7-0018-0004-0001-000000000021",
+    "text": "That's a much better frame than \"$63k for an HR system\".\nAre there any setup fees on top of the annual cost?",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0021",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "That's a much better frame than \"$63k for an HR system\".\nAre there any setup fees on top of the annual cost?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773603600.200001",
+    "client_msg_id": "d4e5f6a7-0019-0004-0001-000000000022",
+    "text": "No setup fees for cloud-hosted on any plan.\nIncluded at zero cost: tenant provisioning, up to 2,000 employee record imports, a 3-hour guided implementation session with a Veltrix Implementation Specialist, and access to Veltrix Academy self-service course library.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0022",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "No setup fees for cloud-hosted on any plan.\nIncluded at zero cost: tenant provisioning, up to 2,000 employee record imports, a 3-hour guided implementation session with a Veltrix Implementation Specialist, and access to Veltrix Academy self-service course library."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT002CPO",
+    "type": "message",
+    "ts": "1773603780.210001",
+    "client_msg_id": "d4e5f6a7-0020-0004-0001-000000000023",
+    "text": "How long does implementation typically take for a company our size?",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0023",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "How long does implementation typically take for a company our size?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773603960.220001",
+    "client_msg_id": "d4e5f6a7-0021-0004-0001-000000000024",
+    "text": "4–6 weeks average for a company your size with two-country payroll.\nWeek 1: tenant setup, SSO, data migration\nWeek 2: payroll config and validation for both UK and AU\nWeek 3: onboarding and leave workflows, performance setup\nWeek 4: training and pilot user rollout\nWeeks 5–6: payroll parallel run and full org go-live",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0024",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "4–6 weeks average for a company your size with two-country payroll.\nWeek 1: tenant setup, SSO, data migration\nWeek 2: payroll config and validation for both UK and AU\nWeek 3: onboarding and leave workflows, performance setup\nWeek 4: training and pilot user rollout\nWeeks 5–6: payroll parallel run and full org go-live"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT002CPO",
+    "type": "message",
+    "ts": "1773604140.230001",
+    "client_msg_id": "d4e5f6a7-0022-0004-0001-000000000025",
+    "text": "We've had bad implementations before — vendors promising 4 weeks and it turning into 6 months.\nWhat's your protection if you miss that timeline?",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0025",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "We've had bad implementations before — vendors promising 4 weeks and it turning into 6 months.\nWhat's your protection if you miss that timeline?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773604320.240001",
+    "client_msg_id": "d4e5f6a7-0023-0004-0001-000000000026",
+    "text": "Two things that make Veltrix different here.\nFirst: the 21-day PoC is literally an implementation rehearsal — SSO, data import, payroll integration all get configured during the PoC before you sign anything.\nBy the time you commit, your team has already done the hard part.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0026",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Two things that make Veltrix different here.\nFirst: the 21-day PoC is literally an implementation rehearsal — SSO, data import, payroll integration all get configured during the PoC before you sign anything.\nBy the time you commit, your team has already done the hard part."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773604330.240002",
+    "client_msg_id": "d4e5f6a7-0023-0004-0001-000000000027",
+    "text": "Second: the Order Form includes a milestone schedule with defined completion criteria.\nIf Veltrix misses a milestone due to our own resourcing — not yours — you receive a pro-rata subscription credit for the delay.\nIt's a commercial consequence, not just a promise.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0027",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Second: the Order Form includes a milestone schedule with defined completion criteria.\nIf Veltrix misses a milestone due to our own resourcing — not yours — you receive a pro-rata subscription credit for the delay.\nIt's a commercial consequence, not just a promise."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT003CFO",
+    "type": "message",
+    "ts": "1773604500.250001",
+    "client_msg_id": "d4e5f6a7-0024-0004-0001-000000000028",
+    "text": "The credit clause is something I haven't seen from other vendors.\nCan we start the PoC?",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0028",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "The credit clause is something I haven't seen from other vendors.\nCan we start the PoC?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773604680.260001",
+    "client_msg_id": "d4e5f6a7-0025-0004-0001-000000000029",
+    "text": "Yes — I'll set up a PoC scoping call for this week.\nWe'll agree success criteria upfront in writing, assign your Solutions Engineer, and kick off within 48 hours of the scoping call.\nI'll send the PoC Success Criteria template to this channel now so you can review it before the call.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0029",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes — I'll set up a PoC scoping call for this week.\nWe'll agree success criteria upfront in writing, assign your Solutions Engineer, and kick off within 48 hours of the scoping call.\nI'll send the PoC Success Criteria template to this channel now so you can review it before the call."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT002CPO",
+    "type": "message",
+    "ts": "1773604860.270001",
+    "client_msg_id": "d4e5f6a7-0026-0004-0001-000000000030",
+    "text": "Great.\nAlso — we're a registered charity in the UK.\nIs there any discount for that?",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0030",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Great.\nAlso — we're a registered charity in the UK.\nIs there any discount for that?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773605040.280001",
+    "client_msg_id": "d4e5f6a7-0027-0004-0001-000000000031",
+    "text": "Yes — 35% discount on list price for registered non-profits :tada:\nApplies to Starter, Professional, and Business plans.\nYou'd provide charity registration docs and we apply it from day one.\nWith 35% off Business plan: $11 x 0.65 = $7.15 PEPM\nFor 380 employees annual: $7.15 x 380 x 12 = $32,604\nPlus the AU payroll add-on similarly discounted: brings the total to roughly $41,500/year.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0031",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes — 35% discount on list price for registered non-profits "
+              },
+              {
+                "type": "emoji",
+                "name": "tada",
+                "unicode": "1f389"
+              },
+              {
+                "type": "text",
+                "text": "\nApplies to Starter, Professional, and Business plans.\nYou'd provide charity registration docs and we apply it from day one.\nWith 35% off Business plan: $11 x 0.65 = $7.15 PEPM\nFor 380 employees annual: $7.15 x 380 x 12 = $32,604\nPlus the AU payroll add-on similarly discounted: brings the total to roughly $41,500/year."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT003CFO",
+    "type": "message",
+    "ts": "1773605220.290001",
+    "client_msg_id": "d4e5f6a7-0028-0004-0001-000000000032",
+    "text": "Down from $63k to $41k.\nThat's a very different conversation to take to the board.",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0032",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Down from $63k to $41k.\nThat's a very different conversation to take to the board."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT002CPO",
+    "type": "message",
+    "ts": "1773605400.300001",
+    "client_msg_id": "d4e5f6a7-0029-0004-0001-000000000033",
+    "text": "Let's get the PoC going.\nCan you send times for a scoping call this week?",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0033",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Let's get the PoC going.\nCan you send times for a scoping call this week?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C4VLT1A2BCD",
+    "fetched_at": "2026-03-15 08:30:00 UTC",
+    "user": "U4VLT001SAL",
+    "type": "message",
+    "ts": "1773605520.310001",
+    "client_msg_id": "d4e5f6a7-0030-0004-0001-000000000034",
+    "text": "On it — calendar invite going out in the next 30 minutes with three time options.\nThanks Neha and Sanjay :+1:",
+    "team": "T4VELTRIX001",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "VLT0034",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "On it — calendar invite going out in the next 30 minutes with three time options.\nThanks Neha and Sanjay "
+              },
+              {
+                "type": "emoji",
+                "name": "+1",
+                "unicode": "1f44d"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

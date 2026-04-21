@@ -1,0 +1,268 @@
+
+[project]
+name = "pzf"
+version = "0.1.0"
+description = "Sales Agent application for technical requirements capture (Knowledge-Assist)"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "google-cloud-storage>=2.14.0",
+    "google-cloud-secret-manager>=2.20.0",
+    "google-cloud-documentai>=2.20.0",
+    "python-docx>=1.2.0",
+    "pypdf>=4.0.0",
+    "python-pptx>=0.6.0",
+    "openpyxl>=3.1.0",
+    "functions-framework>=3.10.1",
+    "google-cloud-pubsub>=2.35.0",
+    "google-cloud-aiplatform>=1.139.0",
+    "pandas>=3.0.1",
+    "google-genai>=1.0.0",
+    "requests>=2.31.0",
+    "langgraph>=0.2.0",
+    "jsonpatch>=1.33",
+    "cloud-sql-python-connector[pg8000]",
+    "psycopg2-binary>=2.9.0",
+    "grpcio!=1.78.1",
+    "loguru>=0.7.0",
+    "sqlalchemy>=2.0.20",
+    "google-auth-oauthlib>=1.1.0",
+    "google-api-python-client>=2.100.0",
+    "httpx>=0.25.0",
+    "pgvector>=0.2.0",
+    "beautifulsoup4>=4.12.0",
+    "firebase-admin>=7.4.0",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "python-dotenv>=1.0.0",
+    "ruff>=0.15.0",
+]
+
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+preview = true
+explicit-preview-rules = true
+select = [
+    # Core
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "N",      # pep8-naming
+    # Bug detection
+    "B",      # flake8-bugbear
+    "A",      # flake8-builtins (shadowing builtins)
+    "ASYNC",  # flake8-async (async footguns)
+    "S",      # flake8-bandit (security)
+    # Modern Python
+    "UP",     # pyupgrade (Python 3.13+ idioms, PEP 585/604/695, etc.)
+    "FA",     # flake8-future-annotations
+    "YTT",    # flake8-2020 (sys.version checks)
+    # Code quality
+    "C4",     # flake8-comprehensions
+    "SIM",    # flake8-simplify
+    "PIE",    # flake8-pie (misc lints)
+    "RET",    # flake8-return
+    "RSE",    # flake8-raise
+    "FLY",    # flynt (static join to f-string)
+    "PERF",   # Perflint (performance)
+    "FURB",   # refurb (modernization)
+    # Logging
+    "LOG",    # flake8-logging
+    "G",      # flake8-logging-format
+    # Exception handling
+    "TRY",    # tryceratops (exception best practices)
+    "EM",     # flake8-errmsg (exception messages)
+    # Pylint subset (stable, high-value rules)
+    "PLC",    # Pylint conventions
+    "PLE",    # Pylint errors
+    "PLW",    # Pylint warnings
+    # Framework-specific
+    "FAST",   # FastAPI
+    # Other
+    "ERA",    # eradicate (commented-out code)
+    "PTH",    # flake8-use-pathlib
+    "TC",     # flake8-type-checking (optimize imports)
+    "RUF",    # Ruff-specific rules
+]
+ignore = [
+    # Line length handled by formatter
+    "E501",
+    # Allow function calls in defaults (FastAPI Depends, Query, etc.)
+    "B008",
+    # HTTP exceptions intentionally don't chain to avoid leaking internal errors
+    "B904",
+    # Sometimes nested ifs are more readable
+    "SIM102",
+    # Allow commented-out code (sometimes intentional for reference)
+    "ERA001",
+    # Pydantic validators use cls, not self
+    "N805",
+    # Domain acronyms in variable names (e.g., HTML, URL)
+    "N806",
+    # Security rules that are too noisy for this codebase
+    "S101",   # assert usage (fine in non-production code paths)
+    "S104",   # bind all interfaces (handled at infra level)
+    "S106",   # hardcoded password (false positive on token_uri, etc.)
+    "S108",   # hardcoded temp file (false positives)
+    "S311",   # pseudo-random (not for crypto here)
+    "S603",   # subprocess without shell (we control inputs)
+    "S607",   # partial path (we control environment)
+    # Exception handling - too strict for rapid development
+    "TRY003", # long exception messages (we want descriptive errors)
+    "TRY301", # raise within try (sometimes valid pattern)
+    "EM101",  # string literal in exception (readability > strictness)
+    "EM102",  # f-string in exception (readability > strictness)
+    # Return statements - sometimes explicit returns aid readability
+    "RET504", # unnecessary assignment before return
+    "RET505", # unnecessary else after return
+    "RET506", # unnecessary else after raise
+    # Performance - some are too aggressive
+    "PERF203", # try-except in loop (often unavoidable)
+    # Type checking - gradual adoption
+    "TC001",  # move import into TYPE_CHECKING (gradual)
+    "TC002",  # move third-party import into TYPE_CHECKING
+    "TC003",  # move stdlib import into TYPE_CHECKING
+    # Pylint - overly strict
+    "PLR0913", # too many arguments (complex domain)
+    "PLR2004", # magic values (sometimes clearer inline)
+    "PLW2901", # loop variable overwritten (sometimes intentional)
+    # PTH - gradual migration, don't enforce everywhere yet
+    "PTH123", # open() vs Path.open() (gradual migration)
+    "PTH118", # os.path.join (gradual migration)
+    "PTH122", # os.path.splitext (gradual migration)
+    # Global statements - sometimes valid for module-level state
+    "PLW0603", # global statement
+    # Exception handling - too pedantic
+    "TRY300", # try-consider-else (style preference)
+    "TRY401", # verbose-log-message (we want detailed logs)
+    "TRY004", # type-check-without-type-error (prefer specific checks)
+    # Logging - style preferences (we use loguru, not stdlib logging)
+    "G004",   # logging-f-string (f-strings in logging are fine)
+    "G201",   # logging-exc-info (exc_info=True is valid pattern)
+    "PLE1205", # logging-too-many-args (false positive with loguru's {} format)
+    "PLE1206", # logging-too-few-args (false positive with loguru's {} format)
+    # Unicode - false positives on legitimate characters
+    "RUF001", # ambiguous-unicode-character-string
+    "RUF002", # ambiguous-unicode-character-docstring
+    "RUF003", # ambiguous-unicode-character-comment
+    # Lazy imports - valid for cold start optimization & optional deps
+    "PLC0415", # import-outside-top-level (intentional lazy imports)
+    # Lazy module loading via __getattr__ pattern
+    "F822",   # undefined-export (false positive with __getattr__ lazy loading)
+    # Security - false positives for internal tooling
+    "S608",   # hardcoded-sql-expression (internal scripts, not user input)
+    "S310",   # suspicious-url-open-usage (controlled URLs)
+    "S110",   # try-except-pass (sometimes intentional)
+]
+
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*.py" = [
+    "E402",    # sys.path manipulation before imports
+    "PLC0415", # import-outside-top-level (needed for sys.path manipulation)
+    "S105",    # hardcoded passwords (test credentials)
+    "S106",    # hardcoded passwords in function args
+    "T201",    # print statements (scripts use print)
+]
+"scripts/**/*.py" = [
+    "E402",
+    "PLC0415",
+    "S105",
+    "S106",
+    "T201",
+]
+"tests/**/*.py" = [
+    "S101",   # assert is fine in tests
+    "S105",   # test credentials
+    "S106",   # test credentials in function args
+    "PLR2004", # magic values in tests are fine
+    "ARG001", # unused function args (fixtures)
+    "ARG002", # unused method args (fixtures)
+]
+"**/conftest.py" = [
+    "ARG001",
+    "ARG002",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.isort]
+known-first-party = ["src", "configs", "functions"]
+combine-as-imports = true
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "first-party",
+    "local-folder",
+]
+split-on-trailing-comma = true
+force-single-line = false
+lines-after-imports = 2
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body", "fastapi.Header"]
+
+[tool.ruff.lint.pylint]
+max-args = 8
+max-branches = 15
+max-returns = 8
+max-statements = 60
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = ["pydantic.BaseModel", "sqlalchemy.orm.DeclarativeBase"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[tool.ruff.format]
+preview = true
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+skip-magic-trailing-comma = false
+docstring-code-format = true
+docstring-code-line-length = 80

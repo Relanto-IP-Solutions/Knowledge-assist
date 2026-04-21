@@ -1,0 +1,152 @@
+{
+  "lastUpdatedAt": "2026-03-19T09:00:00.000000+00:00",
+  "opportunities": [
+    {
+      "opportunityId": "OPP-VLT-001",
+      "lastUpdatedAt": "2026-03-15T08:30:00.000000+00:00",
+      "channels": [
+        {
+          "id": "C4VLT1A2BCD",
+          "name": "veltrix-pricing-payroll-neha-sanjay",
+          "opportunityId": "OPP-VLT-001",
+          "isLinked": true,
+          "isPrivate": true,
+          "topic": "Veltrix pricing, payroll and PoC discussion",
+          "purpose": "Async commercial channel for Neha (CPO) and Sanjay (CFO) to review Veltrix PEPM pricing, UK and Australia native payroll costs, non-profit charity discount, and PoC terms before committing to a scoping call.",
+          "messageCount": 34,
+          "memberCount": 3,
+          "createdAt": "2026-03-15T08:15:00+00:00",
+          "linkedAt": "2026-03-15T08:20:00+00:00",
+          "lastSyncAt": "2026-03-15T08:30:00.000000+00:00",
+          "lastModifiedAt": "2026-03-15T08:30:00.000000+00:00",
+          "members": [
+            {
+              "id": "U4VLT001SAL",
+              "name": "Ryan-Veltrix-Sales",
+              "isBot": false,
+              "addedAt": "2026-03-15T08:15:00+00:00"
+            },
+            {
+              "id": "U4VLT002CPO",
+              "name": "Neha-Client-CPO",
+              "isBot": false,
+              "addedAt": "2026-03-15T08:15:00+00:00"
+            },
+            {
+              "id": "U4VLT003CFO",
+              "name": "Sanjay-Client-CFO",
+              "isBot": false,
+              "addedAt": "2026-03-15T08:15:00+00:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "opportunityId": "OPP-VLT-002",
+      "lastUpdatedAt": "2026-03-17T10:00:00.000000+00:00",
+      "channels": [
+        {
+          "id": "C5VLT2B3CEF",
+          "name": "veltrix-eval-hartwell-group",
+          "opportunityId": "OPP-VLT-002",
+          "isLinked": true,
+          "isPrivate": true,
+          "topic": "Veltrix platform evaluation for Hartwell Group",
+          "purpose": "Evaluation channel for Jamira (HR Director), Sam (IT Manager), and Kevin (Ops) at Hartwell Group to explore Veltrix modules, compare against BambooHR and Rippling, review Azure AD and SCIM integration, mandatory training compliance, Veltrix Ask analytics, and attrition prediction capabilities.",
+          "messageCount": 32,
+          "memberCount": 5,
+          "createdAt": "2026-03-17T09:45:00+00:00",
+          "linkedAt": "2026-03-17T09:50:00+00:00",
+          "lastSyncAt": "2026-03-17T10:00:00.000000+00:00",
+          "lastModifiedAt": "2026-03-17T10:00:00.000000+00:00",
+          "members": [
+            {
+              "id": "U5VLT001SAL",
+              "name": "Ryan-Veltrix-Sales",
+              "isBot": false,
+              "addedAt": "2026-03-17T09:45:00+00:00"
+            },
+            {
+              "id": "U5VLT002HRD",
+              "name": "Jamira-Client-HRDirector",
+              "isBot": false,
+              "addedAt": "2026-03-17T09:45:00+00:00"
+            },
+            {
+              "id": "U5VLT003ITM",
+              "name": "Sam-Client-ITManager",
+              "isBot": false,
+              "addedAt": "2026-03-17T09:45:00+00:00"
+            },
+            {
+              "id": "U5VLT004OPS",
+              "name": "Priya-Veltrix-SolutionsEngineer",
+              "isBot": false,
+              "addedAt": "2026-03-17T09:45:00+00:00"
+            },
+            {
+              "id": "U5VLT005OPS",
+              "name": "Kevin-Client-Ops",
+              "isBot": false,
+              "addedAt": "2026-03-17T09:46:00+00:00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "opportunityId": "OPP-VLT-003",
+      "lastUpdatedAt": "2026-03-19T09:00:00.000000+00:00",
+      "channels": [
+        {
+          "id": "C6VLT3C4DFG",
+          "name": "veltrix-security-legal-meridian",
+          "opportunityId": "OPP-VLT-003",
+          "isLinked": true,
+          "isPrivate": true,
+          "topic": "Veltrix security, GDPR, SLA and data portability review for Meridian Group",
+          "purpose": "Security and legal deep dive channel for Aisha (CISO), Reza (DPO), and Thomas at Meridian Group to evaluate Veltrix field-level encryption, BYOK, ISO 27701 certification, EU and UK data residency, custom GDPR DPA with Article 9 health data clauses, breach notification, payroll run day SLA, and post-termination data portability.",
+          "messageCount": 33,
+          "memberCount": 5,
+          "createdAt": "2026-03-19T08:45:00+00:00",
+          "linkedAt": "2026-03-19T08:50:00+00:00",
+          "lastSyncAt": "2026-03-19T09:00:00.000000+00:00",
+          "lastModifiedAt": "2026-03-19T09:00:00.000000+00:00",
+          "members": [
+            {
+              "id": "U6VLT001SAL",
+              "name": "Ryan-Veltrix-Sales",
+              "isBot": false,
+              "addedAt": "2026-03-19T08:45:00+00:00"
+            },
+            {
+              "id": "U6VLT002CSO",
+              "name": "Aisha-Client-CISO",
+              "isBot": false,
+              "addedAt": "2026-03-19T08:45:00+00:00"
+            },
+            {
+              "id": "U6VLT003DPO",
+              "name": "Reza-Client-DPO",
+              "isBot": false,
+              "addedAt": "2026-03-19T08:45:00+00:00"
+            },
+            {
+              "id": "U6VLT004SEC",
+              "name": "Marcus-Veltrix-Security",
+              "isBot": false,
+              "addedAt": "2026-03-19T08:45:00+00:00"
+            },
+            {
+              "id": "U6VLT005LEG",
+              "name": "Thomas-Client-Legal",
+              "isBot": false,
+              "addedAt": "2026-03-19T08:46:00+00:00"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

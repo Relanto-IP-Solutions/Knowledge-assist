@@ -1,0 +1,952 @@
+[
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "subtype": "channel_join",
+    "user": "U3NVP001SAL",
+    "text": "<@U3NVP001SAL> has joined the channel",
+    "type": "message",
+    "ts": "1773500000.000001"
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "subtype": "channel_join",
+    "user": "U3NVP002OPS",
+    "text": "<@U3NVP002OPS> has joined the channel",
+    "type": "message",
+    "ts": "1773500010.000002"
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "subtype": "channel_join",
+    "user": "U3NVP003VPE",
+    "text": "<@U3NVP003VPE> has joined the channel",
+    "type": "message",
+    "ts": "1773500020.000003"
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773500400.100001",
+    "client_msg_id": "c3d4e5f6-0001-0003-0001-000000000001",
+    "text": "Hey Tom and Melissa — good to connect on here.\nI wanted a space where we can keep the conversation going between calls.\nI know from our last session that you're also evaluating DataViz Pro and possibly an open-source option.\nHappy to answer anything that comes up as you compare.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2001",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Hey Tom and Melissa — good to connect on here.\nI wanted a space where we can keep the conversation going between calls.\nI know from our last session that you're also evaluating DataViz Pro and possibly an open-source option.\nHappy to answer anything that comes up as you compare."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP002OPS",
+    "type": "message",
+    "ts": "1773500640.200001",
+    "client_msg_id": "c3d4e5f6-0002-0003-0001-000000000002",
+    "text": "Thanks Ryan.\nYes we had the DataViz Pro demo yesterday.\nHonest question — how does your data viz actually compare to theirs?\nTheir demo looked pretty slick.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2002",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Thanks Ryan.\nYes we had the DataViz Pro demo yesterday.\nHonest question — how does your data viz actually compare to theirs?\nTheir demo looked pretty slick."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773500820.300001",
+    "client_msg_id": "c3d4e5f6-0003-0003-0001-000000000002",
+    "text": "Honest answer — DataViz Pro is a solid product for certain use cases.\nBut here's the direct comparison on the things that matter for operational analytics:",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2003",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Honest answer — DataViz Pro is a solid product for certain use cases.\nBut here's the direct comparison on the things that matter for operational analytics:"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773500840.300002",
+    "client_msg_id": "c3d4e5f6-0003-0003-0001-000000000003",
+    "text": "Chart library: NovaPulse 60+ types including geospatial heatmaps and network graphs. DataViz Pro: 35 types, no native geospatial.\nDashboard refresh: NovaPulse <2 seconds via WebSocket. DataViz Pro: minimum 30-second refresh interval.\nEmbedded analytics: included in NovaPulse Business plan. DataViz Pro: requires a separate Embed licence at additional per-viewer cost.\nSecurity cert: NovaPulse SOC 2 Type II. DataViz Pro: SOC 2 Type I only.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2004",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Chart library: NovaPulse 60+ types including geospatial heatmaps and network graphs. DataViz Pro: 35 types, no native geospatial.\nDashboard refresh: NovaPulse <2 seconds via WebSocket. DataViz Pro: minimum 30-second refresh interval.\nEmbedded analytics: included in NovaPulse Business plan. DataViz Pro: requires a separate Embed licence at additional per-viewer cost.\nSecurity cert: NovaPulse SOC 2 Type II. DataViz Pro: SOC 2 Type I only."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773500860.300003",
+    "client_msg_id": "c3d4e5f6-0003-0003-0001-000000000004",
+    "text": "Where DataViz Pro beats us: native R and Python integration for statistical modelling.\nIf your team does heavy custom stats work, worth noting.\nBut for operational dashboards and CRM analytics — our use case — the comparison is clearly in our favour.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2005",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Where DataViz Pro beats us: native R and Python integration for statistical modelling.\nIf your team does heavy custom stats work, worth noting.\nBut for operational dashboards and CRM analytics — our use case — the comparison is clearly in our favour."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP002OPS",
+    "type": "message",
+    "ts": "1773501000.400001",
+    "client_msg_id": "c3d4e5f6-0004-0003-0001-000000000005",
+    "text": "The 30-second refresh thing is actually a problem for us.\nWe do intraday inventory decisions and that lag would be painful.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2006",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "The 30-second refresh thing is actually a problem for us.\nWe do intraday inventory decisions and that lag would be painful."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773501120.500001",
+    "client_msg_id": "c3d4e5f6-0005-0003-0001-000000000006",
+    "text": "Exactly — and that's not a configuration thing with DataViz Pro, it's a platform architecture limitation.\nOur sub-2-second refresh is WebSocket-based, so it's a persistent connection, not a polling mechanism.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2007",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Exactly — and that's not a configuration thing with DataViz Pro, it's a platform architecture limitation.\nOur sub-2-second refresh is WebSocket-based, so it's a persistent connection, not a polling mechanism."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP003VPE",
+    "type": "message",
+    "ts": "1773501300.600001",
+    "client_msg_id": "c3d4e5f6-0006-0003-0001-000000000007",
+    "text": "Melissa here — our CTO raised Metabase and Grafana as open-source alternatives.\nThe pitch was basically \"it's free\".\nHow do you respond to that?",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2008",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Melissa here — our CTO raised Metabase and Grafana as open-source alternatives.\nThe pitch was basically \"it's free\".\nHow do you respond to that?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773501480.700001",
+    "client_msg_id": "c3d4e5f6-0007-0003-0001-000000000008",
+    "text": "Fair challenge — and the licence cost is genuinely $0 for those tools.\nBut \"free\" is the licence, not the total cost.\nHere's what the hidden cost actually looks like:",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2009",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Fair challenge — and the licence cost is genuinely $0 for those tools.\nBut \"free\" is the licence, not the total cost.\nHere's what the hidden cost actually looks like:"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773501500.700002",
+    "client_msg_id": "c3d4e5f6-0007-0003-0001-000000000009",
+    "text": "Engineering time to deploy + maintain + upgrade a production open-source stack: 15–20 hours/month on average.\nAt $80–$150/hour fully loaded engineering cost = $1,200–$3,000/month in hidden labour.\nThat's $14,400–$36,000/year before you've built a single dashboard.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2010",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Engineering time to deploy + maintain + upgrade a production open-source stack: 15–20 hours/month on average.\nAt $80–$150/hour fully loaded engineering cost = $1,200–$3,000/month in hidden labour.\nThat's $14,400–$36,000/year before you've built a single dashboard."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773501510.700003",
+    "client_msg_id": "c3d4e5f6-0007-0003-0001-000000000010",
+    "text": "On top of that: enterprise SSO/SAML, SOC 2 audit trails, native CRM integration, and a guaranteed SLA don't exist in Metabase or Grafana out of the box.\nBuilding those adds 3–6 months of engineering on top.\nI can share a TCO calculator that lets you plug in your own numbers: resources.novapulse.io/tco-calculator",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2011",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "On top of that: enterprise SSO/SAML, SOC 2 audit trails, native CRM integration, and a guaranteed SLA don't exist in Metabase or Grafana out of the box.\nBuilding those adds 3–6 months of engineering on top.\nI can share a TCO calculator that lets you plug in your own numbers: resources.novapulse.io/tco-calculator"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP003VPE",
+    "type": "message",
+    "ts": "1773501660.800001",
+    "client_msg_id": "c3d4e5f6-0008-0003-0001-000000000011",
+    "text": "The TCO framing will help with our CTO.\nHe responds to numbers not pitches.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2012",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "The TCO framing will help with our CTO.\nHe responds to numbers not pitches."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP002OPS",
+    "type": "message",
+    "ts": "1773501840.900001",
+    "client_msg_id": "c3d4e5f6-0009-0003-0001-000000000012",
+    "text": "We're a logistics company btw.\nDo you have any relevant case studies?",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2013",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "We're a logistics company btw.\nDo you have any relevant case studies?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773502020.100001",
+    "client_msg_id": "c3d4e5f6-0010-0003-0001-000000000013",
+    "text": "Perfect timing — we have a direct one.\nGlobal Freight Partners: a 3PL operator with 28-country operations and 1,200 employees.\nThey had exactly your problem — no unified view of shipment status, carrier performance, or cost-per-route data. 11 separate spreadsheet trackers.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2014",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Perfect timing — we have a direct one.\nGlobal Freight Partners: a 3PL operator with 28-country operations and 1,200 employees.\nThey had exactly your problem — no unified view of shipment status, carrier performance, or cost-per-route data. 11 separate spreadsheet trackers."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773502030.100002",
+    "client_msg_id": "c3d4e5f6-0010-0003-0001-000000000014",
+    "text": "After 8-week Business plan deployment (SAP TM + FedEx/DHL carrier APIs + Salesforce):\n- On-time delivery rate: 82% → 94%\n- Carrier costs reduced 11% via data-driven carrier selection\n- Customer complaints down 40%\n- 120 staff hours/week of manual tracking eliminated",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2015",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "After 8-week Business plan deployment (SAP TM + FedEx/DHL carrier APIs + Salesforce):\n- On-time delivery rate: 82% → 94%\n- Carrier costs reduced 11% via data-driven carrier selection\n- Customer complaints down 40%\n- 120 staff hours/week of manual tracking eliminated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP002OPS",
+    "type": "message",
+    "ts": "1773502200.110001",
+    "client_msg_id": "c3d4e5f6-0011-0003-0001-000000000015",
+    "text": "Those are meaningful numbers.\nCan we speak to someone at Global Freight Partners directly?",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2016",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Those are meaningful numbers.\nCan we speak to someone at Global Freight Partners directly?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773502320.120001",
+    "client_msg_id": "c3d4e5f6-0012-0003-0001-000000000016",
+    "text": "Yes — they're a referenceable customer.\nI'll connect you with their VP of Operations who led the deployment.\nI'll send a warm intro email — can usually get a 30-min call within a week.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2017",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes — they're a referenceable customer.\nI'll connect you with their VP of Operations who led the deployment.\nI'll send a warm intro email — can usually get a 30-min call within a week."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP003VPE",
+    "type": "message",
+    "ts": "1773502500.130001",
+    "client_msg_id": "c3d4e5f6-0013-0003-0001-000000000017",
+    "text": "Our board is asking about overall ROI benchmarks before they approve evaluation budget.\nWhat's the average ROI customers see?",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2018",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Our board is asking about overall ROI benchmarks before they approve evaluation budget.\nWhat's the average ROI customers see?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773502680.140001",
+    "client_msg_id": "c3d4e5f6-0014-0003-0001-000000000018",
+    "text": "From our 2024 Customer Value Study across 85 customers:\n- Average 6-month ROI: 218%\n- Median time to positive ROI: 11 weeks\n- Average reduction in manual reporting time: 62%\n- Average reduction in CRM data-entry errors: 73%",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2019",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "From our 2024 Customer Value Study across 85 customers:\n- Average 6-month ROI: 218%\n- Median time to positive ROI: 11 weeks\n- Average reduction in manual reporting time: 62%\n- Average reduction in CRM data-entry errors: 73%"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP003VPE",
+    "type": "message",
+    "ts": "1773502800.150001",
+    "client_msg_id": "c3d4e5f6-0015-0003-0001-000000000019",
+    "text": "218% in 6 months is a strong claim.\nHow is that calculated — our board will push on methodology.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2020",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "218% in 6 months is a strong claim.\nHow is that calculated — our board will push on methodology."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773502980.160001",
+    "client_msg_id": "c3d4e5f6-0016-0003-0001-000000000020",
+    "text": "Standard ROI formula: (Value Delivered minus Total Platform Cost) / Total Platform Cost x 100, over 6 months.\nValue categories: labour savings from automation, revenue uplift from faster decisions, error reduction cost savings.\nEach customer provided their own data — not estimated by us.\nValidated against system logs where possible (audit log records actual ticket volume; payroll correction logs confirm error rates etc.).",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2021",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Standard ROI formula: (Value Delivered minus Total Platform Cost) / Total Platform Cost x 100, over 6 months.\nValue categories: labour savings from automation, revenue uplift from faster decisions, error reduction cost savings.\nEach customer provided their own data — not estimated by us.\nValidated against system logs where possible (audit log records actual ticket volume; payroll correction logs confirm error rates etc.)."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773502990.160002",
+    "client_msg_id": "c3d4e5f6-0016-0003-0001-000000000021",
+    "text": "I can share the full study methodology doc — happy to walk your board through it too if useful.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2022",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "I can share the full study methodology doc — happy to walk your board through it too if useful."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP003VPE",
+    "type": "message",
+    "ts": "1773503160.170001",
+    "client_msg_id": "c3d4e5f6-0017-0003-0001-000000000022",
+    "text": "That would actually be helpful yes.\nOur CFO and board rep both want to see source data before approving anything.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2023",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "That would actually be helpful yes.\nOur CFO and board rep both want to see source data before approving anything."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP002OPS",
+    "type": "message",
+    "ts": "1773503340.180001",
+    "client_msg_id": "c3d4e5f6-0018-0003-0001-000000000023",
+    "text": "Different question — we're worried our BI team will find it hard to adopt.\nWe have a few non-technical people who struggle with new tools.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2024",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Different question — we're worried our BI team will find it hard to adopt.\nWe have a few non-technical people who struggle with new tools."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773503520.190001",
+    "client_msg_id": "c3d4e5f6-0019-0003-0001-000000000024",
+    "text": "That's one of the most common concerns we hear — and one of the easiest to put to rest empirically.\nOur average time-to-first-dashboard for a non-technical user is 47 minutes from first login.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2025",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "That's one of the most common concerns we hear — and one of the easiest to put to rest empirically.\nOur average time-to-first-dashboard for a non-technical user is 47 minutes from first login."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773503530.190002",
+    "client_msg_id": "c3d4e5f6-0019-0003-0001-000000000025",
+    "text": "Best way to address this for your team: give 2-3 of your most non-technical users sandbox access during the PoC and let them report back.\nThat's real evidence rather than our assurance.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2026",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Best way to address this for your team: give 2-3 of your most non-technical users sandbox access during the PoC and let them report back.\nThat's real evidence rather than our assurance."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP002OPS",
+    "type": "message",
+    "ts": "1773503700.200001",
+    "client_msg_id": "c3d4e5f6-0020-0003-0001-000000000026",
+    "text": "That's actually a smart way to handle it.\nI like that you're not just telling us it's easy.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2027",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "That's actually a smart way to handle it.\nI like that you're not just telling us it's easy."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP003VPE",
+    "type": "message",
+    "ts": "1773503880.210001",
+    "client_msg_id": "c3d4e5f6-0021-0003-0001-000000000027",
+    "text": "One thing that came up in our DataViz Pro call — they mentioned a feature we need that isn't on your roadmap yet.\nReal-time geospatial route overlay for live shipment tracking.\nIs that something NovaPulse can do?",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2028",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "One thing that came up in our DataViz Pro call — they mentioned a feature we need that isn't on your roadmap yet.\nReal-time geospatial route overlay for live shipment tracking.\nIs that something NovaPulse can do?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773504060.220001",
+    "client_msg_id": "c3d4e5f6-0022-0003-0001-000000000028",
+    "text": "Good question — I want to be straight with you rather than overpromise.\nGeospatial heatmaps: yes, available today.\nReal-time route overlay with live GPS feed: not available as a native feature currently.\nIt's on our roadmap but I can't give you a committed delivery date — it's in the long-term planning phase.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2029",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Good question — I want to be straight with you rather than overpromise.\nGeospatial heatmaps: yes, available today.\nReal-time route overlay with live GPS feed: not available as a native feature currently.\nIt's on our roadmap but I can't give you a committed delivery date — it's in the long-term planning phase."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773504070.220002",
+    "client_msg_id": "c3d4e5f6-0022-0003-0001-000000000029",
+    "text": "What we can do today: ingest a GPS feed via our REST API and build a custom geospatial layer in the Analytics Studio using the existing map chart type.\nNot the same as a native route overlay but it gets you ~80% of the way there without waiting for the roadmap.\nWant me to get our Solutions Engineer to show you that configuration in the PoC?",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2030",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "What we can do today: ingest a GPS feed via our REST API and build a custom geospatial layer in the Analytics Studio using the existing map chart type.\nNot the same as a native route overlay but it gets you ~80% of the way there without waiting for the roadmap.\nWant me to get our Solutions Engineer to show you that configuration in the PoC?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP002OPS",
+    "type": "message",
+    "ts": "1773504240.230001",
+    "client_msg_id": "c3d4e5f6-0023-0003-0001-000000000030",
+    "text": "Yes — show us what's possible now rather than what might come later.\nWe appreciate the honesty on the roadmap thing btw.\nMost vendors would have just said \"it's coming soon\".",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2031",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes — show us what's possible now rather than what might come later.\nWe appreciate the honesty on the roadmap thing btw.\nMost vendors would have just said \"it's coming soon\"."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP001SAL",
+    "type": "message",
+    "ts": "1773504360.240001",
+    "client_msg_id": "c3d4e5f6-0024-0003-0001-000000000031",
+    "text": "We'd rather you find out everything now than be surprised after you sign.\nOkay — here's what I'll action from this conversation:\n1. TCO calculator link sent\n2. ROI study methodology doc\n3. Warm intro to Global Freight Partners VP Ops\n4. PoC kick-off with Solutions Engineer including GPS feed demo\nI'll get all of that out by EOD tomorrow.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2032",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "We'd rather you find out everything now than be surprised after you sign.\nOkay — here's what I'll action from this conversation:\n1. TCO calculator link sent\n2. ROI study methodology doc\n3. Warm intro to Global Freight Partners VP Ops\n4. PoC kick-off with Solutions Engineer including GPS feed demo\nI'll get all of that out by EOD tomorrow."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP003VPE",
+    "type": "message",
+    "ts": "1773504480.250001",
+    "client_msg_id": "c3d4e5f6-0025-0003-0001-000000000032",
+    "text": "Great — this channel is useful.\nWe'll drop questions in here as they come up during internal reviews.",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2033",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Great — this channel is useful.\nWe'll drop questions in here as they come up during internal reviews."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C3NVP5C6MHJ",
+    "fetched_at": "2026-03-14 14:00:00 UTC",
+    "user": "U3NVP002OPS",
+    "type": "message",
+    "ts": "1773504540.260001",
+    "client_msg_id": "c3d4e5f6-0026-0003-0001-000000000033",
+    "text": "Same.\nThanks Ryan — most useful vendor conversation we've had so far :+1:",
+    "team": "T3NOVAPULSE3",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK2034",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Same.\nThanks Ryan — most useful vendor conversation we've had so far "
+              },
+              {
+                "type": "emoji",
+                "name": "+1",
+                "unicode": "1f44d"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

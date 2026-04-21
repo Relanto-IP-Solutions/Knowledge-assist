@@ -1,0 +1,1015 @@
+[
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "subtype": "channel_join",
+    "user": "U1NVP001SAL",
+    "text": "<@U1NVP001SAL> has joined the channel",
+    "type": "message",
+    "ts": "1773100000.000001"
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "subtype": "channel_join",
+    "user": "U1NVP002CLI",
+    "text": "<@U1NVP002CLI> has joined the channel",
+    "type": "message",
+    "ts": "1773100010.000002"
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "subtype": "channel_join",
+    "user": "U1NVP003CFO",
+    "text": "<@U1NVP003CFO> has joined the channel",
+    "type": "message",
+    "ts": "1773100020.000003"
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773100200.100001",
+    "client_msg_id": "a1b2c3d4-0001-0001-0001-000000000001",
+    "text": "Hi Priya and Anita — glad to have you both on this channel.\nI wanted to set this up as an async space so you can fire questions any time between our calls.\nShall we start with pricing since that's what came up at the end of our last call?",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0001",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Hi Priya and Anita — glad to have you both on this channel.\nI wanted to set this up as an async space so you can fire questions any time between our calls.\nShall we start with pricing since that's what came up at the end of our last call?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP002CLI",
+    "type": "message",
+    "ts": "1773100560.200001",
+    "client_msg_id": "a1b2c3d4-0002-0001-0001-000000000002",
+    "text": "Yes please.\nWe're about 240 users who'd need access.\nWhat plan would that put us on?",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0002",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes please.\nWe're about 240 users who'd need access.\nWhat plan would that put us on?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773100680.300001",
+    "client_msg_id": "a1b2c3d4-0003-0001-0001-000000000003",
+    "text": "240 users puts you squarely on the Business plan.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0003",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "240 users puts you squarely on the Business plan."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773100690.300002",
+    "client_msg_id": "a1b2c3d4-0003-0001-0001-000000000004",
+    "text": "That's $45 per user per month on annual billing.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0004",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "That's $45 per user per month on annual billing."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773100700.300003",
+    "client_msg_id": "a1b2c3d4-0003-0001-0001-000000000005",
+    "text": "So 240 x $45 x 12 = $129,600 per year.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0005",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "So 240 x $45 x 12 = $129,600 per year."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP003CFO",
+    "type": "message",
+    "ts": "1773101100.400001",
+    "client_msg_id": "a1b2c3d4-0004-0001-0001-000000000006",
+    "text": "That's higher than I expected tbh.\nWhat does Business actually include vs the Professional plan?",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0006",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "That's higher than I expected tbh.\nWhat does Business actually include vs the Professional plan?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773101340.500001",
+    "client_msg_id": "a1b2c3d4-0005-0001-0001-000000000007",
+    "text": "Good question Anita — here's the key diff between Professional and Business for your size:",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0007",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Good question Anita — here's the key diff between Professional and Business for your size:"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773101360.500002",
+    "client_msg_id": "a1b2c3d4-0005-0001-0001-000000000008",
+    "text": "Professional: up to 50 users, $55/user/mo annual, 500 GB storage, 100k API calls/month, 1 IdP for SSO\nBusiness: 51–200 users, $45/user/mo annual, 2 TB storage, 500k API calls/month, 2 IdPs, white-labelling, 99.95% uptime SLA, 24/7 phone support",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0008",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Professional: up to 50 users, $55/user/mo annual, 500 GB storage, 100k API calls/month, 1 IdP for SSO\nBusiness: 51–200 users, $45/user/mo annual, 2 TB storage, 500k API calls/month, 2 IdPs, white-labelling, 99.95% uptime SLA, 24/7 phone support"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773101370.500003",
+    "client_msg_id": "a1b2c3d4-0005-0001-0001-000000000009",
+    "text": "Also note — Business is actually *cheaper* per user than Professional ($45 vs $55), so the volume discount kicks in at your scale.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0009",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Also note — Business is actually *cheaper* per user than Professional ($45 vs $55), so the volume discount kicks in at your scale."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP003CFO",
+    "type": "message",
+    "ts": "1773101520.600001",
+    "client_msg_id": "a1b2c3d4-0006-0001-0001-000000000010",
+    "text": "Oh interesting — so we'd actually pay less per head than a smaller company on Professional?",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0010",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Oh interesting — so we'd actually pay less per head than a smaller company on Professional?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773101580.600002",
+    "client_msg_id": "a1b2c3d4-0006-0001-0001-000000000011",
+    "text": "Exactly right :+1:\nThe pricing is designed so larger organisations get more value per dollar, not less.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0011",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Exactly right "
+              },
+              {
+                "type": "emoji",
+                "name": "+1",
+                "unicode": "1f44d"
+              },
+              {
+                "type": "text",
+                "text": "\nThe pricing is designed so larger organisations get more value per dollar, not less."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP002CLI",
+    "type": "message",
+    "ts": "1773101820.700001",
+    "client_msg_id": "a1b2c3d4-0007-0001-0001-000000000012",
+    "text": "What if we only want to start with 80 users and scale up later?\nDo we have to commit to 240 upfront?",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0012",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "What if we only want to start with 80 users and scale up later?\nDo we have to commit to 240 upfront?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773101940.800001",
+    "client_msg_id": "a1b2c3d4-0008-0001-0001-000000000013",
+    "text": "No — you can start at 80 users on Business plan.\nMid-year additions are billed pro-rata for the remaining months of the term.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0013",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "No — you can start at 80 users on Business plan.\nMid-year additions are billed pro-rata for the remaining months of the term."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773101950.800002",
+    "client_msg_id": "a1b2c3d4-0008-0001-0001-000000000014",
+    "text": "So if you add 40 users in month 6, you'd only pay for those 40 x $45 x 6 remaining months.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0014",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "So if you add 40 users in month 6, you'd only pay for those 40 x $45 x 6 remaining months."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP002CLI",
+    "type": "message",
+    "ts": "1773102120.900001",
+    "client_msg_id": "a1b2c3d4-0009-0001-0001-000000000015",
+    "text": "That's good.\nAnd is there a difference between monthly vs annual billing?",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0015",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "That's good.\nAnd is there a difference between monthly vs annual billing?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773102240.100001",
+    "client_msg_id": "a1b2c3d4-0010-0001-0001-000000000016",
+    "text": "Yes — annual billing saves you 15% vs monthly.\nBusiness plan monthly is $54/user vs $45 annual.\nFor 240 users that's a $25,920/year difference.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0016",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes — annual billing saves you 15% vs monthly.\nBusiness plan monthly is $54/user vs $45 annual.\nFor 240 users that's a $25,920/year difference."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP003CFO",
+    "type": "message",
+    "ts": "1773102360.110001",
+    "client_msg_id": "a1b2c3d4-0011-0001-0001-000000000017",
+    "text": "Annual makes sense if we're committed.\nAre there setup or implementation fees on top of that?",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0017",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Annual makes sense if we're committed.\nAre there setup or implementation fees on top of that?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773102480.120001",
+    "client_msg_id": "a1b2c3d4-0012-0001-0001-000000000018",
+    "text": "No setup fees for cloud-hosted on any plan.\nIncluded at no cost: tenant provisioning, SSO config assistance, standard data migration up to 50k records, and a 2-hour onboarding session with a Customer Success Manager.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0018",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "No setup fees for cloud-hosted on any plan.\nIncluded at no cost: tenant provisioning, SSO config assistance, standard data migration up to 50k records, and a 2-hour onboarding session with a Customer Success Manager."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP003CFO",
+    "type": "message",
+    "ts": "1773102600.130001",
+    "client_msg_id": "a1b2c3d4-0013-0001-0001-000000000019",
+    "text": "What about storage — we generate a lot of data.\nHow much extra does additional storage cost?",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0019",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "What about storage — we generate a lot of data.\nHow much extra does additional storage cost?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773102720.140001",
+    "client_msg_id": "a1b2c3d4-0014-0001-0001-000000000020",
+    "text": "Business plan includes 2 TB base — that covers most mid-market orgs.\nBeyond that, additional storage is $5 per 100 GB per month, billed monthly regardless of your base billing cycle.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0020",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Business plan includes 2 TB base — that covers most mid-market orgs.\nBeyond that, additional storage is $5 per 100 GB per month, billed monthly regardless of your base billing cycle."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773102730.140002",
+    "client_msg_id": "a1b2c3d4-0014-0001-0001-000000000021",
+    "text": "You'll get automated alerts at 80% and 95% utilisation so no surprise bills.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0021",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "You'll get automated alerts at 80% and 95% utilisation so no surprise bills."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP002CLI",
+    "type": "message",
+    "ts": "1773102900.150001",
+    "client_msg_id": "a1b2c3d4-0015-0001-0001-000000000022",
+    "text": "Good to know.\nWe're a registered non-profit btw — is there any discount available for us?",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0022",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Good to know.\nWe're a registered non-profit btw — is there any discount available for us?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773103020.160001",
+    "client_msg_id": "a1b2c3d4-0016-0001-0001-000000000023",
+    "text": "Yes! We offer a 30% discount on list price for registered non-profits :tada:",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0023",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes! We offer a 30% discount on list price for registered non-profits "
+              },
+              {
+                "type": "emoji",
+                "name": "tada",
+                "unicode": "1f389"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773103030.160002",
+    "client_msg_id": "a1b2c3d4-0016-0001-0001-000000000024",
+    "text": "Applies to Starter, Professional, and Business plans.\nYou'd just need to provide proof of non-profit status — IRS determination letter or equivalent.\nWith the 30% discount applied: $45 x 0.70 = $31.50/user/month annual.\nFor 240 users that brings the annual total to $90,720 instead of $129,600.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0024",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Applies to Starter, Professional, and Business plans.\nYou'd just need to provide proof of non-profit status — IRS determination letter or equivalent.\nWith the 30% discount applied: $45 x 0.70 = $31.50/user/month annual.\nFor 240 users that brings the annual total to $90,720 instead of $129,600."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP003CFO",
+    "type": "message",
+    "ts": "1773103200.170001",
+    "client_msg_id": "a1b2c3d4-0017-0001-0001-000000000025",
+    "text": "That's a meaningful difference.\nOkay we definitely have our 501(c)(3) docs on hand.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0025",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "That's a meaningful difference.\nOkay we definitely have our 501(c)(3) docs on hand."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP002CLI",
+    "type": "message",
+    "ts": "1773103380.180001",
+    "client_msg_id": "a1b2c3d4-0018-0001-0001-000000000026",
+    "text": "One more question — can we trial it before committing to 12 months?",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0026",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "One more question — can we trial it before committing to 12 months?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773103500.190001",
+    "client_msg_id": "a1b2c3d4-0019-0001-0001-000000000027",
+    "text": "Two options:\n1. 14-day free trial — no credit card needed, Professional plan features, up to 5 users and 1 GB storage\n2. 30-day PoC — free, dedicated Solutions Engineer, your actual data and use cases, up to 10 pilot users",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0027",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Two options:\n1. 14-day free trial — no credit card needed, Professional plan features, up to 5 users and 1 GB storage\n2. 30-day PoC — free, dedicated Solutions Engineer, your actual data and use cases, up to 10 pilot users"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773103510.190002",
+    "client_msg_id": "a1b2c3d4-0019-0001-0001-000000000028",
+    "text": "For your size I'd honestly recommend the PoC — it's the one that gives you a real answer on fit.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0028",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "For your size I'd honestly recommend the PoC — it's the one that gives you a real answer on fit."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP003CFO",
+    "type": "message",
+    "ts": "1773103680.200001",
+    "client_msg_id": "a1b2c3d4-0020-0001-0001-000000000029",
+    "text": "The PoC sounds right to me.\nAnd the annual contract includes a money-back guarantee?",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0029",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "The PoC sounds right to me.\nAnd the annual contract includes a money-back guarantee?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773103800.210001",
+    "client_msg_id": "a1b2c3d4-0021-0001-0001-000000000030",
+    "text": "Yes — 30-day money-back guarantee on annual contracts.\nAnd termination notice is 60 days before the renewal date if you ever need to exit.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0030",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Yes — 30-day money-back guarantee on annual contracts.\nAnd termination notice is 60 days before the renewal date if you ever need to exit."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP002CLI",
+    "type": "message",
+    "ts": "1773103920.220001",
+    "client_msg_id": "a1b2c3d4-0022-0001-0001-000000000031",
+    "text": "This all makes sense.\nCan you send over a formal proposal with the non-profit discount baked in and PoC terms?",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0031",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "This all makes sense.\nCan you send over a formal proposal with the non-profit discount baked in and PoC terms?"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773103980.230001",
+    "client_msg_id": "a1b2c3d4-0023-0001-0001-000000000032",
+    "text": "On it — I'll have that out to you by EOD today.\nI'll include the TCO comparison worksheet too so you can model your own numbers against your current tool costs.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0032",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "On it — I'll have that out to you by EOD today.\nI'll include the TCO comparison worksheet too so you can model your own numbers against your current tool costs."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP003CFO",
+    "type": "message",
+    "ts": "1773104040.240001",
+    "client_msg_id": "a1b2c3d4-0024-0001-0001-000000000033",
+    "text": "Perfect.\nThanks Ryan — much more clarity now.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0033",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Perfect.\nThanks Ryan — much more clarity now."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP002CLI",
+    "type": "message",
+    "ts": "1773104100.250001",
+    "client_msg_id": "a1b2c3d4-0025-0001-0001-000000000034",
+    "text": "Quick follow-up — how are API calls metered?\nOur dev team will be building on top of the platform.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0034",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "Quick follow-up — how are API calls metered?\nOur dev team will be building on top of the platform."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP001SAL",
+    "type": "message",
+    "ts": "1773104220.260001",
+    "client_msg_id": "a1b2c3d4-0026-0001-0001-000000000035",
+    "text": "One call = one HTTP request to the REST or GraphQL endpoint, regardless of payload size.\nBusiness plan includes 500k calls/month.\nOverage is $0.001 per call beyond that.\nWebhook deliveries don't count against the quota.",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0035",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "One call = one HTTP request to the REST or GraphQL endpoint, regardless of payload size.\nBusiness plan includes 500k calls/month.\nOverage is $0.001 per call beyond that.\nWebhook deliveries don't count against the quota."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "channel": "C1NVP9A3KFH",
+    "fetched_at": "2026-03-10 09:15:00 UTC",
+    "user": "U1NVP002CLI",
+    "type": "message",
+    "ts": "1773104340.270001",
+    "client_msg_id": "a1b2c3d4-0027-0001-0001-000000000036",
+    "text": "500k should be more than enough for us.\nOkay — waiting for that proposal. Thanks!",
+    "team": "T1NOVAPULSE1",
+    "blocks": [
+      {
+        "type": "rich_text",
+        "block_id": "BLK0036",
+        "elements": [
+          {
+            "type": "rich_text_section",
+            "elements": [
+              {
+                "type": "text",
+                "text": "500k should be more than enough for us.\nOkay — waiting for that proposal. Thanks!"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
