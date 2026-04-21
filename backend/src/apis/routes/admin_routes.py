@@ -23,6 +23,7 @@ from src.apis.deps.rbac import is_admin
 from src.services.database_manager.models.auth_models import Opportunity, User
 from src.services.database_manager.opportunity_state import STATUS_DISCOVERED
 from src.services.database_manager.orm import get_db
+from src.services.event_hub.notifications import emit_notification_event
 from src.utils.logger import get_logger
 
 
@@ -133,6 +134,19 @@ def create_opportunity_request(
         int(user.id),
         len(title),
     )
+
+    # Notify all admins about the new pending request.
+    request_id_str = str(row[0])
+    admin_rows = db.execute(
+        text("SELECT id FROM users WHERE roles_assigned @> ARRAY['ADMIN']::varchar[]")
+    ).all()
+    for admin_row in admin_rows:
+        emit_notification_event(
+            "request_created",
+            request_id_str,
+            f"New opportunity request submitted: {title}",
+            str(admin_row[0]),
+        )
 
     return CreateOpportunityResponse(
         request_id=row[0],
