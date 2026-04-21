@@ -91,6 +91,7 @@ class OpportunitySummaryOut(BaseModel):
     opportunity_id: str
     name: str
     owner_id: int
+    status: str = ""
     human_count: int = 0
     ai_count: int = 0
     total_questions: int = 0
@@ -104,125 +105,6 @@ class OpportunityListResponse(BaseModel):
 
     opportunities: list[OpportunitySummaryOut]
 
-
-class CreateOpportunityBody(BaseModel):
-    name: str = Field(..., min_length=1, description="Human-readable opportunity name.")
-
-
-class CreateOpportunityResponse(BaseModel):
-    id: int
-    opportunity_id: str
-    name: str
-    owner_id: int
-
-
-@router.post("/create", response_model=CreateOpportunityResponse)
-def create_opportunity(
-    body: CreateOpportunityBody,
-    db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(get_existing_firebase_user)],
-    background_tasks: BackgroundTasks,
-):
-    """Create an opportunity owned by the authenticated user.
-
-    Anyone can create an opportunity. On create, the user's roles_assigned is ensured
-    to include OWNER.
-    """
-    try:
-        name = (body.name or "").strip()
-        if not name:
-            raise HTTPException(status_code=400, detail="name is required.")
-
-        # Ensure OWNER role is present for the creator.
-        roles = list(getattr(user, "roles_assigned", None) or [])
-        roles_u = {str(r).strip().upper() for r in roles if str(r).strip()}
-
-        if "OWNER" not in roles_u:
-            roles_u.add("OWNER")
-
-            # Persist on the actual ORM row.
-            db_user = db.query(User).filter(User.id == int(user.id)).first()
-            if not db_user:
-                raise HTTPException(status_code=401, detail="Authenticated user not found.")
-
-            db_user.roles_assigned = sorted(roles_u)
-            db.add(db_user)
-
-            # Update request-scoped user
-            user.roles_assigned = db_user.roles_assigned
-
-        # Generate new business key oid####
-        db.execute(text("SELECT pg_advisory_xact_lock(hashtext('opportunity_oid_gen'))"))
-
-        result = db.execute(
-            text("""
-                SELECT COALESCE(MAX(CAST(SUBSTRING(opportunity_id FROM 4) AS INTEGER)), 0)
-                FROM opportunities
-                WHERE opportunity_id ~ '^oid[0-9]+$'
-            """)
-        ).first()
-
-        last_n = int(result[0] or 0)
-        next_n = last_n + 1
-        generated_oid = f"oid{next_n:04d}"
-
-        opp = Opportunity(
-            opportunity_id=generated_oid,
-            name=name,
-            owner_id=int(user.id),
-            status=STATUS_DISCOVERED,
-            total_documents=0,
-            processed_documents=0,
-        )
-
-        # Retry on rare collision
-        for attempt in range(2):
-            try:
-                db.add(opp)
-                db.commit()
-                db.refresh(opp)
-                break
-            except (IntegrityError, DatabaseError) as exc:
-                db.rollback()
-                msg = str(exc)
-
-                if ("23505" not in msg) and ("duplicate key" not in msg.lower()):
-                    raise
-
-                if attempt >= 1:
-                    raise
-
-                next_n += 1
-                opp = Opportunity(
-                    opportunity_id=f"oid{next_n:04d}",
-                    name=name,
-                    owner_id=int(user.id),
-                    status=STATUS_DISCOVERED,
-                    total_documents=0,
-                    processed_documents=0,
-                )
-
-        # Background task (RAG init)
-        background_tasks.add_task(
-            RagDataService().init_opportunity,
-            opportunity_id=str(opp.opportunity_id),
-            name=name,
-            owner_id=str(user.id),
-        )
-
-        return CreateOpportunityResponse(
-            id=int(opp.id),
-            opportunity_id=str(opp.opportunity_id),
-            name=str(opp.name),
-            owner_id=int(opp.owner_id),
-        )
-
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("create_opportunity failed")
-        raise HTTPException(status_code=500, detail=str(exc)) from None
-        
 
 @router.get("/ids", response_model=OpportunityListResponse)
 def list_opportunity_ids(
@@ -290,6 +172,7 @@ def list_opportunity_ids(
                     o.opportunity_id,
                     o.name,
                     o.owner_id,
+                    o.status,
                     o.created_at
                 FROM opportunities o
                 WHERE o.opportunity_id IS NOT NULL
@@ -312,6 +195,7 @@ def list_opportunity_ids(
                 ro.opportunity_id,
                 ro.name,
                 ro.owner_id,
+                ro.status,
                 COALESCE(a.human_count, 0) AS human_count,
                 COALESCE(a.ai_count, 0) AS ai_count,
                 CAST(:total_questions AS INTEGER) AS total_questions,
@@ -363,12 +247,13 @@ def list_opportunity_ids(
                 opportunity_id=str(r[0]),
                 name=str(r[1] or ""),
                 owner_id=int(r[2]),
-                human_count=int(r[3] or 0),
-                ai_count=int(r[4] or 0),
-                total_questions=int(r[5] or 0),
-                percentage=float(r[6] or 0.0),
-                human_percentage=float(r[7] or 0.0),
-                ai_percentage=float(r[8] or 0.0),
+                status=str(r[3] or ""),
+                human_count=int(r[4] or 0),
+                ai_count=int(r[5] or 0),
+                total_questions=int(r[6] or 0),
+                percentage=float(r[7] or 0.0),
+                human_percentage=float(r[8] or 0.0),
+                ai_percentage=float(r[9] or 0.0),
             )
             for r in rows
             if r[0] is not None
@@ -2665,6 +2550,7 @@ def get_answers(
                 answer_text,
                 confidence_score,
                 status,
+                is_user_override,
                 is_active,
                 current_version
             FROM answers
@@ -2685,6 +2571,7 @@ def get_answers(
             answer_text,
             confidence_score,
             status,
+            is_user_override,
             is_active,
             current_version,
         ) in a_rows:
@@ -2694,6 +2581,7 @@ def get_answers(
                 "answer_value": answer_text,
                 "confidence_score": float(confidence_score or 0.0),
                 "status": status,
+                "is_user_override": bool(is_user_override) if is_user_override is not None else False,
                 "is_active": bool(is_active),
                 "current_version": int(current_version) if current_version is not None else 1,
             })
@@ -2826,6 +2714,7 @@ def get_answers(
                     "status": chosen.get("status"),
                     "confidence_score": chosen.get("confidence_score", 0.0),
                     "current_version": chosen.get("current_version", 1),
+                    "is_user_override": bool(chosen.get("is_user_override", False)),
                     "status": chosen.get("status"),
                     "citations": citations_by_answer.get(chosen["answer_id"], []),
                     "conflict_id": None,
@@ -2854,6 +2743,7 @@ def get_answers(
                             "status": a.get("status"),
                             "confidence_score": a.get("confidence_score", 0.0),
                             "current_version": a.get("current_version", 1),
+                            "is_user_override": bool(a.get("is_user_override", False)),
                             "status": a.get("status"),
                             "citations": citations_by_answer.get(a["answer_id"], []),
                         }
