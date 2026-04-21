@@ -369,51 +369,28 @@ def review_opportunity_request(
                 except IntegrityError as exc:
                     db.rollback()
                     msg = str(exc).lower()
-                    if ("name" in msg) or ("unique_opportunity_name" in msg):
-                        raise HTTPException(
-                            status_code=409, detail="Opportunity name already exists"
-                        ) from None
-                    if "opportunity_id" in msg:
-                        # With nextval() collisions should be rare; if they keep happening,
-                        # nudge the sequence forward to self-heal drift.
-                        if (attempt + 1) % 5 == 0:
-                            db.execute(
-                                text(
-                                    """
-                                    SELECT setval(
-                                        'opportunity_oid_seq',
-                                        COALESCE(
-                                            (
-                                                SELECT MAX(CAST(SUBSTRING(opportunity_id FROM 4) AS INTEGER))
-                                                FROM opportunities
-                                                WHERE opportunity_id ~ '^oid[0-9]+$'
-                                            ),
-                                            0
-                                        ) + 1,
-                                        false
-                                    )
-                                    """
-                                )
-                            )
-                            db.commit()
-                        if attempt < (max_id_retries - 1):
-                            logger.warning(
-                                "opportunity_id collision on approval retry {}/{} request_id={}",
-                                attempt + 1,
-                                max_id_retries,
-                                str(body.request_id),
-                            )
-                            continue
-                        raise HTTPException(
-                            status_code=503,
-                            detail="Could not allocate a unique opportunity_id right now. Please retry.",
-                        ) from None
                     if ("23505" not in msg) and ("duplicate key" not in msg):
                         raise
-                    raise
-                except DatabaseError:
-                    db.rollback()
-                    raise
+                    if attempt >= 1:
+                        raise
+                    db.execute(
+                        text(
+                            """
+                            SELECT setval(
+                                'opportunity_oid_seq',
+                                COALESCE(
+                                    (
+                                        SELECT MAX(CAST(SUBSTRING(opportunity_id FROM 4) AS INTEGER))
+                                        FROM opportunities
+                                        WHERE opportunity_id ~ '^oid[0-9]+$'
+                                    ),
+                                    0
+                                ) + 1,
+                                false
+                            )
+                            """
+                        )
+                    )
 
             t_commit0 = time.perf_counter()
             db.commit()
