@@ -1,0 +1,39 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+coverage/
+playwright-report
+
+# Frontend — ignore build output, installs, and generated test/coverage artifacts
+frontend/dist/
+frontend/dist-ssr/
+frontend/node_modules/
+frontend/.vite/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+CLAUDE.md
+.superpowers
+# Ignore only legacy root-level docs folder (not frontend/docs)
+frontend/docs/
+/docs/
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.env

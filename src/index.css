@@ -1,0 +1,78 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root,
+[data-theme="relanto"] {
+  --bg: #F4F3F0; --bg2: #FFFFFF; --bg3: #EDEAE4; --bg4: #E0DBD2;
+  --border: #D4CCBC; --border2: #C0B6A4;
+  --text0: #1B264F; --text1: #2B3668; --text2: #4D5577; --text3: #8890A6;
+  --p: #E8532E; --p2: #D14425; --sky: #1B264F;
+  --teal: #0D9488; --violet: #7C3AED; --rose: #E11D48;
+  --emerald: #059669; --orange: #E8532E; --indigo: #1B264F;
+  --green: #16A34A; --amber: #D97706; --red: #DC2626;
+  --gl: rgba(22,163,74,0.12); --al: rgba(217,119,6,0.12); --rl: rgba(220,38,38,0.12);
+  --font: 'Plus Jakarta Sans', sans-serif;
+  --topbar-bg: linear-gradient(135deg, #1B264F 0%, #263060 45%, #2D3A6E 100%);
+  --topbar-border: rgba(255,255,255,.08);
+  --topbar-text: #F8F7F4;
+  --topbar-muted: rgba(255,255,255,.55);
+  --topbar-disabled: rgba(255,255,255,.3);
+  --topbar-divider: rgba(255,255,255,.15);
+  --topbar-accent: #E8532E;
+  --topbar-tab-active: rgba(255,255,255,.08);
+  --topbar-toggle-bg: rgba(255,255,255,.10);
+  --topbar-toggle-border: rgba(255,255,255,.15);
+  --topbar-menu-open: rgba(255,255,255,.15);
+  --topbar-soon-bg: rgba(255,255,255,.08);
+  --topbar-soon-border: rgba(255,255,255,.12);
+  --body-bg:
+    radial-gradient(circle at 5% -5%, rgba(27,38,79,.12), transparent 30%),
+    radial-gradient(circle at 92% 0%, rgba(232,83,46,.08), transparent 25%),
+    radial-gradient(circle at 50% 100%, rgba(27,38,79,.06), transparent 35%),
+    var(--bg);
+  --accent: #E8532E; --accent2: #D14425;
+  --avatar-bg: linear-gradient(135deg,#E8532E,#F47A56);
+  --login-grad: linear-gradient(145deg,#1B264F 0%,#263060 50%,#2D3A6E 100%);
+  --login-blob1: rgba(232,83,46,.18); --login-blob2: rgba(255,255,255,.06); --login-blob3: rgba(232,83,46,.10);
+  --tint: 27,38,79; --tint2: 232,83,46; --tint3: 27,38,79;
+  --card-shadow: 0 1px 3px rgba(27,38,79,.06), 0 8px 28px rgba(27,38,79,.10);
+  --card-glass: rgba(255,255,255,.92);
+  --si-navy: #1B264F;
+  --si-navy-mid: #263060;
+  --si-orange: #E8532E;
+  --si-topbar-bg: linear-gradient(135deg, #1B264F 0%, #263060 55%, #2D3A6E 100%);
+  --si-nav-text: #F8F7F4;
+  --si-nav-muted: rgba(255, 255, 255, 0.62);
+  --si-nav-border: rgba(255, 255, 255, 0.12);
+  --si-accent: #E8532E;
+  --si-icon-bg: rgba(255, 255, 255, 0.08);
+  --si-icon-bg-hover: rgba(255, 255, 255, 0.14);
+}
+html, body, #root { height: 100%; }
+body {
+  font-family: var(--font);
+  background: var(--body-bg);
+  color: var(--text0);
+  font-size: 13px;
+  line-height: 1.5;
+}
+button { font-family: var(--font); cursor: pointer; }
+textarea { font-family: var(--font); }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeIn { from { opacity:0; transform:translateX(8px); } to { opacity:1; transform:translateX(0); } }
+
+.qa-button-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.qa-button-left-group,
+.qa-button-right-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
