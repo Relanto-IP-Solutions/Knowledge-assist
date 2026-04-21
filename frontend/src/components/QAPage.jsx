@@ -112,6 +112,30 @@ function toDisplayAnswerText(value) {
   return raw
 }
 
+function normalizeComparableAnswerText(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+}
+
+function areAnswerTextsEquivalent(a, b) {
+  const na = normalizeComparableAnswerText(a)
+  const nb = normalizeComparableAnswerText(b)
+  if (!na && !nb) return true
+  if (na === nb) return true
+  // Multi-answer labels are often comma-separated; compare order-independently.
+  const aParts = na.split(',').map(s => s.trim()).filter(Boolean)
+  const bParts = nb.split(',').map(s => s.trim()).filter(Boolean)
+  if (aParts.length > 1 || bParts.length > 1) {
+    if (aParts.length !== bParts.length) return false
+    const sa = [...aParts].sort().join('|')
+    const sb = [...bParts].sort().join('|')
+    return sa === sb
+  }
+  return false
+}
+
 function getConflictFallbackAnswerFromRow(row) {
   const list = Array.isArray(row?.conflicts) ? row.conflicts : []
   for (const c of list) {
@@ -200,11 +224,18 @@ function questionCompletionKey(q) {
   return ''
 }
 
+function isQuestionServerLocked(question, qStateEntry) {
+  return (
+    qStateEntry?.serverLocked === true ||
+    String(question?.status ?? '').trim().toLowerCase() === 'active'
+  )
+}
+
 export function isQuestionComplete(question, qStateEntry) {
   const qid = questionCompletionKey(question)
   const status = String(qStateEntry?.status ?? '').trim().toLowerCase()
   // Backend-submitted/locked rows are not editable; treat them as complete for gating Submit.
-  if (qStateEntry?.serverLocked === true || String(question?.status ?? '').trim().toLowerCase() === 'active') {
+  if (isQuestionServerLocked(question, qStateEntry)) {
     console.log('[Completion]', { qid, status, complete: true, reason: 'server-locked' })
     return true
   }
@@ -470,6 +501,40 @@ function isBackendAnswerActive(row) {
   return String(row?.status ?? '').trim().toLowerCase() === 'active'
 }
 
+function feedbackVoteFromAnswerRow(row) {
+  const candidates = [
+    row?.feedback,
+    row?.feedback_type,
+    row?.feedbackType,
+    row?.rating,
+    row?.score,
+  ]
+  for (const raw of candidates) {
+    if (raw == null || raw === '') continue
+    const n = Number(raw)
+    if (Number.isFinite(n)) {
+      const rounded = Math.round(n)
+      if (rounded >= 1 && rounded <= 5) return rounded
+    }
+  }
+  return null
+}
+
+function feedbackTextFromAnswerRow(row) {
+  const candidates = [
+    row?.feedback_text,
+    row?.feedbackText,
+    row?.comments,
+    row?.feedback_comment,
+    row?.feedbackComment,
+  ]
+  for (const raw of candidates) {
+    const t = String(raw ?? '').trim()
+    if (t) return t
+  }
+  return ''
+}
+
 /**
  * Batch-accept pending rows using merged MCQ selections and in-progress sentence edits.
  * Does not POST — returns the next `qState` snapshot and how many rows changed.
@@ -616,7 +681,7 @@ export function applyAcceptAllToQState(prevQState, {
   return { next, changed }
 }
 
-export default function QAPage({ oppId, onBack, onReviewSaved }) {
+export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReviewSaved }) {
   const [apiOppName, setApiOppName] = useState(null)
   const sections = allSections[oppId] || []
   const apiFeatureOn = useOpportunityAnswersApi()
@@ -1174,12 +1239,24 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
     })
   }, [apiData?.answers, reviewQuestions, apiSelections, setAlignedApiSelection])
   const undoQ = (qid) => {
-    if (qState[qid]?.serverLocked) return
-    updateQ(qid, { status: 'pending', override: '', editedAnswer: '', answerSource: 'ai', userCleared: false, conflictResolved: false, conflictAnswerId: null })
-    setApiSelections(prev => {
-      const next = { ...prev }
-      delete next[qid]
-      return next
+    const qidKey = String(qid)
+    const current = qState[qidKey] || DEFAULT_API_Q_STATE
+    if (current?.serverLocked) return
+
+    const row = apiData?.answers?.find(a => String(a.question_id) === qidKey)
+    const hasPureAiAnswer = answerRowQualifiesForPureAiAccept(row)
+    const currentEdited = String(current.editedAnswer ?? '').trim()
+    const preserveUserDraftOnUndo =
+      currentEdited !== '' && (current.answerSource === 'user' || !hasPureAiAnswer)
+
+    updateQ(qid, {
+      status: 'pending',
+      override: '',
+      editedAnswer: preserveUserDraftOnUndo ? current.editedAnswer : '',
+      answerSource: preserveUserDraftOnUndo ? 'user' : 'ai',
+      userCleared: false,
+      conflictResolved: false,
+      conflictAnswerId: null,
     })
   }
   const saveOverride = (qid, text) => {
@@ -1189,7 +1266,19 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
       updateQ(qid, { status: 'pending', override: '', editedAnswer: '', answerSource: 'ai', userCleared: true })
       return
     }
-    updateQ(qid, { status: 'overridden', override: text, editedAnswer: text, answerSource: 'user', userCleared: false })
+    const qidKey = String(qid)
+    const row = apiData?.answers?.find(a => String(a.question_id) === qidKey)
+    const rq = reviewQuestions.find(r => String(r.question_id) === qidKey)
+    const backendDisplay = String(
+      resolveSelectionToDisplayValue(rq, row?.answer_value ?? row?.answer ?? '') || getConflictFallbackAnswerFromRow(row),
+    ).trim()
+    const overrideMatchesBackend = backendDisplay !== '' && areAnswerTextsEquivalent(t, backendDisplay)
+    updateQ(
+      qid,
+      overrideMatchesBackend
+        ? { status: 'accepted', override: '', editedAnswer: '', answerSource: 'ai', userCleared: false }
+        : { status: 'overridden', override: text, editedAnswer: text, answerSource: 'user', userCleared: false },
+    )
     /**
      * Conflict override: keep apiSelections pinned to the resolved conflict branch id
      * (so POST can send conflict_answer_id), while override_value carries the user-chosen label.
@@ -1224,7 +1313,12 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
     updateQ(qid, { editedAnswer: text, answerSource: 'user', status: 'pending', userCleared: false })
     if (t) setAlignedApiSelection(qid, t)
   }
-  const saveFeedback = (qid, vote, text) => updateQ(qid, { feedback: vote, feedbackText: text || '' })
+  const saveFeedback = (qid, vote, text) => {
+    if (qState[qid]?.serverLocked) return
+    const existing = qState[qid]?.feedback
+    if (existing != null && existing !== '') return
+    updateQ(qid, { feedback: vote, feedbackText: text || '' })
+  }
   const resolveConflict = (qid, chosen) => {
     if (qState[qid]?.serverLocked) return
     const isObj = chosen != null && typeof chosen === 'object' && !Array.isArray(chosen)
@@ -1243,7 +1337,16 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
         if (hit) id = String(hit.id)
       }
     }
-    updateQ(qid, { editedAnswer: text, answerSource: 'user', conflictResolved: true, conflictAnswerId: id, status: 'accepted', userCleared: false, override: '' })
+    // Picking a conflict option should only set the draft answer; acceptance is explicit (Accept / Accept all).
+    updateQ(qid, {
+      editedAnswer: text,
+      answerSource: 'user',
+      conflictResolved: true,
+      conflictAnswerId: id,
+      status: 'pending',
+      userCleared: false,
+      override: '',
+    })
     if (id) setAlignedApiSelection(qid, id)
     else if (text) setAlignedApiSelection(qid, text)
   }
@@ -1251,6 +1354,10 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
   const handleAssistSelectionDraft = useCallback((qid, draft) => {
     if (!draft) return
     setApiSelections(prev => {
+      const st = String(qState[String(qid)]?.status ?? '').trim().toLowerCase()
+      // Do not churn selection state for finalized cards; this causes visible
+      // accept/undo jitter when child effects emit stale draft snapshots.
+      if (st === 'accepted' || st === 'overridden') return prev
       const nextMulti = draft.mode === 'multi'
         ? (Array.isArray(draft.value) ? [...draft.value] : [])
         : null
@@ -1266,7 +1373,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
       if (nextPick != null && String(cur ?? '') === nextPick) return prev
       return { ...prev, [qid]: nextPick ?? '' }
     })
-  }, [])
+  }, [qState])
 
   const apiUnresolvedConflictCount = useMemo(() => {
     if (!useApiLayout || !apiData?.answers?.length) return 0
@@ -1493,11 +1600,12 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
         const qid = String(a.question_id)
         tq++
         const st = qState[qid]?.status ?? 'pending'
-        if (st !== 'pending') aq++
-        if (st === 'accepted' || st === 'overridden') finalized++
+        const serverLocked = isQuestionServerLocked(a, qState[qid])
+        if (st !== 'pending' || serverLocked) aq++
+        if (st === 'accepted' || st === 'overridden' || serverLocked) finalized++
         if (!backendPendingQids.has(qid)) continue
         submitTq++
-        if (st === 'accepted' || st === 'overridden') submitFinalized++
+        if (st === 'accepted' || st === 'overridden' || serverLocked) submitFinalized++
         if (apiAnswerNeedsConflictClarify(a) && !qState[qid]?.conflictResolved) submitUc++
       }
       const ready = submitTq > 0 && submitUc === 0 && submitFinalized === submitTq
@@ -1516,8 +1624,9 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
         sig.qs.forEach(q => {
           tq++
           const st = qState[q.id]?.status ?? 'pending'
-          if (st !== 'pending') aq++
-          if (st === 'accepted' || st === 'overridden') finalized++
+          const serverLocked = isQuestionServerLocked(q, qState[q.id])
+          if (st !== 'pending' || serverLocked) aq++
+          if (st === 'accepted' || st === 'overridden' || serverLocked) finalized++
           if (q.conflicts?.length >= 2 && !qState[q.id]?.conflictResolved) uc++
         })
       }))
@@ -2047,11 +2156,15 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
       if (!apiReviewStateSeededRef.current) {
         for (const a of apiData.answers) {
           const qid = String(a.question_id)
+          const payloadFeedbackVote = feedbackVoteFromAnswerRow(a)
+          const payloadFeedbackText = feedbackTextFromAnswerRow(a)
           next[qid] = {
             ...DEFAULT_API_Q_STATE,
             serverLocked: isBackendAnswerActive(a),
             // Never map API `active` → local `accepted`; “active” is row lifecycle, not QA review completion.
             status: 'pending',
+            feedback: payloadFeedbackVote,
+            feedbackText: payloadFeedbackText,
           }
           changed = true
         }
@@ -2061,17 +2174,25 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
       for (const a of apiData.answers) {
         const qid = String(a.question_id)
         const isLocked = isBackendAnswerActive(a)
+        const payloadFeedbackVote = feedbackVoteFromAnswerRow(a)
+        const payloadFeedbackText = feedbackTextFromAnswerRow(a)
         if (!next[qid]) {
           next[qid] = {
             ...DEFAULT_API_Q_STATE,
             serverLocked: isLocked,
             status: 'pending',
+            feedback: payloadFeedbackVote,
+            feedbackText: payloadFeedbackText,
           }
           changed = true
           continue
         }
         if (next[qid].serverLocked !== isLocked) {
           next[qid] = { ...next[qid], serverLocked: isLocked }
+          changed = true
+        }
+        if ((next[qid].feedback == null || next[qid].feedback === '') && payloadFeedbackVote != null) {
+          next[qid] = { ...next[qid], feedback: payloadFeedbackVote, feedbackText: payloadFeedbackText }
           changed = true
         }
       }
@@ -2134,7 +2255,12 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
 
   const showPrimarySubmit =
     showSectionNav && (reviewSectionOrder.length === 1 || isLastReviewSection)
-  const showSaveNext = showSectionNav && hasNextReviewSection
+  const isOpportunityAlreadySubmitted = useMemo(() => {
+    if (!useApiLayout || !apiData?.answers?.length) return false
+    return apiData.answers.every((a) => isQuestionServerLocked(a, qState[String(a.question_id)]))
+  }, [useApiLayout, apiData?.answers, qState])
+  const showSaveNext = showSectionNav && hasNextReviewSection && !isOpportunityAlreadySubmitted
+  const showSubmitButton = showPrimarySubmit || isOpportunityAlreadySubmitted
   console.log('[Main Submit Render]', {
     isSubmitting,
     label: isSubmitting ? 'Submitting...' : 'Submit',
@@ -2208,7 +2334,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                     n +
                     sub.answers.filter(a => {
                       const st = qState[String(a.question_id)]?.status ?? 'pending'
-                      return st === 'accepted' || st === 'overridden'
+                      return st === 'accepted' || st === 'overridden' || isQuestionServerLocked(a, qState[String(a.question_id)])
                     }).length,
                   0,
                 )
@@ -2266,7 +2392,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                 const uc = apiGrouped.uncategorized
                 const uRev = uc.filter(a => {
                   const st = qState[String(a.question_id)]?.status ?? 'pending'
-                  return st === 'accepted' || st === 'overridden'
+                  return st === 'accepted' || st === 'overridden' || isQuestionServerLocked(a, qState[String(a.question_id)])
                 }).length
                 const ucConflictRows = uc.filter(a => apiAnswerNeedsConflictClarify(a))
                 const ucConflictTotal = ucConflictRows.length
@@ -2314,7 +2440,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
               const total = qs.length
               const reviewed = qs.filter(q => {
                 const st = qState[q.id]?.status ?? 'pending'
-                return st === 'accepted' || st === 'overridden'
+                return st === 'accepted' || st === 'overridden' || isQuestionServerLocked(q, qState[q.id])
               }).length
               const isActive = sec.id === activeSec
               const RowIcon = SECTION_ROW_ICON[sec.id] || IconCompass
@@ -2379,6 +2505,10 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
             <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 200px' }}>
               <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font)', color: 'var(--text3)', fontSize: 11, fontWeight: 500 }}>
                 Knowledge Assist
+              </button>
+              <span style={{ color: 'var(--border)', userSelect: 'none' }}>&gt;</span>
+              <button type="button" onClick={onBackToDataConnectors} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font)', color: 'var(--text3)', fontSize: 11, fontWeight: 500 }}>
+                Data Connectors
               </button>
               <span style={{ color: 'var(--border)', userSelect: 'none' }}>&gt;</span>
               <span style={{ color: 'var(--text2)', fontWeight: 600 }}>{resolvedOppName}</span>
@@ -2716,7 +2846,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                   <button
                     type="button"
                     onClick={handleAcceptAll}
-                    disabled={submitBusy}
+                    disabled={submitBusy || isOpportunityAlreadySubmitted}
                     title="Accept every pending question using your current MCQ selections and sentence edits. Does not send to the server — use Submit for that."
                     style={{
                       ...footBarBtnBase,
@@ -2724,6 +2854,8 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                       background: 'var(--bg2)',
                       color: SI_NAVY,
                       boxShadow: 'none',
+                      opacity: submitBusy || isOpportunityAlreadySubmitted ? 0.7 : 1,
+                      cursor: submitBusy || isOpportunityAlreadySubmitted ? 'not-allowed' : 'pointer',
                     }}
                   >
                     Accept all answers
@@ -2747,13 +2879,15 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                     Save &amp; next
                   </button>
                 )}
-                {showPrimarySubmit && (
+                {showSubmitButton && (
                   <button
                     type="button"
                     onClick={handleSubmitClick}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isOpportunityAlreadySubmitted}
                     title={
-                      !allQuestionsComplete
+                      isOpportunityAlreadySubmitted
+                        ? 'Responses are already submitted'
+                        : !allQuestionsComplete
                         ? unresolvedConflicts > 0
                           ? 'Resolve all conflicts before submitting'
                           : 'Accept or override every question before submitting'
@@ -2762,11 +2896,11 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                     style={{
                       ...footBarBtnBase,
                       border: 'none',
-                      opacity: allQuestionsComplete && !isSubmitting ? 1 : 0.7,
-                      cursor: allQuestionsComplete && !isSubmitting ? 'pointer' : 'not-allowed',
-                      background: allQuestionsComplete && !isSubmitting ? SI_ORANGE : 'var(--bg3)',
-                      color: allQuestionsComplete && !isSubmitting ? '#fff' : 'var(--text3)',
-                      boxShadow: allQuestionsComplete && !isSubmitting ? '0 2px 10px rgba(232,83,46,.28)' : 'none',
+                      opacity: allQuestionsComplete && !isSubmitting && !isOpportunityAlreadySubmitted ? 1 : 0.7,
+                      cursor: allQuestionsComplete && !isSubmitting && !isOpportunityAlreadySubmitted ? 'pointer' : 'not-allowed',
+                      background: allQuestionsComplete && !isSubmitting && !isOpportunityAlreadySubmitted ? SI_ORANGE : 'var(--bg3)',
+                      color: allQuestionsComplete && !isSubmitting && !isOpportunityAlreadySubmitted ? '#fff' : 'var(--text3)',
+                      boxShadow: allQuestionsComplete && !isSubmitting && !isOpportunityAlreadySubmitted ? '0 2px 10px rgba(232,83,46,.28)' : 'none',
                     }}
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit'}

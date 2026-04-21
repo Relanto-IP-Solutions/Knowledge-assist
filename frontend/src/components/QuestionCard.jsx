@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react'
 import Badge from './Badge'
 import { CitationBlock, SourcesGroupedPanel } from './ApiAnswerCard'
 import { ConflictResolutionModal } from './ConflictResolutionModal'
@@ -223,6 +223,79 @@ function arraysEqualAsStrings(a, b) {
   return a.every((v, i) => String(v) === String(b[i]))
 }
 
+/**
+ * Value-equality helpers used to derive whether the user's current selection
+ * matches the backend AI answer. These are intentionally:
+ *   - order-independent for arrays / serialized JSON lists (multi-select)
+ *   - label ↔ id aware (via the provided opts list)
+ *   - trim + lowercase + whitespace-collapsing for plain text
+ * so that re-selecting the AI option always compares equal — which is what
+ * decides between "AI RECOMMENDED RESPONSE" and "EDITED RESPONSE".
+ */
+function canonicalTokenForCompare(raw, opts = []) {
+  const needle = String(raw ?? '').trim()
+  if (!needle) return ''
+  const lower = needle.toLowerCase()
+  if (Array.isArray(opts) && opts.length > 0) {
+    const hit = opts.find(o => {
+      const id = String(o?.id ?? '').trim()
+      const text = String(o?.text ?? '').trim()
+      const label = String(o?.label ?? '').trim()
+      const value = String(o?.value ?? '').trim()
+      return (
+        id === needle ||
+        text === needle ||
+        text.toLowerCase() === lower ||
+        label === needle ||
+        label.toLowerCase() === lower ||
+        value === needle ||
+        value.toLowerCase() === lower
+      )
+    })
+    if (hit) {
+      const canonical = String(hit.text ?? hit.label ?? hit.value ?? hit.id ?? needle).trim()
+      return canonical.toLowerCase().replace(/\s+/g, ' ')
+    }
+  }
+  return lower.replace(/\s+/g, ' ')
+}
+
+function tokensForCompare(value, opts = []) {
+  if (value == null) return []
+  if (Array.isArray(value)) {
+    return value.map(v => canonicalTokenForCompare(v, opts)).filter(Boolean)
+  }
+  const raw = String(value).trim()
+  if (!raw) return []
+  if (raw.startsWith('[')) {
+    try {
+      const parsed = parseSerializedListAnswerValue(raw)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map(v => canonicalTokenForCompare(v, opts)).filter(Boolean)
+      }
+    } catch {
+      // Fall through — treat as a single token below.
+    }
+  }
+  if (raw.includes(',')) {
+    const parts = raw.split(/,\s*/).map(p => p.trim()).filter(Boolean)
+    if (parts.length > 1) {
+      return parts.map(v => canonicalTokenForCompare(v, opts)).filter(Boolean)
+    }
+  }
+  const single = canonicalTokenForCompare(raw, opts)
+  return single ? [single] : []
+}
+
+/** Order-independent normalized key. Equal keys ⇒ values are considered equivalent. */
+function normalizedKeyForEquality(value, opts = []) {
+  return tokensForCompare(value, opts).slice().sort().join('|')
+}
+
+function valuesAreEquivalent(a, b, opts = []) {
+  return normalizedKeyForEquality(a, opts) === normalizedKeyForEquality(b, opts)
+}
+
 const TABS_ASSIST = [
   { id: 'review', label: 'Review', icon: '✦' },
   { id: 'feedback', label: 'Feedback', icon: '💬' },
@@ -410,6 +483,15 @@ export function QuestionCard({
 }) {
   const assist = layout === 'assist'
   const citationList = Array.isArray(q.citations) ? q.citations : []
+  const sortedCitationList = useMemo(() => {
+    const toScore = (citation) => {
+      const raw = citation?.relevance_score
+      if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+      const parsed = Number(raw)
+      return Number.isFinite(parsed) ? parsed : -Infinity
+    }
+    return [...citationList].sort((a, b) => toScore(b) - toScore(a))
+  }, [citationList])
   const conflictList = Array.isArray(q.conflicts) ? q.conflicts : []
   const hasConflict = conflictList.length >= 2
   const conflictHasSourceData =
@@ -441,6 +523,7 @@ export function QuestionCard({
   const [assistTextEditing, setAssistTextEditing] = useState(false)
 
   const st = qState.status
+  const prevStatusRef = useRef(st)
   const isSubmittedLocked =
     qState?.serverLocked === true || String(q?.status ?? '').trim().toLowerCase() === 'active'
   const displayAnswer = qState.editedAnswer || (st === 'overridden' && qState.override ? qState.override : q.answer)
@@ -606,6 +689,31 @@ export function QuestionCard({
     assistAnswerStructured?.multiValue,
   ])
 
+  useLayoutEffect(() => {
+    if (!assistAnswerStructured) {
+      prevStatusRef.current = st
+      return
+    }
+    const prev = prevStatusRef.current
+    if (prev !== st) {
+      // Pre-paint sync on status flips (accepted <-> pending) to prevent one-frame
+      // stale selection flashes while local draft state catches up.
+      if (assistAnswerStructured.showMulti) {
+        setAssistMultiSel([...(assistAnswerStructured.multiValue || [])])
+        setAssistPickSel('')
+      } else {
+        setAssistPickSel(assistAnswerStructured.pickValue || '')
+        setAssistMultiSel([])
+      }
+    }
+    prevStatusRef.current = st
+  }, [
+    st,
+    assistAnswerStructured?.showMulti,
+    assistAnswerStructured?.pickValue,
+    assistAnswerStructured?.multiValue,
+  ])
+
   const assistControlsDisabled =
     !assistAnswerStructured ||
     isSubmittedLocked ||
@@ -625,6 +733,7 @@ export function QuestionCard({
 
   useEffect(() => {
     if (!assist || !onAssistSelectionDraft || !assistAnswerStructured || assistControlsDisabled) return
+    if (st === 'accepted' || st === 'overridden') return
     if (assistAnswerStructured.showMulti) {
       onAssistSelectionDraft(q.id, { mode: 'multi', value: [...assistMultiSel] })
     } else {
@@ -638,11 +747,15 @@ export function QuestionCard({
     hasAssistStructured,
     assistStructuredMulti,
     assistControlsDisabled,
+    st,
     onAssistSelectionDraft,
   ])
 
   useEffect(() => {
     if (!assist || !onDraftAnswerChange || !assistAnswerStructured || isSubmittedLocked) return
+    // Conflict cards already sync via explicit selection handlers and modal confirm;
+    // auto draft-sync here can bounce value identity (id/label) and cause UI flicker.
+    if ((q.conflicts?.length ?? 0) >= 2) return
     // Fix: do NOT sync draft when already accepted/overridden — this would overwrite
     // answerSource back to 'user' (via updateQDraft) even for pure AI accepted answers.
     if (st === 'accepted' || st === 'overridden') return
@@ -684,6 +797,7 @@ export function QuestionCard({
     assistPickSel,
     onDraftAnswerChange,
     isSubmittedLocked,
+    q.conflicts?.length,
   ])
 
   useEffect(() => {
@@ -745,31 +859,37 @@ export function QuestionCard({
   const backendAnswerText = String(q?.answer_value ?? q?.answer ?? '').trim()
   const editedAnswerText = String(qState?.editedAnswer ?? '').trim()
   const overrideText = String(qState?.override ?? '').trim()
-  const answerSource = qState?.answerSource === 'user' ? 'user' : 'ai'
   const hasBackendAI = Boolean(
     (backendAnswerText && !isPlaceholderAnswerText(backendAnswerText)) ||
     citationList.length > 0,
   )
   const optsForCompare = assistAnswerStructured?.opts || []
-  const normalizedBackendComparable = String(
-    formatAnswerForDisplay(backendAnswerText, optsForCompare),
-  ).trim().toLowerCase()
-  const normalizedAcceptedComparable = String(
-    formatAnswerForDisplay(editedAnswerText, optsForCompare),
-  ).trim().toLowerCase()
-  const normalizedEditDraftComparable = String(
-    formatAnswerForDisplay(editText, optsForCompare),
-  ).trim().toLowerCase()
+  // Value-equality keys. Equal key ⇒ same logical answer (order-independent
+  // for multi-select, label↔id aware, trim/case/whitespace normalized).
+  const normalizedBackendComparable = normalizedKeyForEquality(backendAnswerText, optsForCompare)
+  const normalizedAcceptedComparable = normalizedKeyForEquality(editedAnswerText, optsForCompare)
+  const normalizedEditDraftComparable = normalizedKeyForEquality(editText, optsForCompare)
+  const overrideMatchesBackend =
+    Boolean(overrideText) && valuesAreEquivalent(overrideText, backendAnswerText, optsForCompare)
   const acceptedTextDiffersFromBackend =
     normalizedAcceptedComparable !== '' &&
     normalizedAcceptedComparable !== normalizedBackendComparable
+  // Structured selection equality is order-independent (multi) and label↔id aware (pick).
   const userChangedStructuredSelection = Boolean(
     assistAnswerStructured &&
       (
         (assistAnswerStructured.showMulti &&
-          !arraysEqualAsStrings(assistMultiSel, assistAnswerStructured.multiValue || [])) ||
+          !valuesAreEquivalent(
+            assistMultiSel,
+            assistAnswerStructured.multiValue || [],
+            assistAnswerStructured.opts || [],
+          )) ||
         (!assistAnswerStructured.showMulti &&
-          String(assistPickSel ?? '').trim() !== String(assistAnswerStructured.pickValue ?? '').trim())
+          !valuesAreEquivalent(
+            assistPickSel,
+            assistAnswerStructured.pickValue,
+            assistAnswerStructured.opts || [],
+          ))
       ),
   )
   const userTypedDraft = Boolean(
@@ -778,19 +898,26 @@ export function QuestionCard({
     normalizedEditDraftComparable !== normalizedBackendComparable,
   )
   const userChangedSelectionDraft = st === 'pending' && userChangedStructuredSelection
+  // NOTE: `override` / `answerSource` stored on qState are NOT treated as a
+  // permanent "user edited" flag. The truth is derived from the current value
+  // vs the backend AI value — so re-selecting the AI option reverts the UI
+  // back to "AI RECOMMENDED RESPONSE" automatically.
   const userHasEdited =
-    Boolean(overrideText) ||
+    (Boolean(overrideText) && !overrideMatchesBackend) ||
     acceptedTextDiffersFromBackend ||
     userTypedDraft ||
     userChangedSelectionDraft ||
     (!hasBackendAI && editedAnswerText !== '')
   const userHasEditedForLabel =
-    Boolean(overrideText) ||
+    (Boolean(overrideText) && !overrideMatchesBackend) ||
     (
       editedAnswerText !== '' &&
       normalizedAcceptedComparable !== normalizedBackendComparable
     ) ||
     (!hasBackendAI && editedAnswerText !== '')
+  // Derive `answerSource` purely from value equality — ignore any stale flag
+  // previously written to qState.answerSource.
+  const answerSource = userHasEditedForLabel ? 'user' : 'ai'
   const isAcceptedLike = st === 'accepted' || st === 'overridden'
   // Fix: do NOT use answerSource here — updateQDraft can corrupt it to 'user' even for pure AI
   // answers (draft-sync effect fires after accept and calls onDraftAnswerChange with the same text).
@@ -825,7 +952,7 @@ export function QuestionCard({
   const shouldDisableSingleAccept =
     isAccepted ||
     isSubmittedLocked ||
-    (hasUnresolvedConflict && !userHasEdited) ||
+    hasUnresolvedConflict ||
     !canAcceptThisQuestion
 
   if (hasConflict) {
@@ -887,7 +1014,7 @@ export function QuestionCard({
       console.log('[Accept Handler Exit]', { qid: q.id, reason: 'no-extraction-without-user-input' })
       return
     }
-    if ((q.conflicts?.length ?? 0) >= 2 && !qState.conflictResolved && !userHasEdited) {
+    if ((q.conflicts?.length ?? 0) >= 2 && !qState.conflictResolved) {
       console.log('[Accept Handler Exit]', { qid: q.id, reason: 'conflict-unresolved-no-user-edit' })
       return
     }
@@ -983,15 +1110,13 @@ export function QuestionCard({
     })
   }
 
-  const statusLabel = st === 'accepted' ? '✓ Accepted' : st === 'overridden' ? '✎ Overridden' : ''
+  const visualStatus = st === 'overridden' && overrideMatchesBackend ? 'accepted' : st
+  const statusLabel = visualStatus === 'accepted' ? '✓ Accepted' : visualStatus === 'overridden' ? '✎ Overridden' : ''
   const answerNotProvided = isAnswerNotProvided(q, qState, assistTextEditing, editText)
-  const borderAccent = st === 'accepted' ? '#56D364' : st === 'overridden' ? '#E3B341' : answerNotProvided ? '#FCA5A5' : 'var(--border2)'
-  // Fix Part 3: selectedValue is text-based, derived purely from whether user actually changed it.
-  // userHasEditedForLabel already excludes cases where editedAnswer === backendAnswer (no real edit).
-  const selectedValue = userHasEditedForLabel
-    ? (editedAnswerText || overrideText || backendAnswerText)
-    : backendAnswerText
-
+  const borderAccent = visualStatus === 'accepted' ? '#56D364' : visualStatus === 'overridden' ? '#E3B341' : answerNotProvided ? '#FCA5A5' : 'var(--border2)'
+  // Accepted display must come from committed answer fields only; do not depend
+  // on transient draft-derived flags to avoid accept/undo visual bouncing.
+  const selectedValue = String(editedAnswerText || overrideText || backendAnswerText).trim()
   const acceptedSelectedValue = selectedValue
   const persistedAcceptedValue = String(
     st === 'accepted' || st === 'overridden'
@@ -1013,16 +1138,41 @@ export function QuestionCard({
     persistedAcceptedValue,
     assistAnswerStructured?.opts || [],
   )
+  /**
+   * Flicker fix: after Undo (accepted -> pending), local UI state can briefly
+   * retain the previously accepted selection for one render. Use baseline-first
+   * unless the user has an actual pending draft delta.
+   */
   const pendingPickValue =
-    assistPickSel ||
-    assistAnswerStructured?.pickValue ||
-    readonlyPickValue ||
-    textBasedPickValue ||
-    ''
+    assistAnswerStructured?.showMulti
+      ? ''
+      : userChangedStructuredSelection
+        ? (
+            assistPickSel ||
+            assistAnswerStructured?.pickValue ||
+            readonlyPickValue ||
+            textBasedPickValue ||
+            ''
+          )
+        : (
+            assistAnswerStructured?.pickValue ||
+            readonlyPickValue ||
+            textBasedPickValue ||
+            assistPickSel ||
+            ''
+          )
   const pendingMultiValue =
-    assistMultiSel.length > 0
-      ? assistMultiSel
-      : (assistAnswerStructured?.multiValue?.length ? assistAnswerStructured.multiValue : readonlyMultiValue)
+    assistAnswerStructured?.showMulti
+      ? (
+          userChangedStructuredSelection
+            ? (assistMultiSel.length > 0
+              ? assistMultiSel
+              : (assistAnswerStructured?.multiValue?.length ? assistAnswerStructured.multiValue : readonlyMultiValue))
+            : (assistAnswerStructured?.multiValue?.length
+              ? assistAnswerStructured.multiValue
+              : (readonlyMultiValue.length ? readonlyMultiValue : assistMultiSel))
+        )
+      : []
   const pickRadioValue = st === 'accepted' || st === 'overridden'
     ? readonlyPickValue || textBasedPickValue || assistPickSel
     : pendingPickValue
@@ -1064,7 +1214,9 @@ export function QuestionCard({
     })
   }
 
-  const hasFeedback = qState.feedback !== null
+  const hasFeedbackValue = qState.feedback != null && qState.feedback !== ''
+  const hasFeedback = hasFeedbackValue
+  const feedbackLocked = isSubmittedLocked || hasFeedbackValue
   const hasEdit = (qState.editedAnswer || '').trim().length > 0
   const acceptedResponseHeading = getAcceptedHeading(q, qState)
 
@@ -1091,6 +1243,11 @@ export function QuestionCard({
       setEditText(formatAnswerForDisplay(displayAnswer != null ? String(displayAnswer) : String(q.answer ?? '')))
     }
   }, [assistTextEditing, displayAnswer, q.answer, oppId, q.id])
+
+  useEffect(() => {
+    setFbVote(qState.feedback ?? null)
+    setFbText(qState.feedbackText || '')
+  }, [oppId, q.id, qState.feedback, qState.feedbackText])
 
   useEffect(() => {
     console.log('[Opportunity Answer Source Debug]', {
@@ -1121,7 +1278,7 @@ export function QuestionCard({
         borderRadius: 14,
         border: `1px solid ${answerNotProvided ? 'rgba(248,113,113,0.65)' : hover ? 'rgba(27,38,79,.22)' : 'var(--border)'}`,
         background: 'var(--bg2)', marginBottom: 8, overflow: 'hidden',
-        transition: 'all .2s ease',
+        transition: 'border-color .2s ease, box-shadow .2s ease',
         boxShadow: hover ? '0 4px 20px rgba(27,38,79,.08)' : '0 1px 3px rgba(15,23,42,.04)',
       }}
     >
@@ -1306,8 +1463,8 @@ export function QuestionCard({
               </div>
             )}
           </div>
-          {(st === 'accepted' || st === 'overridden') && statusLabel ? (
-            <Badge type={st}>{statusLabel}</Badge>
+          {(visualStatus === 'accepted' || visualStatus === 'overridden') && statusLabel ? (
+            <Badge type={visualStatus}>{statusLabel}</Badge>
           ) : null}
         </div>
       )}
@@ -1358,8 +1515,8 @@ export function QuestionCard({
                 borderRadius: 10,
                 padding: '10px 12px 10px',
                 marginBottom: 8,
-                background: st === 'accepted' ? 'rgba(63,185,80,.07)' : st === 'overridden' ? 'rgba(250,204,21,.08)' : '#F4F5F7',
-                border: `1px solid ${st === 'accepted' ? 'rgba(63,185,80,.25)' : st === 'overridden' ? 'rgba(234,179,8,.28)' : 'rgba(15,23,42,.08)'}`,
+                background: visualStatus === 'accepted' ? 'rgba(63,185,80,.07)' : visualStatus === 'overridden' ? 'rgba(250,204,21,.08)' : '#F4F5F7',
+                border: `1px solid ${visualStatus === 'accepted' ? 'rgba(63,185,80,.25)' : visualStatus === 'overridden' ? 'rgba(234,179,8,.28)' : 'rgba(15,23,42,.08)'}`,
               }}>
                 <div style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
@@ -1482,22 +1639,22 @@ export function QuestionCard({
             {assist ? null : (
               <div style={{
                 borderRadius: 10, padding: '12px 14px', marginBottom: 12,
-                background: st === 'accepted' ? 'rgba(63,185,80,.04)' : st === 'overridden' ? 'rgba(210,153,34,.04)' : 'var(--bg3)',
-                border: `1px solid ${st === 'accepted' ? 'rgba(63,185,80,.20)' : st === 'overridden' ? 'rgba(210,153,34,.20)' : 'var(--border)'}`,
+                background: visualStatus === 'accepted' ? 'rgba(63,185,80,.04)' : visualStatus === 'overridden' ? 'rgba(210,153,34,.04)' : 'var(--bg3)',
+                border: `1px solid ${visualStatus === 'accepted' ? 'rgba(63,185,80,.20)' : visualStatus === 'overridden' ? 'rgba(210,153,34,.20)' : 'var(--border)'}`,
               }}>
                 <div style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9, fontWeight: 800,
                   textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 8,
-                  color: st === 'accepted' ? '#56D364' : st === 'overridden' ? '#E3B341' : 'var(--p)',
-                  background: st === 'accepted' ? 'rgba(63,185,80,.08)' : st === 'overridden' ? 'rgba(210,153,34,.08)' : 'rgba(37,99,235,.08)',
+                  color: visualStatus === 'accepted' ? '#56D364' : visualStatus === 'overridden' ? '#E3B341' : 'var(--p)',
+                  background: visualStatus === 'accepted' ? 'rgba(63,185,80,.08)' : visualStatus === 'overridden' ? 'rgba(210,153,34,.08)' : 'rgba(37,99,235,.08)',
                   padding: '3px 8px', borderRadius: 5,
                 }}>
                   ✦{' '}
                   {hasEdit
                     ? 'Edited Answer'
-                    : st === 'accepted'
+                    : visualStatus === 'accepted'
                       ? 'Accepted Answer'
-                      : st === 'overridden'
+                      : visualStatus === 'overridden'
                         ? 'Overridden Answer'
                         : 'AI Answer'}
                 </div>
@@ -1505,7 +1662,7 @@ export function QuestionCard({
               </div>
             )}
 
-            {st === 'overridden' && qState.override && (
+            {visualStatus === 'overridden' && qState.override && (
               <div style={{ borderRadius: 10, padding: '12px 14px', marginBottom: 12, background: 'rgba(210,153,34,.04)', border: '1px solid rgba(210,153,34,.18)' }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.6px', color: '#E3B341', background: 'rgba(210,153,34,.08)', padding: '3px 8px', borderRadius: 5, marginBottom: 8 }}>
                   ✎ Override Saved
@@ -1587,7 +1744,7 @@ export function QuestionCard({
               </div>
             )}
 
-            {assist && st === 'pending' && (q.conflicts?.length ?? 0) < 2 && !isSubmittedLocked && (
+            {assist && st === 'pending' && !isSubmittedLocked && (
               <div style={{ marginTop: 8 }}>
                 <Btn
                   {...(assist ? { orangeOutline: true } : { green: true })}
@@ -1598,9 +1755,7 @@ export function QuestionCard({
                   disabled={shouldDisableSingleAccept}
                   title={
                     hasUnresolvedConflict
-                      ? userHasEdited
-                        ? 'Accept will auto-resolve this conflict using your latest input'
-                        : 'Resolve conflict before accepting this answer'
+                      ? 'Resolve conflict before accepting this answer'
                       : !hasValidDisplayAnswer
                         ? 'Select or enter an answer before accepting'
                         : undefined
@@ -1617,19 +1772,14 @@ export function QuestionCard({
         {/* ─── Sources tab (GET /answers citations + relevance) ───── */}
         {activeTab === 'sources' && (
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', marginBottom: 14, lineHeight: 1.5 }}>
-              {q.fromApi
-                ? 'Evidence from GET /opportunities/…/answers: source type, file, excerpt lines, and relevance_score from the API.'
-                : 'Source excerpts attached to this question.'}
-            </div>
             {citationList.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--text2)', padding: '12px 0', lineHeight: 1.55 }}>
                 No citations in the API payload for this question yet. When the backend returns a non-empty <code style={{ fontSize: 11 }}>citations[]</code> array, excerpts appear here.
               </div>
             ) : q.fromApi ? (
-              <SourcesGroupedPanel citations={citationList} />
+              <SourcesGroupedPanel citations={sortedCitationList} />
             ) : (
-              citationList.map((c, i) => (
+              sortedCitationList.map((c, i) => (
                 <CitationBlock key={c.chunk_id || `c-${i}`} citation={c} index={i} />
               ))
             )}
@@ -1666,77 +1816,105 @@ export function QuestionCard({
         {/* ─── FEEDBACK tab ────────────────────────────────── */}
         {activeTab === 'feedback' && (
           <>
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ ...labelStyle, marginBottom: 10 }}>
-                Rate AI Answer Quality
-              </div>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                {[1, 2, 3, 4, 5].map(star => {
-                  const selected = fbVote === star
-                  const filled = fbVote && star <= fbVote
-                  return (
-                    <button key={star} onClick={() => setFbVote(v => v === star ? null : star)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: 4,
-                        fontSize: 28,
-                        color: filled ? '#F59E0B' : '#D1D5DB',
-                        transition: 'all .15s',
-                        transform: selected ? 'scale(1.1)' : 'scale(1)',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!filled) {
-                          e.target.style.color = '#FCD34D'
-                          e.target.style.transform = 'scale(1.1)'
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!filled) {
-                          e.target.style.color = '#D1D5DB'
-                          e.target.style.transform = 'scale(1)'
-                        }
-                      }}
-                    >
-                      {filled ? '★' : '☆'}
-                    </button>
-                  )
-                })}
-                {fbVote && (
-                  <span style={{ 
-                    fontSize: 12, 
-                    color: 'var(--text2)', 
-                    marginLeft: 8,
-                    fontWeight: 500
-                  }}>
-                    {fbVote === 5 ? 'Excellent' : 
-                     fbVote === 4 ? 'Good' : 
-                     fbVote === 3 ? 'Average' : 
-                     fbVote === 2 ? 'Poor' : 'Very Poor'}
-                  </span>
+            {!feedbackLocked ? (
+              <>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ ...labelStyle, marginBottom: 10 }}>
+                    Rate AI Answer Quality
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    {[1, 2, 3, 4, 5].map(star => {
+                      const selected = fbVote === star
+                      const filled = fbVote && star <= fbVote
+                      return (
+                        <button key={star} onClick={() => setFbVote(v => v === star ? null : star)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: 4,
+                            fontSize: 28,
+                            color: filled ? '#F59E0B' : '#D1D5DB',
+                            transition: 'all .15s',
+                            transform: selected ? 'scale(1.1)' : 'scale(1)',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!filled) {
+                              e.target.style.color = '#FCD34D'
+                              e.target.style.transform = 'scale(1.1)'
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!filled) {
+                              e.target.style.color = '#D1D5DB'
+                              e.target.style.transform = 'scale(1)'
+                            }
+                          }}
+                        >
+                          {filled ? '★' : '☆'}
+                        </button>
+                      )
+                    })}
+                    {fbVote && (
+                      <span style={{
+                        fontSize: 12,
+                        color: 'var(--text2)',
+                        marginLeft: 8,
+                        fontWeight: 500,
+                      }}>
+                        {fbVote === 5 ? 'Excellent' :
+                         fbVote === 4 ? 'Good' :
+                         fbVote === 3 ? 'Average' :
+                         fbVote === 2 ? 'Poor' : 'Very Poor'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ ...labelStyle, marginBottom: 6 }}>
+                    Additional Comments <span style={{ fontWeight: 400, color: 'var(--text3)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+                  </label>
+                  <textarea value={fbText} onChange={e => setFbText(e.target.value)}
+                    placeholder="What could be improved about this answer?"
+                    style={{ ...txStyle, minHeight: 64 }}
+                    onFocus={focusRing} onBlur={blurRing}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <Btn
+                    primary
+                    onClick={() => {
+                      onSaveFeedback(q.id, fbVote, fbText)
+                      setFbSaved(true)
+                      setTimeout(() => setFbSaved(false), 2000)
+                    }}
+                    disabled={fbVote === null}
+                  >
+                    Submit Feedback
+                  </Btn>
+                  {fbSaved && <span style={{ fontSize: 11, color: 'var(--emerald)', fontWeight: 600 }}>✓ Feedback submitted</span>}
+                </div>
+              </>
+            ) : hasFeedbackValue ? (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg3)' }}>
+                <div style={{ ...labelStyle, marginBottom: 10 }}>Saved Feedback</div>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 24, color: '#F59E0B', marginBottom: 8 }}>
+                  {[1, 2, 3, 4, 5].map(star => (
+                    <span key={star}>{star <= Number(fbVote ?? 0) ? '★' : '☆'}</span>
+                  ))}
+                </div>
+                {String(fbText || '').trim() ? (
+                  <div style={{ fontSize: 12, color: 'var(--text1)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{fbText}</div>
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--text3)' }}>No comments added.</div>
                 )}
               </div>
-            </div>
-
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ ...labelStyle, marginBottom: 6 }}>
-                Additional Comments <span style={{ fontWeight: 400, color: 'var(--text3)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
-              </label>
-              <textarea value={fbText} onChange={e => setFbText(e.target.value)}
-                placeholder="What could be improved about this answer?"
-                style={{ ...txStyle, minHeight: 64 }}
-                onFocus={focusRing} onBlur={blurRing}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <Btn primary onClick={() => { onSaveFeedback(q.id, fbVote, fbText); setFbSaved(true); setTimeout(() => setFbSaved(false), 2000) }}
-                disabled={fbVote === null}>
-                Submit Feedback
-              </Btn>
-              {fbSaved && <span style={{ fontSize: 11, color: 'var(--emerald)', fontWeight: 600 }}>✓ Feedback submitted</span>}
-              {hasFeedback && !fbSaved && <span style={{ fontSize: 10, color: 'var(--text3)', marginLeft: 4 }}>Previously rated: {qState.feedback}★</span>}
-            </div>
+            ) : (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg3)', fontSize: 12, color: 'var(--text3)' }}>
+                No feedback for this msg.
+              </div>
+            )}
           </>
         )}
 
@@ -1748,11 +1926,11 @@ export function QuestionCard({
         borderTop: '1px solid rgba(15,23,42,.08)',
         background: assist ? '#FAFBFC' : 'var(--bg3)',
       }}>
-        {st === 'accepted' ? (
+        {visualStatus === 'accepted' ? (
           <Btn ghost disabled={isSubmittedLocked} onClick={() => onUndo(q.id)}>
             {isSubmittedLocked ? 'Already Submitted' : 'Undo Accept'}
           </Btn>
-        ) : st === 'overridden' ? (
+        ) : visualStatus === 'overridden' ? (
           <>
             <Btn
               ghost
@@ -1768,7 +1946,7 @@ export function QuestionCard({
                 }
               }}
             >
-              Edit Override
+              Save Override
             </Btn>
             <Btn ghost disabled={isSubmittedLocked} onClick={() => onUndo(q.id)}>
               {isSubmittedLocked ? 'Already Submitted' : 'Undo'}
