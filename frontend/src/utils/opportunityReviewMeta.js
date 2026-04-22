@@ -5,6 +5,7 @@ import {
 } from '../config/piclistOptionsByQid'
 import { inferConflictGroupId } from './enrichAnswerIds'
 import { parseSerializedListAnswerValue, serializeAssistMultiValue } from './opportunityAnswerRowToReviewQuestion'
+import { isAnswerOverride } from './overrideDetection'
 
 /** DEV: avoid spamming the console when id alignment runs on every effect pass */
 const __devUnmappedPostAnswerIds = new Set()
@@ -15,6 +16,14 @@ const __devUnmappedPostAnswerIds = new Set()
 function postMapQidKey(qid) {
   if (qid == null) return ''
   return String(qid).trim()
+}
+
+function normalizeBooleanLike(value) {
+  if (value === true || value === false) return value
+  const t = String(value ?? '').trim().toLowerCase()
+  if (t === 'true' || t === '1' || t === 'yes') return true
+  if (t === 'false' || t === '0' || t === 'no') return false
+  return null
 }
 
 /** Placeholder when GET /answers has no extraction (UI + POST coercion must agree). */
@@ -569,7 +578,62 @@ function selectionToSubmitAnswerValue(q, sel) {
   const opt = reviewAnswerOptions(q).find(
     o => String(o.id ?? '').trim() === sid || String(o.text ?? '').trim() === sid,
   )
-  return String(opt?.text ?? sid).trim()
+  if (opt?.text != null && String(opt.text).trim() !== '') return String(opt.text).trim()
+  const answerRows = Array.isArray(q?.answers) ? q.answers : []
+  const answerHit = answerRows.find(a => {
+    if (a == null || typeof a !== 'object') return false
+    const aid = String(a.answer_id ?? a.id ?? '').trim()
+    const av = String(a.answer_value ?? a.value ?? a.text ?? '').trim()
+    return aid === sid || av === sid
+  })
+  if (answerHit) {
+    const answerLabel = String(
+      answerHit.answer_value ?? answerHit.value ?? answerHit.text ?? answerHit.label ?? '',
+    ).trim()
+    if (answerLabel) return answerLabel
+  }
+  return sid
+}
+
+function resolveHumanAnswerValueFromId(q, rawRow, answerId) {
+  const sid = String(answerId ?? '').trim()
+  if (!sid) return ''
+  const fromOptions = reviewAnswerOptions(q).find(
+    o => String(o.id ?? '').trim() === sid || String(o.text ?? '').trim() === sid,
+  )
+  if (fromOptions?.text != null && String(fromOptions.text).trim() !== '') {
+    return String(fromOptions.text).trim()
+  }
+  const answerRows = Array.isArray(q?.answers) ? q.answers : []
+  for (const row of answerRows) {
+    if (row == null || typeof row !== 'object') continue
+    const rid = String(row.answer_id ?? row.id ?? '').trim()
+    const raw = row.answer_value ?? row.value ?? row.text ?? row.label
+    const label = raw != null ? String(raw).trim() : ''
+    if (rid && rid === sid && label) return label
+  }
+  if (rawRow && String(rawRow?.answer_id ?? '').trim() === sid) {
+    const label = String(rawRow?.answer_value ?? rawRow?.value ?? '').trim()
+    if (label) return label
+  }
+  const conflicts = Array.isArray(rawRow?.conflicts) ? rawRow.conflicts : []
+  for (const c of conflicts) {
+    const cid = String(c?.answer_id ?? '').trim()
+    const label = String(c?.answer_value ?? c?.answer ?? c?.value ?? '').trim()
+    if (cid && cid === sid && label) return label
+  }
+  return ''
+}
+
+function sanitizeAnswerValueForWire(q, rawRow, answerId, answerValue) {
+  const sid = String(answerId ?? '').trim()
+  const raw = answerValue == null ? '' : String(answerValue).trim()
+  if (!sid) return raw
+  if (!raw || raw === sid) {
+    const fallback = resolveHumanAnswerValueFromId(q, rawRow, sid)
+    if (fallback && fallback !== sid) return fallback
+  }
+  return raw
 }
 
 /** Only backend-pending rows from GET /answers are eligible for POST updates. */
@@ -1145,6 +1209,12 @@ function extractOptionUuidsFromAnswerValueRow(rawRow) {
       .map(x => String(x).trim())
       .filter(x => looksLikeUuid(x))
   }
+  if (typeof av === 'string' && av.includes(',')) {
+    return av
+      .split(/,\s*/)
+      .map(x => String(x).trim())
+      .filter(x => looksLikeUuid(x))
+  }
   return []
 }
 
@@ -1568,9 +1638,25 @@ function pickOptionIdsSemanticallyEqual(q, qid, idA, idB, idMaps) {
   return la !== '' && lb !== '' && la === lb
 }
 
-function baselineMultiLabels(q, rawRow) {
+function baselineMultiLabels(q, rawRow, idMaps) {
   if (!rawRow) return []
   const av = rawRow.answer_value ?? rawRow.value
+  if (typeof av === 'string' && av.trim() !== '') {
+    const trimmed = av.trim()
+    const rawTokens = trimmed.startsWith('[')
+      ? parseSerializedListAnswerValue(trimmed).map(x => String(x).trim()).filter(Boolean)
+      : trimmed.includes(',')
+        ? trimmed.split(/,\s*/).map(x => String(x).trim()).filter(Boolean)
+        : []
+    if (rawTokens.length > 0) {
+      return rawTokens.map(tok => {
+        const mapped = String(
+          pickHumanLabelForOverride(q, tok, optionById(q, tok), tok, idMaps) ?? tok,
+        ).trim()
+        return mapped || String(tok).trim()
+      }).filter(Boolean)
+    }
+  }
   if (typeof av === 'string' && av.trim().startsWith('[')) {
     return parseSerializedListAnswerValue(av).map(x => String(x).trim()).filter(Boolean)
   }
@@ -1596,7 +1682,7 @@ function multiSelectionChangedFromBaseline(q, rawRow, resolvedIds, idMaps) {
   if (bid.length && rid.length && multiOptionIdSetsSemanticallyEqual(q, qid, bid, rid, idMaps)) {
     return false
   }
-  const a = sortedLabelKey(normalizeMultiLabelTokensForCompare(baselineMultiLabels(q, rawRow)))
+  const a = sortedLabelKey(normalizeMultiLabelTokensForCompare(baselineMultiLabels(q, rawRow, idMaps)))
   const b = sortedLabelKey(multiOverrideLabelsForWire(q, resolvedIds, idMaps))
   return a !== b
 }
@@ -2058,63 +2144,6 @@ function preferWireAnswerIdFromGetRow(qid, coercedVal, idMaps, rawRow) {
   return coercedVal
 }
 
-/**
- * If `is_user_override` was set but `override_value` matches GET /answers baseline (no real edit), POST a plain row.
- */
-function stripFalsePositiveUserOverridesFromUpdates(updates, questions, rawByQ, idMaps) {
-  const qById = new Map((questions || []).map(q => [String(q?.question_id ?? ''), q]))
-  return (updates || []).map(u => {
-    if (!u?.is_user_override || !Object.prototype.hasOwnProperty.call(u, 'override_value')) return u
-    const qid = String(u.q_id ?? '')
-    const q = qById.get(qid)
-    const raw = rawByQ?.get(qid)
-    if (!q || !raw || u.override_value == null) return u
-    if (wireOverrideValueMatchesGetBaseline(q, raw, u.override_value, idMaps)) {
-      const next = { ...u, is_user_override: false }
-      delete next.override_value
-      return next
-    }
-    return u
-  })
-}
-
-function wireOverrideValueMatchesGetBaseline(q, rawRow, overrideValue, idMaps) {
-  if (!rawRow || overrideValue == null) return false
-  const at = normalizeAnswerType(q)
-  if (at === 'multi_select') {
-    if (!Array.isArray(overrideValue)) return false
-    const base = baselineMultiLabels(q, rawRow)
-    if (base.length) {
-      const a = sortedLabelKey(normalizeMultiLabelTokensForCompare(base))
-      const b = sortedLabelKey(normalizeMultiLabelTokensForCompare(overrideValue))
-      if (a !== '' && a === b) return true
-    }
-    const baseUuids = extractOptionUuidsFromAnswerValueRow(rawRow)
-    const ovUuids = overrideValue.map(x => String(x).trim()).filter(x => looksLikeUuid(x))
-    if (
-      baseUuids.length &&
-      ovUuids.length &&
-      multiOptionIdSetsSemanticallyEqual(q, String(q.question_id), baseUuids, ovUuids, idMaps)
-    ) {
-      return true
-    }
-    return false
-  }
-  if (typeof overrideValue === 'string') {
-    const ov = overrideValue.trim()
-    if (!ov) return false
-    const base = baselinePickLabel(q, rawRow)
-    if (base && base.toLowerCase() === ov.toLowerCase()) return true
-    const av = rawRow.answer_value ?? rawRow.value
-    if (typeof av === 'string' && !av.trim().startsWith('[') && av.trim().toLowerCase() === ov.toLowerCase()) {
-      return true
-    }
-    if (av != null && String(av).trim() !== '' && String(av).trim() === ov) return true
-    return false
-  }
-  return false
-}
-
 function finalizePostUpdatesAnswerIds(updates, idMaps, rawByQ) {
   return updates.map(u => {
     const qid = String(u.q_id ?? '')
@@ -2499,13 +2528,25 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
     const manualOverrideAnswer = String(st?.override ?? '').trim()
     const selectedAnswerValue = selectionToSubmitAnswerValue(q, sel)
     const backendAnswerValue = normalizeRawAnswerForSubmit(rawRowForQ?.answer_value)
+    const compareAnswerType = normalizeAnswerType(q)
     const finalAnswerForPayload =
       manualEditedAnswer ||
       manualOverrideAnswer ||
       selectedAnswerValue ||
       backendAnswerValue ||
       null
-    const hasDirtyManualInput = manualEditedAnswer !== '' || manualOverrideAnswer !== ''
+    const manualCurrentValue = manualOverrideAnswer || manualEditedAnswer
+    const persistedUserOverride = normalizeBooleanLike(rawRowForQ?.is_user_override) === true
+    const forceUserOverrideFromState =
+      String(st?.status ?? '').trim().toLowerCase() === 'overridden' &&
+      manualCurrentValue !== ''
+    const preserveUserOverrideIntent = persistedUserOverride || forceUserOverrideFromState
+    const hasDirtyManualInput =
+      manualCurrentValue !== '' &&
+      isAnswerOverride(manualCurrentValue, backendAnswerValue, {
+        answerType: compareAnswerType,
+        options: opts,
+      })
 
     const selEmpty =
       sel == null ||
@@ -2552,7 +2593,7 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
             answer_id: aid,
             conflict_id: conflictId,
             conflict_answer_id: aid,
-            is_user_override: false,
+            is_user_override: true,
             override_value: undefined,
           }
         } else {
@@ -2561,7 +2602,7 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
             answer_id: aid,
             conflict_id: null,
             conflict_answer_id: null,
-            is_user_override: false,
+            is_user_override: true,
             override_value: undefined,
           }
         }
@@ -2601,6 +2642,28 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
           backendOptions,
         })
       }
+      if (forceUserOverrideFromState && payload.is_user_override !== true) {
+        payload.is_user_override = true
+        if (payload.override_value == null || String(payload.override_value).trim() === '') {
+          const fallbackOverrideValue =
+            manualOverrideAnswer ||
+            manualEditedAnswer ||
+            selectedAnswerValue ||
+            finalAnswerForPayload
+          if (fallbackOverrideValue != null && String(fallbackOverrideValue).trim() !== '') {
+            payload.override_value = fallbackOverrideValue
+          }
+        }
+      }
+      if (preserveUserOverrideIntent && payload.is_user_override !== true) {
+        payload.is_user_override = true
+      }
+      payload.answer_value = sanitizeAnswerValueForWire(
+        q,
+        rawRowForQ,
+        payload.conflict_answer_id ?? payload.answer_id ?? null,
+        payload.answer_value,
+      )
       if (hasFeedback) {
         payload.feedback_type = normalizeFeedbackTypeForWire(feedback)
         payload.feedback_id = generateFeedbackId()
@@ -2859,9 +2922,26 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
       const fullOverrideValue = multiOverrideLabelsForWire(q, ids, idMaps)
 
       // Determine "changed" by comparing label sets (order-insensitive), not ids (ids can collapse).
-      const baselineLabels = normalizeMultiLabelTokensForCompare(baselineMultiLabels(q, rawRowForQ))
+      const baselineLabels = normalizeMultiLabelTokensForCompare(
+        baselineMultiLabels(q, rawRowForQ, idMaps),
+      )
       const currentLabels = normalizeMultiLabelTokensForCompare(fullOverrideValue)
-      const changed = sortedLabelKey(baselineLabels) !== sortedLabelKey(currentLabels)
+      const baselineRowId = String(rawRowForQ?.answer_id ?? '').trim()
+      const selectionCollapsedToBaselineRowId =
+        baselineRowId !== '' &&
+        resolvedIds.length === 1 &&
+        sameAnswerId(String(resolvedIds[0]), baselineRowId)
+      /**
+       * Some API rows expose multi baseline as comma/list text while selection alignment collapses to the
+       * row UUID (`answer_id`). In that unchanged-accept case we should not emit a false user override.
+       */
+      const implicitUnchangedAccept =
+        selectionCollapsedToBaselineRowId &&
+        !hasDirtyManualInput &&
+        String(st?.answerSource ?? '').trim().toLowerCase() !== 'user'
+      const changed = implicitUnchangedAccept
+        ? false
+        : sortedLabelKey(baselineLabels) !== sortedLabelKey(currentLabels)
 
       /** Single wire row: persisted GET `answer_id` when present (covers composite + normal multi rows). */
       if (hasServerBaselineAnswerId(rawRowForQ)) {
@@ -3216,7 +3296,11 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
     const over = String(st?.editedAnswer ?? '').trim()
     const hasExplicitOverride = st?.status === 'overridden' && over !== '' && !looksLikeUuid(over)
     const editedDiffers =
-      edited !== '' && preview !== '' && edited.trim() !== preview.trim()
+      edited !== '' &&
+      isAnswerOverride(edited, preview, {
+        answerType: compareAnswerType,
+        options: opts,
+      })
 
     if (hasExplicitOverride) {
       const baseAid =
@@ -3382,10 +3466,5 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
     coveredQids.add(k)
   }
 
-  return stripFalsePositiveUserOverridesFromUpdates(
-    finalizePostUpdatesAnswerIds(updates, idMaps, rawByQ),
-    questions,
-    rawByQ,
-    idMaps,
-  )
+  return finalizePostUpdatesAnswerIds(updates, idMaps, rawByQ)
 }

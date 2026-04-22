@@ -381,21 +381,25 @@ function OverviewMetricCard({
   )
 }
 
-/**
- * Fully submitted / done opportunity: use whichever signals exist on the row (safe for partial API data).
- */
-function isOpportunityCompleted(o) {
+/** GET /opportunities/ids `status: "completed"` — processing done; needs human Q&A review (Ready for Review card / filter). */
+function isOpportunityReadyForReviewFromApi(o) {
   if (!o || typeof o !== 'object') return false
-  const apiSt = String(o.apiStatus ?? '').toLowerCase()
-  if (apiSt === 'submitted') return true
+  return String(o.apiStatus ?? '').toLowerCase() === 'completed'
+}
+
+/**
+ * Completed card / filter only: 100% Q&A from row fields already on the dashboard (no API workflow status).
+ */
+function isOpportunityFullyAnsweredFromRow(o) {
+  if (!o || typeof o !== 'object') return false
   const compRaw = o.completion != null ? o.completion : o.percentage
   const comp = Number(compRaw)
   if (Number.isFinite(comp) && comp >= 100) return true
   const tq = Number(o.total_questions) || 0
-  if (tq > 0) {
-    const hc = Number(o.human_count) || 0
-    if (hc >= tq) return true
-  }
+  if (tq <= 0) return false
+  const ai = Number(o.ai_count) || 0
+  const hc = Number(o.human_count) || 0
+  if (ai + hc >= tq) return true
   return false
 }
 
@@ -425,12 +429,13 @@ function mapApiIdRowToOpportunity(r) {
     human_percentage: Number(humanPercent) || 0,
     ai_percentage: Number(aiPercent) || 0,
   }
-  out.status = 'review'
+  out.status = 'progress'
 
   const st = String(r.status ?? '').toLowerCase()
   out.apiStatus = st
-  if (st === 'review' || st === 'progress') out.status = st
+  if (st === 'review' || st === 'progress' || st === 'in_progress') out.status = st === 'in_progress' ? 'progress' : st
   else if (st === 'ready') out.status = 'review'
+  else if (st === 'completed') out.status = 'review'
 
   const compIn = r.completion
   if (compIn != null && compIn !== '') {
@@ -444,7 +449,7 @@ function mapApiIdRowToOpportunity(r) {
   const cm = r.conflict_message ?? r.conflictMessage
   if (cm != null && String(cm).trim() !== '') out.conflictMessage = String(cm).trim()
 
-  if (isOpportunityCompleted(out)) out.status = 'completed'
+  if (isOpportunityFullyAnsweredFromRow(out)) out.status = 'completed'
 
   return out
 }
@@ -540,21 +545,20 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
   }, [])
 
   const completedCount = useMemo(
-    () => opportunities.filter(o => isOpportunityCompleted(o)).length,
+    () => opportunities.filter(o => isOpportunityFullyAnsweredFromRow(o)).length,
     [opportunities],
   )
 
-  /** Still needs review: not completed (submitted / 100% / all human answers) — excludes mistaken `review` rows after submit. */
   const readyForReviewCount = useMemo(
-    () => opportunities.filter(o => o.status === 'review' && !isOpportunityCompleted(o)).length,
+    () => opportunities.filter(o => isOpportunityReadyForReviewFromApi(o)).length,
     [opportunities],
   )
 
   const filtered = useMemo(() => {
     const byStatus = opportunities.filter(o => {
       if (filter === 'all') return true
-      if (filter === 'review') return o.status === 'review' && !isOpportunityCompleted(o)
-      if (filter === 'completed') return isOpportunityCompleted(o)
+      if (filter === 'review') return isOpportunityReadyForReviewFromApi(o)
+      if (filter === 'completed') return isOpportunityFullyAnsweredFromRow(o)
       return true
     })
     const q = String(oppSearch ?? '').trim().toLowerCase()

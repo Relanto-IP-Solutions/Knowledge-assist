@@ -161,5 +161,50 @@ describe('QAPage accept-all state transition', () => {
     expect(next['QID-014'].answerSource).toBe('ai')
     expect(next['QID-014'].editedAnswer).toBe('')
   })
+
+  it('keeps sparse picklist payload as accepted AI when selection is UUID', () => {
+    const prevQState = {
+      'QID-001': {
+        status: 'pending',
+        editedAnswer: '',
+        override: '',
+        answerSource: 'ai',
+        conflictResolved: false,
+        serverLocked: false,
+      },
+    }
+
+    const apiAnswers = [
+      {
+        question_id: 'QID-001',
+        answer_id: '200b18b9-adfa-4c6b-bc62-b4740482e35d',
+        answer_type: 'picklist',
+        answer_value: 'Hybrid',
+        citations: [{ source_type: 'zoom' }],
+        confidence_score: 0.5289366206075325,
+        conflict_id: null,
+        conflicts: [],
+        current_version: 116,
+        is_user_override: false,
+        requirement_type: 'Required',
+        status: 'pending',
+      },
+    ]
+
+    // Sparse review question: option catalog may be absent in some API responses.
+    const reviewQuestions = [{ question_id: 'QID-001', answer_type: 'picklist' }]
+
+    const { next, changed } = applyAcceptAllToQState(prevQState, {
+      apiAnswers,
+      reviewQuestions,
+      apiSelections: { 'QID-001': '200b18b9-adfa-4c6b-bc62-b4740482e35d' },
+      questionsCatalog: [],
+    })
+
+    expect(changed).toBe(1)
+    expect(next['QID-001'].status).toBe('accepted')
+    expect(next['QID-001'].answerSource).toBe('ai')
+    expect(next['QID-001'].editedAnswer).toBe('')
+  })
 })
 

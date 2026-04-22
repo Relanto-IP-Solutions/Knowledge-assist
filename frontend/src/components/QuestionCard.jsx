@@ -12,6 +12,12 @@ import {
   reviewAnswerOptions,
 } from '../utils/opportunityReviewMeta'
 import { parseSerializedListAnswerValue, serializeAssistMultiValue } from '../utils/opportunityAnswerRowToReviewQuestion'
+import {
+  areAnswersEquivalent,
+  isAnswerOverrideAgainstAny,
+  normalizedAnswerKey,
+} from '../utils/overrideDetection'
+import { getOptionDisplayLabel, getSelectedOption } from '../utils/getSelectedOption'
 import { ReviewMultiCheckboxes, ReviewPicklistRadios } from './OpportunityReviewAnswerInputs'
 
 /**
@@ -100,6 +106,8 @@ function resolveMultiValuesToCanonicalIds(questionId, values, opts) {
 function resolvePickValueToCanonicalId(questionId, pickSel, opts) {
   const s = String(pickSel ?? '').trim()
   if (!s || !Array.isArray(opts)) return null
+  const byLabel = getSelectedOption(opts, s)
+  if (byLabel) return String(byLabel.id ?? '').trim() || null
   const byId = opts.find(o => String(o.id) === s)
   if (byId) return String(byId.id)
   const byText =
@@ -109,11 +117,39 @@ function resolvePickValueToCanonicalId(questionId, pickSel, opts) {
   return null
 }
 
+function resolvePickSelectionPayload(selection, opts) {
+  const selectedObj =
+    selection != null && typeof selection === 'object' && !Array.isArray(selection) ? selection : null
+  const rawId = String(selectedObj?.answer_id ?? selection ?? '').trim()
+  const rawValue = String(selectedObj?.answer_value ?? '').trim()
+  if (!rawId && !rawValue) return { answer_id: '', answer_value: '' }
+  const match = Array.isArray(opts)
+    ? (
+      getSelectedOption(opts, rawValue) ||
+      opts.find(o => {
+        const oid = String(o?.id ?? '').trim()
+        const ot = String(o?.text ?? '').trim()
+        return (
+          (rawId && (oid === rawId || ot === rawId)) ||
+          (rawValue && (ot === rawValue || oid === rawValue))
+        )
+      })
+    )
+    : null
+  const answer_id = String(match?.id ?? rawId).trim()
+  let answer_value = String(getOptionDisplayLabel(match) || rawValue).trim()
+  if (!answer_value && answer_id) answer_value = String(getOptionDisplayLabel(match) || answer_id).trim()
+  if (answer_value && answer_id && answer_value === answer_id && match?.text) {
+    answer_value = String(match.text).trim()
+  }
+  return { answer_id, answer_value }
+}
+
 function normalizeForMatch(value) {
   return String(value ?? '').trim().toLowerCase()
 }
 
-function resolvePersistedPickSelectedId(persistedAcceptedValue, opts) {
+function resolvePersistedPickSelectedValue(persistedAcceptedValue, opts) {
   const needle = normalizeForMatch(persistedAcceptedValue)
   if (!needle || !Array.isArray(opts)) return ''
   const hit = opts.find((o) => {
@@ -123,7 +159,7 @@ function resolvePersistedPickSelectedId(persistedAcceptedValue, opts) {
     const value = normalizeForMatch(o?.value)
     return needle === id || needle === text || needle === label || needle === value
   })
-  return hit ? String(hit.id ?? '') : ''
+  return hit ? String(getOptionDisplayLabel(hit)).trim() : ''
 }
 
 function resolvePersistedMultiSelectedIds(persistedAcceptedValue, opts) {
@@ -179,41 +215,50 @@ function formatBackendAnswerDisplay(value) {
   return raw
 }
 
+function aiComparableCandidates(question) {
+  const out = []
+  const pushIfAny = (value) => {
+    const formatted = formatBackendAnswerDisplay(value)
+    if (String(formatted ?? '').trim()) out.push(formatted)
+  }
+  /** Include both payload fields — mapper may set `answer_value` even when `answer` is empty or vice versa. */
+  pushIfAny(question?.answer_value)
+  pushIfAny(question?.answer)
+  /**
+   * Include answer_id as an AI-equivalent candidate.
+   * Accept-All for unopened sections stores the raw UUID from pre-seeded apiSelections into
+   * acceptedAnswerValue. Without this, the UUID-vs-label comparison fails and the card is
+   * incorrectly labelled "ACCEPTED EDITED RESPONSE" instead of "ACCEPTED AI RESPONSE".
+   */
+  pushIfAny(question?.answer_id)
+  const conflicts = Array.isArray(question?.conflicts) ? question.conflicts : []
+  for (const conflict of conflicts) {
+    pushIfAny(conflict?.answer ?? conflict?.answer_value ?? conflict?.value)
+    pushIfAny(conflict?.answer_id)
+  }
+  return out
+}
+
 function getAcceptedHeading(question, qStateEntry) {
   const status = String(qStateEntry?.status ?? '').trim().toLowerCase()
   if (status !== 'accepted' && status !== 'overridden') return 'AI RECOMMENDED RESPONSE'
 
   const answerType = normalizeAnswerType(question)
+  const options = reviewAnswerOptions(question)
   const edited = String(qStateEntry?.editedAnswer ?? '').trim()
   const override = String(qStateEntry?.override ?? '').trim()
-  const backendAnswer = formatBackendAnswerDisplay(question?.answer ?? question?.answer_value)
-  const editedProvided = edited !== ''
-  const overrideProvided = override !== ''
-  const editedDiffersFromBackend =
-    editedProvided && edited.toLowerCase() !== String(backendAnswer ?? '').trim().toLowerCase()
-
-  const isTextLike = [
-    'text',
-    'textarea',
-    'integer',
-    'number',
-    'free_text',
-  ].includes(answerType)
-  const isSelectable = [
-    'picklist',
-    'radio',
-    'multi_select',
-    'multiselect',
-    'checkbox',
-  ].includes(answerType)
-
-  if (isTextLike && (overrideProvided || (editedProvided && editedDiffersFromBackend))) {
+  const backendCandidates = aiComparableCandidates(question)
+  const currentValue = override || edited
+  if (
+    currentValue &&
+    isAnswerOverrideAgainstAny(currentValue, backendCandidates, {
+      answerType,
+      options,
+    })
+  ) {
     return 'EDITED RESPONSE'
   }
-  if (isSelectable && (overrideProvided || (editedProvided && editedDiffersFromBackend))) {
-    return 'EDITED RESPONSE'
-  }
-  if (String(backendAnswer ?? '').trim() !== '') return 'AI RECOMMENDED RESPONSE'
+  if (backendCandidates.length > 0) return 'AI RECOMMENDED RESPONSE'
   return 'ACCEPTED RESPONSE'
 }
 
@@ -223,77 +268,12 @@ function arraysEqualAsStrings(a, b) {
   return a.every((v, i) => String(v) === String(b[i]))
 }
 
-/**
- * Value-equality helpers used to derive whether the user's current selection
- * matches the backend AI answer. These are intentionally:
- *   - order-independent for arrays / serialized JSON lists (multi-select)
- *   - label ↔ id aware (via the provided opts list)
- *   - trim + lowercase + whitespace-collapsing for plain text
- * so that re-selecting the AI option always compares equal — which is what
- * decides between "AI RECOMMENDED RESPONSE" and "EDITED RESPONSE".
- */
-function canonicalTokenForCompare(raw, opts = []) {
-  const needle = String(raw ?? '').trim()
-  if (!needle) return ''
-  const lower = needle.toLowerCase()
-  if (Array.isArray(opts) && opts.length > 0) {
-    const hit = opts.find(o => {
-      const id = String(o?.id ?? '').trim()
-      const text = String(o?.text ?? '').trim()
-      const label = String(o?.label ?? '').trim()
-      const value = String(o?.value ?? '').trim()
-      return (
-        id === needle ||
-        text === needle ||
-        text.toLowerCase() === lower ||
-        label === needle ||
-        label.toLowerCase() === lower ||
-        value === needle ||
-        value.toLowerCase() === lower
-      )
-    })
-    if (hit) {
-      const canonical = String(hit.text ?? hit.label ?? hit.value ?? hit.id ?? needle).trim()
-      return canonical.toLowerCase().replace(/\s+/g, ' ')
-    }
-  }
-  return lower.replace(/\s+/g, ' ')
+function normalizedKeyForEquality(value, opts = [], answerType = '') {
+  return normalizedAnswerKey(value, { options: opts, answerType })
 }
 
-function tokensForCompare(value, opts = []) {
-  if (value == null) return []
-  if (Array.isArray(value)) {
-    return value.map(v => canonicalTokenForCompare(v, opts)).filter(Boolean)
-  }
-  const raw = String(value).trim()
-  if (!raw) return []
-  if (raw.startsWith('[')) {
-    try {
-      const parsed = parseSerializedListAnswerValue(raw)
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map(v => canonicalTokenForCompare(v, opts)).filter(Boolean)
-      }
-    } catch {
-      // Fall through — treat as a single token below.
-    }
-  }
-  if (raw.includes(',')) {
-    const parts = raw.split(/,\s*/).map(p => p.trim()).filter(Boolean)
-    if (parts.length > 1) {
-      return parts.map(v => canonicalTokenForCompare(v, opts)).filter(Boolean)
-    }
-  }
-  const single = canonicalTokenForCompare(raw, opts)
-  return single ? [single] : []
-}
-
-/** Order-independent normalized key. Equal keys ⇒ values are considered equivalent. */
-function normalizedKeyForEquality(value, opts = []) {
-  return tokensForCompare(value, opts).slice().sort().join('|')
-}
-
-function valuesAreEquivalent(a, b, opts = []) {
-  return normalizedKeyForEquality(a, opts) === normalizedKeyForEquality(b, opts)
+function valuesAreEquivalent(a, b, opts = [], answerType = '') {
+  return areAnswersEquivalent(a, b, { options: opts, answerType })
 }
 
 const TABS_ASSIST = [
@@ -315,6 +295,15 @@ const TABS_DEFAULT_NO_SOURCES = [
 
 const SI_NAVY = 'var(--si-navy, #1B264F)'
 const SI_ORANGE = 'var(--si-orange, #E8532E)'
+
+/** GET /answers `is_user_override` may be boolean or string on the wire. */
+function normalizePayloadBooleanLike(value) {
+  if (value === true || value === false) return value
+  const t = String(value ?? '').trim().toLowerCase()
+  if (t === 'true' || t === '1' || t === 'yes') return true
+  if (t === 'false' || t === '0' || t === 'no') return false
+  return null
+}
 
 const PLACEHOLDER_ANSWERS = new Set([
   'No extracted answer available for this question.',
@@ -526,8 +515,18 @@ export function QuestionCard({
   const prevStatusRef = useRef(st)
   const isSubmittedLocked =
     qState?.serverLocked === true || String(q?.status ?? '').trim().toLowerCase() === 'active'
-  const displayAnswer = qState.editedAnswer || (st === 'overridden' && qState.override ? qState.override : q.answer)
-  const backendAnswerInvalid = isInvalidBackendAnswerValue(q?.answer)
+  const acceptedCommittedValue = String(qState?.acceptedAnswerValue ?? '').trim()
+  const payloadAnswerForDisplay = q.answer_value ?? q.answer
+  const displayAnswer = (() => {
+    if (st === 'accepted' || st === 'overridden') {
+      if (acceptedCommittedValue) return acceptedCommittedValue
+      if (st === 'overridden' && qState.override) return qState.override
+      if (qState.editedAnswer) return qState.editedAnswer
+      return payloadAnswerForDisplay
+    }
+    return qState.editedAnswer || (st === 'overridden' && qState.override ? qState.override : payloadAnswerForDisplay)
+  })()
+  const backendAnswerInvalid = isInvalidBackendAnswerValue(q?.answer_value ?? q?.answer)
 
   const assistAnswerStructured = useMemo(() => {
     const mergedAnswerType =
@@ -625,9 +624,15 @@ export function QuestionCard({
         pickValue = ''
       } else {
         const dFull = String(raw).trim()
-        const match = opts.find(o => String(o.id) === dFull || String(o.text) === dFull)
+        const lower = dFull.toLowerCase()
+        const match =
+          getSelectedOption(opts, dFull) ||
+          opts.find(o => String(o.id) === dFull || String(o.text) === dFull) ||
+          opts.find(o => String(o.text).trim().toLowerCase() === lower) ||
+          opts.find(o => String(o.label ?? '').trim().toLowerCase() === lower) ||
+          opts.find(o => String(o.value ?? '').trim().toLowerCase() === lower)
         // Never auto-pick the only catalog option when the API sent no matching value — that looked "selected" with answer_value null.
-        pickValue = match ? String(match.id) : ''
+        pickValue = match ? String(getOptionDisplayLabel(match)) : ''
         if (!pickValue && dFull && !dFull.startsWith('[') && !isPlaceholderAnswerText(dFull)) {
           pickValue = dFull
         }
@@ -645,6 +650,8 @@ export function QuestionCard({
     qState.conflictResolved,
     st,
     displayAnswer,
+    q.answer_value,
+    q.answer,
     assistReviewQuestion,
     assistReviewQuestion?.answer_type,
     q.apiAnswerType,
@@ -652,9 +659,11 @@ export function QuestionCard({
 
   const [assistPickSel, setAssistPickSel] = useState('')
   const [assistMultiSel, setAssistMultiSel] = useState([])
-  const handleAssistPickSelection = value => {
-    setAssistPickSel(value)
-    const label = formatAnswerForDisplay(value, assistAnswerStructured?.opts || [])
+  const handleAssistPickSelection = selected => {
+    const opts = assistAnswerStructured?.opts || []
+    const normalized = resolvePickSelectionPayload(selected, opts)
+    setAssistPickSel(normalized.answer_value || normalized.answer_id)
+    const label = normalized.answer_value || formatAnswerForDisplay(normalized.answer_id, opts)
     // After a conflict is resolved, changing the selection should become a user override.
     if ((st === 'accepted' || st === 'overridden') && qState?.conflictResolved && !isSubmittedLocked) {
       onSaveOverride?.(q.id, label)
@@ -857,6 +866,12 @@ export function QuestionCard({
     String(conflictFallback ?? '').trim()
   const hasValidDisplayAnswer = isValidAnswer(effectiveDisplayAnswer)
   const backendAnswerText = String(q?.answer_value ?? q?.answer ?? '').trim()
+  const backendAnswerId = String(
+    q?.answer_id ??
+    assistReviewQuestion?.final_answer_id ??
+    assistReviewQuestion?.answer_id ??
+    (Array.isArray(conflictSelectionHint) ? '' : conflictSelectionHint ?? ''),
+  ).trim()
   const editedAnswerText = String(qState?.editedAnswer ?? '').trim()
   const overrideText = String(qState?.override ?? '').trim()
   const hasBackendAI = Boolean(
@@ -864,16 +879,26 @@ export function QuestionCard({
     citationList.length > 0,
   )
   const optsForCompare = assistAnswerStructured?.opts || []
+  const comparisonAnswerType = assistAnswerStructured?.showMulti
+    ? 'multi_select'
+    : assistAnswerStructured?.showPick
+      ? 'picklist'
+      : normalizeAnswerType(assistReviewQuestion || q || { answer_type: q?.apiAnswerType || '' })
   // Value-equality keys. Equal key ⇒ same logical answer (order-independent
   // for multi-select, label↔id aware, trim/case/whitespace normalized).
-  const normalizedBackendComparable = normalizedKeyForEquality(backendAnswerText, optsForCompare)
-  const normalizedAcceptedComparable = normalizedKeyForEquality(editedAnswerText, optsForCompare)
-  const normalizedEditDraftComparable = normalizedKeyForEquality(editText, optsForCompare)
+  const normalizedBackendComparable = normalizedKeyForEquality(
+    backendAnswerText,
+    optsForCompare,
+    comparisonAnswerType,
+  )
+  const normalizedEditDraftComparable = normalizedKeyForEquality(
+    editText,
+    optsForCompare,
+    comparisonAnswerType,
+  )
   const overrideMatchesBackend =
-    Boolean(overrideText) && valuesAreEquivalent(overrideText, backendAnswerText, optsForCompare)
-  const acceptedTextDiffersFromBackend =
-    normalizedAcceptedComparable !== '' &&
-    normalizedAcceptedComparable !== normalizedBackendComparable
+    Boolean(overrideText) &&
+    valuesAreEquivalent(overrideText, backendAnswerText, optsForCompare, comparisonAnswerType)
   // Structured selection equality is order-independent (multi) and label↔id aware (pick).
   const userChangedStructuredSelection = Boolean(
     assistAnswerStructured &&
@@ -883,12 +908,14 @@ export function QuestionCard({
             assistMultiSel,
             assistAnswerStructured.multiValue || [],
             assistAnswerStructured.opts || [],
+            'multi_select',
           )) ||
         (!assistAnswerStructured.showMulti &&
           !valuesAreEquivalent(
             assistPickSel,
             assistAnswerStructured.pickValue,
             assistAnswerStructured.opts || [],
+            'picklist',
           ))
       ),
   )
@@ -902,19 +929,22 @@ export function QuestionCard({
   // permanent "user edited" flag. The truth is derived from the current value
   // vs the backend AI value — so re-selecting the AI option reverts the UI
   // back to "AI RECOMMENDED RESPONSE" automatically.
+  const manualCurrentValue = overrideText || editedAnswerText
+  const manualComparedToAiIsOverride = manualCurrentValue !== '' &&
+    isAnswerOverrideAgainstAny(
+      manualCurrentValue,
+      aiComparableCandidates(q),
+      {
+        answerType: comparisonAnswerType,
+        options: optsForCompare,
+      },
+    )
   const userHasEdited =
-    (Boolean(overrideText) && !overrideMatchesBackend) ||
-    acceptedTextDiffersFromBackend ||
+    manualComparedToAiIsOverride ||
     userTypedDraft ||
     userChangedSelectionDraft ||
     (!hasBackendAI && editedAnswerText !== '')
-  const userHasEditedForLabel =
-    (Boolean(overrideText) && !overrideMatchesBackend) ||
-    (
-      editedAnswerText !== '' &&
-      normalizedAcceptedComparable !== normalizedBackendComparable
-    ) ||
-    (!hasBackendAI && editedAnswerText !== '')
+  const userHasEditedForLabel = manualComparedToAiIsOverride || (!hasBackendAI && editedAnswerText !== '')
   // Derive `answerSource` purely from value equality — ignore any stale flag
   // previously written to qState.answerSource.
   const answerSource = userHasEditedForLabel ? 'user' : 'ai'
@@ -922,13 +952,42 @@ export function QuestionCard({
   // Fix: do NOT use answerSource here — updateQDraft can corrupt it to 'user' even for pure AI
   // answers (draft-sync effect fires after accept and calls onDraftAnswerChange with the same text).
   // The only reliable signal is whether the stored text actually differs from the backend answer.
-  const acceptedByAi =
-    isAcceptedLike &&
-    hasBackendAI &&
-    !userHasEditedForLabel
+  const payloadIsUserOverride = normalizePayloadBooleanLike(q?.is_user_override)
+  const acceptedComparableValue =
+    acceptedCommittedValue ||
+    overrideText ||
+    editedAnswerText ||
+    String(displayAnswerResolved ?? '').trim()
+  const acceptedValueLooksUserEdited =
+    Boolean(acceptedComparableValue) &&
+    isAnswerOverrideAgainstAny(
+      acceptedComparableValue,
+      aiComparableCandidates(q),
+      {
+        answerType: comparisonAnswerType,
+        options: optsForCompare,
+      },
+    )
+  const acceptedHasLocalUserEvidence =
+    st === 'overridden' ||
+    Boolean(overrideText) ||
+    acceptedValueLooksUserEdited
+  // Persisted submit payload is the source of truth after reload/navigation.
+  const acceptedByUserFromPayload = payloadIsUserOverride === true
+  const acceptedByAiFromPayload = payloadIsUserOverride === false
   const acceptedByUser =
     isAcceptedLike &&
-    (userHasEditedForLabel || !hasBackendAI)
+    (
+      acceptedByUserFromPayload ||
+      (
+        !acceptedByAiFromPayload &&
+        (
+          acceptedHasLocalUserEvidence ||
+          (!hasBackendAI && Boolean(acceptedComparableValue))
+        )
+      )
+    )
+  const acceptedByAi = isAcceptedLike && (acceptedByAiFromPayload || !acceptedByUser)
   const pendingHasUserEdits =
     st === 'pending' && userHasEditedForLabel
   const reviewHeading =
@@ -938,9 +997,9 @@ export function QuestionCard({
         : acceptedByUser
           ? 'ACCEPTED EDITED RESPONSE'
           : 'ACCEPTED RESPONSE'
-      : pendingHasUserEdits
+      : payloadIsUserOverride === true || pendingHasUserEdits
         ? 'EDITED RESPONSE'
-        : hasBackendAI
+        : payloadIsUserOverride === false || hasBackendAI
           ? 'AI RECOMMENDED RESPONSE'
           : 'NO EXTRACTED ANSWER'
   const acceptBtnLabel =
@@ -1105,7 +1164,7 @@ export function QuestionCard({
       shouldTreatAsUserEdit: shouldTreatPickAcceptAsUserEdit,
     })
     onAccept?.(q.id, {
-      assistSelection: { mode: 'pick', pick: pickId },
+      assistSelection: { mode: 'pick', pick: { answer_id: pickId, answer_value: selectedLabel } },
       ...(shouldTreatPickAcceptAsUserEdit ? { manualValue: selectedLabel } : {}),
     })
   }
@@ -1116,23 +1175,52 @@ export function QuestionCard({
   const borderAccent = visualStatus === 'accepted' ? '#56D364' : visualStatus === 'overridden' ? '#E3B341' : answerNotProvided ? '#FCA5A5' : 'var(--border2)'
   // Accepted display must come from committed answer fields only; do not depend
   // on transient draft-derived flags to avoid accept/undo visual bouncing.
-  const selectedValue = String(editedAnswerText || overrideText || backendAnswerText).trim()
+  const selectedValue = String(
+    qState?.acceptedAnswerValue ||
+    editedAnswerText ||
+    overrideText ||
+    backendAnswerText ||
+    (assistAnswerStructured ? backendAnswerId : ''),
+  ).trim()
   const acceptedSelectedValue = selectedValue
   const persistedAcceptedValue = String(
     st === 'accepted' || st === 'overridden'
       ? acceptedSelectedValue
-      : (q?.answer_value ?? q?.answer ?? ''),
+      : (q?.answer_value ?? q?.answer ?? (assistAnswerStructured ? backendAnswerId : '')),
   ).trim()
-  const readonlyPickValue = resolvePersistedPickSelectedId(
+  const payloadHighlightOptionIds = useMemo(() => {
+    if (!assistAnswerStructured) return []
+    const rawPayload = String(q?.answer_value ?? backendAnswerId ?? '').trim()
+    if (!rawPayload || isPlaceholderAnswerText(rawPayload)) return []
+    const opts = assistAnswerStructured?.opts || []
+    if (assistAnswerStructured.showMulti) {
+      const parsed = rawPayload.startsWith('[')
+        ? parseSerializedListAnswerValue(rawPayload)
+        : rawPayload.split(/,\s*/).map(v => String(v ?? '').trim()).filter(Boolean)
+      return resolveMultiValuesToCanonicalIds(q.id, parsed, opts)
+    }
+    const pickId = resolvePickValueToCanonicalId(q.id, rawPayload, opts)
+    return pickId ? [pickId] : []
+  }, [assistAnswerStructured, q?.answer_value, backendAnswerId, q.id])
+  const readonlyPickValue = resolvePersistedPickSelectedValue(
     persistedAcceptedValue,
     assistAnswerStructured?.opts || [],
   )
-  // Text-based fallback: if UUID resolution misses, match option by display text directly.
+  // Text-based fallback: if strict label match misses, keep direct display value mapping.
   const textBasedPickValue = !readonlyPickValue && assistAnswerStructured?.opts?.length
     ? (assistAnswerStructured.opts.find(o =>
-        String(o.text || o.label || o.value || '').trim().toLowerCase() ===
+        String(getOptionDisplayLabel(o)).trim().toLowerCase() ===
         persistedAcceptedValue.toLowerCase()
-      )?.id || '')
+      ) ? persistedAcceptedValue : '')
+    : ''
+  const payloadPickValue = (!readonlyPickValue && !textBasedPickValue && payloadHighlightOptionIds.length > 0)
+    ? String(
+      getOptionDisplayLabel(
+        (assistAnswerStructured?.opts || []).find(
+          o => String(o?.id ?? '').trim() === String(payloadHighlightOptionIds[0]).trim(),
+        ),
+      ) || '',
+    ).trim()
     : ''
   const readonlyMultiValue = resolvePersistedMultiSelectedIds(
     persistedAcceptedValue,
@@ -1146,35 +1234,23 @@ export function QuestionCard({
   const pendingPickValue =
     assistAnswerStructured?.showMulti
       ? ''
-      : userChangedStructuredSelection
-        ? (
-            assistPickSel ||
-            assistAnswerStructured?.pickValue ||
-            readonlyPickValue ||
-            textBasedPickValue ||
-            ''
-          )
-        : (
-            assistAnswerStructured?.pickValue ||
-            readonlyPickValue ||
-            textBasedPickValue ||
-            assistPickSel ||
-            ''
-          )
+      : (
+          assistAnswerStructured?.pickValue ||
+          readonlyPickValue ||
+          textBasedPickValue ||
+          assistPickSel ||
+          ''
+        )
   const pendingMultiValue =
     assistAnswerStructured?.showMulti
       ? (
-          userChangedStructuredSelection
-            ? (assistMultiSel.length > 0
-              ? assistMultiSel
-              : (assistAnswerStructured?.multiValue?.length ? assistAnswerStructured.multiValue : readonlyMultiValue))
-            : (assistAnswerStructured?.multiValue?.length
-              ? assistAnswerStructured.multiValue
-              : (readonlyMultiValue.length ? readonlyMultiValue : assistMultiSel))
+          assistAnswerStructured?.multiValue?.length
+            ? assistAnswerStructured.multiValue
+            : (readonlyMultiValue.length ? readonlyMultiValue : assistMultiSel)
         )
       : []
   const pickRadioValue = st === 'accepted' || st === 'overridden'
-    ? readonlyPickValue || textBasedPickValue || assistPickSel
+    ? readonlyPickValue || textBasedPickValue || payloadPickValue || assistPickSel
     : pendingPickValue
   const multiCheckboxValue = st === 'accepted' || st === 'overridden'
     ? (readonlyMultiValue.length ? readonlyMultiValue : assistMultiSel)
@@ -1563,6 +1639,7 @@ export function QuestionCard({
                     <ReviewMultiCheckboxes
                       options={assistAnswerStructured.opts}
                       value={multiCheckboxValue}
+                      payloadHighlightIds={payloadHighlightOptionIds}
                       onChange={handleAssistMultiSelection}
                       error={null}
                       disabled={assistControlsDisabled}
@@ -1573,6 +1650,7 @@ export function QuestionCard({
                       name={`assist-pick-${q.id}`}
                       options={assistAnswerStructured.opts}
                       value={pickRadioValue}
+                      payloadHighlightIds={payloadHighlightOptionIds}
                       onChange={handleAssistPickSelection}
                       error={null}
                       disabled={assistControlsDisabled}
@@ -1912,7 +1990,7 @@ export function QuestionCard({
               </div>
             ) : (
               <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg3)', fontSize: 12, color: 'var(--text3)' }}>
-                No feedback for this msg.
+                No feedback has been submitted for this answer yet.
               </div>
             )}
           </>

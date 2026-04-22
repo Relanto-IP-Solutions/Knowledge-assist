@@ -11,6 +11,26 @@ function toConfidencePct(score) {
   return score <= 1 ? Math.round(score * 100) : Math.round(score)
 }
 
+function looksLikeUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value ?? '').trim(),
+  )
+}
+
+function resolveAnswerLabelFromRows(answerRows, answerIdOrValue) {
+  const needle = String(answerIdOrValue ?? '').trim()
+  if (!needle || !Array.isArray(answerRows)) return ''
+  const lowerNeedle = needle.toLowerCase()
+  const hit = answerRows.find((row) => {
+    if (!row || typeof row !== 'object') return false
+    const id = String(row.answer_id ?? row.id ?? '').trim()
+    const value = String(row.answer_value ?? row.value ?? row.text ?? row.label ?? '').trim()
+    return id === needle || value === needle || value.toLowerCase() === lowerNeedle
+  })
+  if (!hit) return ''
+  return String(hit.answer_value ?? hit.value ?? hit.text ?? hit.label ?? '').trim()
+}
+
 function firstSrcType(citations) {
   const c0 = citations?.[0]
   if (!c0) return 'unknown'
@@ -129,8 +149,21 @@ function primaryAnswerDisplay(row) {
 function buildConflictsForCard(row) {
   const citations = row.citations || []
   const list = Array.isArray(row.conflicts) ? row.conflicts : []
+  const answerRows = Array.isArray(row.answers) ? row.answers : []
+  const resolveConflictDisplayAnswer = (conflict, fallbackText) => {
+    const rawAnswer = String(conflict?.answer_value ?? conflict?.answer ?? conflict?.value ?? '').trim()
+    if (!rawAnswer) return String(fallbackText ?? '').trim()
+    // If backend sent UUID text instead of label, recover label from answer rows using answer_id/value.
+    if (looksLikeUuid(rawAnswer)) {
+      const fromId = resolveAnswerLabelFromRows(answerRows, conflict?.answer_id ?? rawAnswer)
+      if (fromId && !looksLikeUuid(fromId)) return fromId
+    }
+    const byAnswerId = resolveAnswerLabelFromRows(answerRows, conflict?.answer_id)
+    if (byAnswerId && !looksLikeUuid(byAnswerId) && looksLikeUuid(rawAnswer)) return byAnswerId
+    return rawAnswer
+  }
   const validConflicts = list.filter(c => {
-    const ans = String(c?.answer_value ?? '').trim()
+    const ans = resolveConflictDisplayAnswer(c, '')
     return ans && !isPlaceholderAnswerValue(ans)
   })
   const qid = String(row.question_id ?? '')
@@ -162,7 +195,7 @@ function buildConflictsForCard(row) {
       })
     }
     validConflicts.forEach((c, i) => {
-      const ans = String(c.answer_value ?? '').trim()
+      const ans = resolveConflictDisplayAnswer(c, '')
       const cid = c?.answer_id != null && String(c.answer_id).trim() !== '' ? String(c.answer_id) : null
       const ccits = Array.isArray(c.citations) ? c.citations : []
       out.push({
@@ -187,7 +220,7 @@ function buildConflictsForCard(row) {
     })
   }
   if (validConflicts.length === 1) {
-    const alt = String(validConflicts[0].answer_value || '')
+    const alt = resolveConflictDisplayAnswer(validConflicts[0], '')
     const pid =
       row.answer_id != null && String(row.answer_id).trim() !== '' ? String(row.answer_id) : null
     const cid =
@@ -248,6 +281,15 @@ export function buildQuestionCardModelFromApiAnswer(row, questionText) {
     id: row.question_id,
     text: (questionText && String(questionText).trim()) || String(row.question_id),
     answer,
+    /** Keep primary answer id so UI can render selected option even if answer_value is null. */
+    answer_id:
+      row?.answer_id != null && String(row.answer_id).trim() !== ''
+        ? String(row.answer_id).trim()
+        : null,
+    /** Preserve the payload answer_value so structured UI can highlight the right option(s). */
+    answer_value: primaryRaw || null,
+    /** Used for post-submit AI/Human filters + display cues. */
+    is_user_override: row?.is_user_override ?? null,
     conf,
     p: conf >= 60 ? 'P1' : conf >= 40 ? 'P2' : 'P0',
     pc: conf >= 60 ? '#D97706' : conf >= 40 ? '#475569' : '#DC2626',

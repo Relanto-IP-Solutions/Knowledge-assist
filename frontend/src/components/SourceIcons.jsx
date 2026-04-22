@@ -1,3 +1,5 @@
+import gdriveLogo from '../assets/gdrive-logo.png'
+
 export function ZoomIcon({ size = 16 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" fill="none" style={{ flexShrink: 0 }}>
@@ -10,16 +12,13 @@ export function ZoomIcon({ size = 16 }) {
 
 export function GDriveIcon({ size = 16 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 87.3 78" fill="none" style={{ flexShrink: 0 }}>
-      <path d="M6.6 66.85L3.3 61.35 29.1 18.15h24.6L6.6 66.85z" fill="#0066DA"/>
-      <path d="M29.1 18.15L53.7 18.15 84 66.85H59.4L29.1 18.15z" fill="#FBBC04"/>
-      <path d="M84 66.85H59.4L53.7 56.55 41.1 36.15 53.7 18.15 84 66.85z" fill="#FBBC04"/>
-      <path d="M6.6 66.85L29.1 18.15 41.1 36.15 18.6 66.85H6.6z" fill="#00AC47"/>
-      <path d="M29.1 18.15L41.1 36.15 53.7 18.15H29.1z" fill="#EA4335"/>
-      <path d="M6.6 66.85H18.6L41.1 36.15 29.1 18.15 3.3 61.35 6.6 66.85z" fill="#00832D"/>
-      <path d="M59.4 66.85H84L53.7 18.15 41.1 36.15 53.7 56.55 59.4 66.85z" fill="#FBBC04"/>
-      <path d="M6.6 66.85H59.4L53.7 56.55H18.6L6.6 66.85z" fill="#4285F4"/>
-    </svg>
+    <img
+      src={gdriveLogo}
+      alt="Google Drive"
+      width={size}
+      height={size}
+      style={{ flexShrink: 0, display: 'block', objectFit: 'contain' }}
+    />
   )
 }
 

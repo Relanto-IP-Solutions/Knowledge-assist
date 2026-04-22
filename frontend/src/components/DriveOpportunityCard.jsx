@@ -742,11 +742,7 @@ export default function DriveOpportunityCard({ opportunityId, opportunityName, o
             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(66,133,244,.1)' }}
             onMouseLeave={e => { e.currentTarget.style.background = 'rgba(66,133,244,.05)' }}
           >
-            <svg width="12" height="12" viewBox="0 0 48 48" aria-hidden>
-              <path d="M6 36l8-14 8 14H6z" fill="#0066DA"/>
-              <path d="M24 6l8 14H16L24 6z" fill="#00AC47"/>
-              <path d="M42 36H26l-4-7 8-13 12 20z" fill="#FFBA00"/>
-            </svg>
+            <GDriveIcon size={12} />
             Open Master Folder
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
