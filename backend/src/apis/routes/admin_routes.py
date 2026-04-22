@@ -4,6 +4,7 @@ This module hosts the opportunity-request approval workflow endpoints:
 - POST /opportunities/create
 - GET  /opportunities/requests
 - POST /opportunities/requests
+- GET  /opportunities/my-requests
 """
 
 import re
@@ -508,19 +509,23 @@ def get_my_requests(
     user: Annotated[User, Depends(get_existing_firebase_user)],
 ):
     """Return the current user's own opportunity requests."""
-    rows = db.execute(
-        text(
-            """
-            SELECT request_id, opportunity_title, status, submitted_at,
-                   admin_remarks, reviewed_at
-            FROM opportunity_requests
-            WHERE user_id = :user_id
-            ORDER BY submitted_at DESC
-            LIMIT 100
-            """
-        ),
-        {"user_id": int(user.id)},
-    ).all()
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT request_id, opportunity_title, status, submitted_at,
+                       admin_remarks, reviewed_at
+                FROM opportunity_requests
+                WHERE user_id = :user_id
+                ORDER BY submitted_at DESC
+                LIMIT 100
+                """
+            ),
+            {"user_id": int(user.id)},
+        ).all()
+    except Exception:
+        logger.exception("get_my_requests failed")
+        raise HTTPException(status_code=500, detail="Failed to load requests.") from None
     return MyRequestsListResponse(
         requests=[
             MyRequestOut(
