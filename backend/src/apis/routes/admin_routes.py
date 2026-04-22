@@ -31,6 +31,14 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
 
+def _get_admin_user_ids(db: Session) -> list[str]:
+    """Return DB user IDs of every user with the ADMIN role."""
+    rows = db.execute(
+        text("SELECT id FROM users WHERE roles_assigned @> ARRAY['ADMIN']::varchar[]")
+    ).all()
+    return [str(r[0]) for r in rows]
+
+
 def _is_name_reserved(db: Session, title: str) -> bool:
     """True when name already exists or is pending approval."""
     existing_opportunity = db.execute(
@@ -137,15 +145,12 @@ def create_opportunity_request(
 
     # Notify all admins about the new pending request.
     request_id_str = str(row[0])
-    admin_rows = db.execute(
-        text("SELECT id FROM users WHERE roles_assigned @> ARRAY['ADMIN']::varchar[]")
-    ).all()
-    for admin_row in admin_rows:
+    for admin_id in _get_admin_user_ids(db):
         emit_notification_event(
             "request_created",
             request_id_str,
             f"New opportunity request submitted: {title}",
-            str(admin_row[0]),
+            admin_id,
         )
 
     return CreateOpportunityResponse(
@@ -401,6 +406,19 @@ def review_opportunity_request(
                 int((time.perf_counter() - t_req0) * 1000),
                 status_u,
             )
+            emit_notification_event(
+                "request_approved",
+                str(row[0]),
+                f"Your opportunity request '{title}' has been approved.",
+                str(int(req[1])),
+            )
+            for admin_id in _get_admin_user_ids(db):
+                emit_notification_event(
+                    "request_approved",
+                    str(row[0]),
+                    f"Opportunity request '{title}' was approved.",
+                    admin_id,
+                )
             return {
                 "request_id": str(row[0]),
                 "status": "APPROVED",
@@ -421,7 +439,7 @@ def review_opportunity_request(
                     reviewed_by = :reviewed_by
                 WHERE request_id = :request_id
                   AND status = 'PENDING'
-                RETURNING request_id
+                RETURNING request_id, user_id, opportunity_title
                 """
             ),
             {
@@ -449,6 +467,19 @@ def review_opportunity_request(
             int((time.perf_counter() - t_req0) * 1000),
             status_u,
         )
+        emit_notification_event(
+            "request_rejected",
+            str(row[0]),
+            f"Your opportunity request '{str(row[2])}' has been rejected.",
+            str(int(row[1])),
+        )
+        for admin_id in _get_admin_user_ids(db):
+            emit_notification_event(
+                "request_rejected",
+                str(row[0]),
+                f"Opportunity request '{str(row[2])}' was rejected.",
+                admin_id,
+            )
         return {"request_id": str(row[0]), "status": "REJECTED"}
     except HTTPException:
         raise
@@ -456,4 +487,51 @@ def review_opportunity_request(
         db.rollback()
         logger.exception("review_opportunity_request failed")
         raise HTTPException(status_code=500, detail=str(exc)) from None
+
+
+class MyRequestOut(BaseModel):
+    request_id: uuid.UUID
+    opportunity_title: str
+    status: str
+    submitted_at: datetime
+    admin_remarks: str | None = None
+    reviewed_at: datetime | None = None
+
+
+class MyRequestsListResponse(BaseModel):
+    requests: list[MyRequestOut]
+
+
+@router.get("/my-requests", response_model=MyRequestsListResponse)
+def get_my_requests(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_existing_firebase_user)],
+):
+    """Return the current user's own opportunity requests."""
+    rows = db.execute(
+        text(
+            """
+            SELECT request_id, opportunity_title, status, submitted_at,
+                   admin_remarks, reviewed_at
+            FROM opportunity_requests
+            WHERE user_id = :user_id
+            ORDER BY submitted_at DESC
+            LIMIT 100
+            """
+        ),
+        {"user_id": int(user.id)},
+    ).all()
+    return MyRequestsListResponse(
+        requests=[
+            MyRequestOut(
+                request_id=r[0],
+                opportunity_title=str(r[1]),
+                status=str(r[2]),
+                submitted_at=r[3],
+                admin_remarks=r[4],
+                reviewed_at=r[5],
+            )
+            for r in rows
+        ]
+    )
 
