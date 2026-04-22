@@ -4,9 +4,11 @@
 
 import { api } from './apiClient'
 
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+
 /**
  * Create a new opportunity.
- * POST http://localhost:8000/opportunities/create
+ * POST /opportunities/create
  * @param {{ name: string }} input
  * @returns {Promise<{ opportunity_id: string, raw: unknown }>}
  */
@@ -15,7 +17,7 @@ export async function createOpportunity(input) {
   if (!name) throw new Error('Opportunity name is required')
 
   const payload = { name }
-  const url = 'http://localhost:8000/opportunities/create'
+  const url = `${API_BASE}/opportunities/create`
 
   try {
     const { data: json } = await api.post(url, payload, {
@@ -40,3 +42,4 @@ export async function createOpportunity(input) {
     throw new Error(bodyText || e?.message || (status ? `HTTP ${status}` : 'Request failed'))
   }
 }
+ 
