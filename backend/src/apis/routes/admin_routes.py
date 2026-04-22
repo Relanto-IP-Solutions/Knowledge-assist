@@ -4,7 +4,6 @@ This module hosts the opportunity-request approval workflow endpoints:
 - POST /opportunities/create
 - GET  /opportunities/requests
 - POST /opportunities/requests
-- GET  /opportunities/my-requests
 """
 
 import re
@@ -24,20 +23,11 @@ from src.apis.deps.rbac import is_admin
 from src.services.database_manager.models.auth_models import Opportunity, User
 from src.services.database_manager.opportunity_state import STATUS_DISCOVERED
 from src.services.database_manager.orm import get_db
-from src.services.event_hub.notifications import emit_notification_event
 from src.utils.logger import get_logger
 
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
-
-
-def _get_admin_user_ids(db: Session) -> list[str]:
-    """Return DB user IDs of every user with the ADMIN role."""
-    rows = db.execute(
-        text("SELECT id FROM users WHERE roles_assigned @> ARRAY['ADMIN']::varchar[]")
-    ).all()
-    return [str(r[0]) for r in rows]
 
 
 def _is_name_reserved(db: Session, title: str) -> bool:
@@ -143,16 +133,6 @@ def create_opportunity_request(
         int(user.id),
         len(title),
     )
-
-    # Notify all admins about the new pending request.
-    request_id_str = str(row[0])
-    for admin_id in _get_admin_user_ids(db):
-        emit_notification_event(
-            "request_created",
-            request_id_str,
-            f"New opportunity request submitted: {title}",
-            admin_id,
-        )
 
     return CreateOpportunityResponse(
         request_id=row[0],
@@ -375,28 +355,51 @@ def review_opportunity_request(
                 except IntegrityError as exc:
                     db.rollback()
                     msg = str(exc).lower()
+                    if ("name" in msg) or ("unique_opportunity_name" in msg):
+                        raise HTTPException(
+                            status_code=409, detail="Opportunity name already exists"
+                        ) from None
+                    if "opportunity_id" in msg:
+                        # With nextval() collisions should be rare; if they keep happening,
+                        # nudge the sequence forward to self-heal drift.
+                        if (attempt + 1) % 5 == 0:
+                            db.execute(
+                                text(
+                                    """
+                                    SELECT setval(
+                                        'opportunity_oid_seq',
+                                        COALESCE(
+                                            (
+                                                SELECT MAX(CAST(SUBSTRING(opportunity_id FROM 4) AS INTEGER))
+                                                FROM opportunities
+                                                WHERE opportunity_id ~ '^oid[0-9]+$'
+                                            ),
+                                            0
+                                        ) + 1,
+                                        false
+                                    )
+                                    """
+                                )
+                            )
+                            db.commit()
+                        if attempt < (max_id_retries - 1):
+                            logger.warning(
+                                "opportunity_id collision on approval retry {}/{} request_id={}",
+                                attempt + 1,
+                                max_id_retries,
+                                str(body.request_id),
+                            )
+                            continue
+                        raise HTTPException(
+                            status_code=503,
+                            detail="Could not allocate a unique opportunity_id right now. Please retry.",
+                        ) from None
                     if ("23505" not in msg) and ("duplicate key" not in msg):
                         raise
-                    if attempt >= 1:
-                        raise
-                    db.execute(
-                        text(
-                            """
-                            SELECT setval(
-                                'opportunity_oid_seq',
-                                COALESCE(
-                                    (
-                                        SELECT MAX(CAST(SUBSTRING(opportunity_id FROM 4) AS INTEGER))
-                                        FROM opportunities
-                                        WHERE opportunity_id ~ '^oid[0-9]+$'
-                                    ),
-                                    0
-                                ) + 1,
-                                false
-                            )
-                            """
-                        )
-                    )
+                    raise
+                except DatabaseError:
+                    db.rollback()
+                    raise
 
             t_commit0 = time.perf_counter()
             db.commit()
@@ -407,19 +410,6 @@ def review_opportunity_request(
                 int((time.perf_counter() - t_req0) * 1000),
                 status_u,
             )
-            emit_notification_event(
-                "request_approved",
-                str(row[0]),
-                f"Your opportunity request '{title}' has been approved.",
-                str(int(req[1])),
-            )
-            for admin_id in _get_admin_user_ids(db):
-                emit_notification_event(
-                    "request_approved",
-                    str(row[0]),
-                    f"Opportunity request '{title}' was approved.",
-                    admin_id,
-                )
             return {
                 "request_id": str(row[0]),
                 "status": "APPROVED",
@@ -440,7 +430,7 @@ def review_opportunity_request(
                     reviewed_by = :reviewed_by
                 WHERE request_id = :request_id
                   AND status = 'PENDING'
-                RETURNING request_id, user_id, opportunity_title
+                RETURNING request_id
                 """
             ),
             {
@@ -468,19 +458,6 @@ def review_opportunity_request(
             int((time.perf_counter() - t_req0) * 1000),
             status_u,
         )
-        emit_notification_event(
-            "request_rejected",
-            str(row[0]),
-            f"Your opportunity request '{str(row[2])}' has been rejected.",
-            str(int(row[1])),
-        )
-        for admin_id in _get_admin_user_ids(db):
-            emit_notification_event(
-                "request_rejected",
-                str(row[0]),
-                f"Opportunity request '{str(row[2])}' was rejected.",
-                admin_id,
-            )
         return {"request_id": str(row[0]), "status": "REJECTED"}
     except HTTPException:
         raise
@@ -488,55 +465,3 @@ def review_opportunity_request(
         db.rollback()
         logger.exception("review_opportunity_request failed")
         raise HTTPException(status_code=500, detail=str(exc)) from None
-
-
-class MyRequestOut(BaseModel):
-    request_id: uuid.UUID
-    opportunity_title: str
-    status: str
-    submitted_at: datetime
-    admin_remarks: str | None = None
-    reviewed_at: datetime | None = None
-
-
-class MyRequestsListResponse(BaseModel):
-    requests: list[MyRequestOut]
-
-
-@router.get("/my-requests", response_model=MyRequestsListResponse)
-def get_my_requests(
-    db: Annotated[Session, Depends(get_db)],
-    user: Annotated[User, Depends(get_existing_firebase_user)],
-):
-    """Return the current user's own opportunity requests."""
-    try:
-        rows = db.execute(
-            text(
-                """
-                SELECT request_id, opportunity_title, status, submitted_at,
-                       admin_remarks, reviewed_at
-                FROM opportunity_requests
-                WHERE user_id = :user_id
-                ORDER BY submitted_at DESC
-                LIMIT 100
-                """
-            ),
-            {"user_id": int(user.id)},
-        ).all()
-    except Exception:
-        logger.exception("get_my_requests failed")
-        raise HTTPException(status_code=500, detail="Failed to load requests.") from None
-    return MyRequestsListResponse(
-        requests=[
-            MyRequestOut(
-                request_id=r[0],
-                opportunity_title=str(r[1]),
-                status=str(r[2]),
-                submitted_at=r[3],
-                admin_remarks=r[4],
-                reviewed_at=r[5],
-            )
-            for r in rows
-        ]
-    )
-
