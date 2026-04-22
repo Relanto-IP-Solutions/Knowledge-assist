@@ -6,6 +6,7 @@ import QAPage from './components/QAPage'
 import SourcesPage from './components/SourcesPage'
 import GmailResultPage from './components/GmailResultPage'
 import CreateOpportunityPage from './components/CreateOpportunityPage'
+import AdminRequestsPage from './components/AdminRequestsPage'
 import LoginWithTheme from './components/Login'
 import { subscribeAuth, signOutUser } from './services/authService'
 import {
@@ -382,6 +383,7 @@ export default function App() {
                 userEmail={user?.email || ''}
                 refreshKey={landingRefreshKey}
                 onOpportunitiesRefresh={bumpDashboardRefresh}
+                onAdminPanel={() => navigate('/admin/requests')}
               />
             }
           />
@@ -392,6 +394,10 @@ export default function App() {
           <Route
             path="/create"
             element={<CreateRoute user={user} onBackToKnowledgeAssist={() => navigate('/knowledge-assist', { state: getKnowledgeAssistNavState() })} />}
+          />
+          <Route
+            path="/admin/requests"
+            element={<AdminRequestsPage user={user} onBack={() => navigate('/')} />}
           />
           <Route path="/gmail-result" element={<GmailResultPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

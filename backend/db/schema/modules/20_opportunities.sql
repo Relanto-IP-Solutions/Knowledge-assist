@@ -54,6 +54,9 @@ ALTER TABLE opportunities
     ALTER COLUMN opportunity_id
     SET DEFAULT ('oid' || lpad(nextval('opportunity_oid_seq')::text, 4, '0'));
 
+CREATE UNIQUE INDEX IF NOT EXISTS unique_opportunity_name
+    ON opportunities (LOWER(name));
+
 CREATE INDEX IF NOT EXISTS idx_opportunities_owner ON opportunities (owner_id);
 CREATE INDEX IF NOT EXISTS idx_opportunities_status ON opportunities (status);
 CREATE INDEX IF NOT EXISTS idx_opportunities_updated ON opportunities (updated_at DESC);

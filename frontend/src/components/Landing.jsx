@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { clearOpportunityIdsCache, fetchOpportunityIds } from '../services/opportunityIdsApi'
-import { createOpportunity } from '../services/opportunitiesApi'
+import { checkNameExists, createOpportunityRequest } from '../services/requestsApi'
+import { useIsAdmin } from '../hooks/useIsAdmin'
 // ── Fiscal Quarter data ──────────────────────────────────────────────────────
 const FISCAL_YEARS = [2025, 2026]
 const QUARTERS = FISCAL_YEARS.flatMap(yr =>
@@ -454,7 +455,7 @@ function mapApiIdRowToOpportunity(r) {
   return out
 }
 
-export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onOpportunitiesRefresh }) {
+export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onOpportunitiesRefresh, onAdminPanel }) {
   const navigate = useNavigate()
   const location = useLocation()
   const restoreStateRef = useRef(null)
@@ -485,9 +486,15 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
   const [idsError, setIdsError] = useState(null)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [createName, setCreateName] = useState('')
+  const [createCharErr, setCreateCharErr] = useState(null)
+  const [createNameExists, setCreateNameExists] = useState(false)
+  const [createChecking, setCreateChecking] = useState(false)
   const [createBusy, setCreateBusy] = useState(false)
   const [createError, setCreateError] = useState('')
   const [createNotice, setCreateNotice] = useState('')
+  const createDebounceRef = useRef(null)
+  const NAME_VALID_RE = /^[A-Za-z0-9 -]*$/
+  const { isAdmin } = useIsAdmin()
 
   const loadDashboard = useCallback(async (forceRefresh = false, requestedPage = 1) => {
     const parsedRequestedPage = Number(requestedPage)
@@ -615,39 +622,66 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const pageSlice  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  const openCreateModal = () => {
-    console.log('[Create Opportunity Clicked]')
-    setCreateModalOpen(true)
+  const resetCreateModal = () => {
+    setCreateName('')
+    setCreateCharErr(null)
+    setCreateNameExists(false)
+    setCreateChecking(false)
     setCreateError('')
+    clearTimeout(createDebounceRef.current)
+  }
+
+  const openCreateModal = () => {
+    resetCreateModal()
+    setCreateModalOpen(true)
   }
 
   const closeCreateModal = () => {
     if (createBusy) return
     setCreateModalOpen(false)
+    resetCreateModal()
+  }
+
+  const handleCreateNameChange = (e) => {
+    const val = e.target.value
+    setCreateName(val)
     setCreateError('')
+    if (!NAME_VALID_RE.test(val)) {
+      setCreateCharErr('Only letters, numbers, hyphens, and spaces are allowed.')
+      setCreateNameExists(false)
+      clearTimeout(createDebounceRef.current)
+      return
+    }
+    setCreateCharErr(null)
+    clearTimeout(createDebounceRef.current)
+    const trimmed = val.trim()
+    if (!trimmed) { setCreateNameExists(false); setCreateChecking(false); return }
+    setCreateChecking(true)
+    createDebounceRef.current = setTimeout(async () => {
+      try {
+        const exists = await checkNameExists(trimmed)
+        setCreateNameExists(exists)
+      } catch {
+        setCreateNameExists(false)
+      } finally {
+        setCreateChecking(false)
+      }
+    }, 400)
   }
 
   const submitCreateOpportunity = async () => {
-    if (createBusy) return
+    if (createBusy || createChecking || createCharErr || createNameExists) return
     const name = String(createName ?? '').trim()
-    if (!name) {
-      setCreateError('Opportunity Name is required.')
-      return
-    }
-    const payload = { name }
-    console.log('[Create Opportunity Payload]', payload)
+    if (!name) { setCreateError('Opportunity Name is required.'); return }
     setCreateBusy(true)
     setCreateError('')
     try {
-      const res = await createOpportunity(payload)
-      console.log('[Create Opportunity Success]', res.raw)
+      await createOpportunityRequest(name)
       setCreateModalOpen(false)
-      setCreateName('')
-      setCreateNotice('Opportunity created successfully')
-      await loadDashboard(true)
-      console.log('[Opportunity List Refreshed]')
+      resetCreateModal()
+      setCreateNotice('Request submitted for admin approval')
     } catch (e) {
-      setCreateError(e instanceof Error ? e.message : 'Failed to create opportunity')
+      setCreateError(e?.message || 'Failed to submit request.')
     } finally {
       setCreateBusy(false)
     }
@@ -706,26 +740,53 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
                 </div>
               ) : null}
             </div>
-            <button
-              type="button"
-              onClick={openCreateModal}
-              style={{
-                padding: '12px 20px',
-                borderRadius: 12,
-                border: 'none',
-                background: SI_ORANGE,
-                color: '#fff',
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: 'pointer',
-                fontFamily: 'var(--font)',
-                boxShadow: '0 4px 16px rgba(232,83,46,.3)',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              Create opportunity
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+              {isAdmin && onAdminPanel && (
+                <button
+                  type="button"
+                  onClick={onAdminPanel}
+                  style={{
+                    padding: '12px 18px',
+                    borderRadius: 12,
+                    border: `1.5px solid ${SI_NAVY}`,
+                    background: 'transparent',
+                    color: SI_NAVY,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font)',
+                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 7,
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                  </svg>
+                  Requests
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={openCreateModal}
+                style={{
+                  padding: '12px 20px',
+                  borderRadius: 12,
+                  border: 'none',
+                  background: SI_ORANGE,
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font)',
+                  boxShadow: '0 4px 16px rgba(232,83,46,.3)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Create opportunity
+              </button>
+            </div>
           </div>
           <div style={{ height: 26 }} aria-hidden />
 
@@ -1061,29 +1122,35 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               Create Opportunity
             </div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: SI_NAVY, marginBottom: 6 }}>
-              Name
+              Name <span style={{ color: SI_ORANGE }}>*</span>
             </label>
             <input
               value={createName}
-              onChange={(e) => setCreateName(e.target.value)}
-              placeholder="Enter Opportunity Name"
+              onChange={handleCreateNameChange}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitCreateOpportunity() }}
+              placeholder="e.g. DocuSign Relanto KA"
               disabled={createBusy}
+              autoComplete="off"
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
                 padding: '10px 12px',
                 borderRadius: 8,
-                border: '1px solid var(--border)',
-                marginBottom: 10,
+                border: `1px solid ${createCharErr || createNameExists ? '#FECACA' : 'var(--border)'}`,
                 fontSize: 13,
                 fontFamily: 'var(--font)',
+                outline: 'none',
               }}
             />
-            {createError ? (
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#b91c1c', marginBottom: 10 }}>
-                {createError}
+            {(createCharErr || createNameExists || createError) ? (
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#b91c1c', marginTop: 5, marginBottom: 4 }}>
+                {createCharErr || (createNameExists ? 'This name already exists or has a pending request.' : createError)}
               </div>
-            ) : null}
+            ) : createChecking ? (
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 5, marginBottom: 4 }}>Checking availability…</div>
+            ) : createName.trim() && !createCharErr ? (
+              <div style={{ fontSize: 11, color: '#059669', marginTop: 5, marginBottom: 4 }}>Name is available.</div>
+            ) : <div style={{ marginBottom: 10 }} />}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
               <button
                 type="button"
@@ -1106,20 +1173,20 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               <button
                 type="button"
                 onClick={submitCreateOpportunity}
-                disabled={createBusy}
+                disabled={createBusy || createChecking || !!createCharErr || createNameExists || !createName.trim()}
                 style={{
                   padding: '8px 14px',
                   borderRadius: 8,
                   border: 'none',
-                  background: SI_ORANGE,
+                  background: (createBusy || createChecking || createCharErr || createNameExists || !createName.trim()) ? '#94a3b8' : SI_ORANGE,
                   color: '#fff',
                   fontSize: 12,
                   fontWeight: 700,
                   fontFamily: 'var(--font)',
-                  cursor: createBusy ? 'not-allowed' : 'pointer',
+                  cursor: (createBusy || createChecking || createCharErr || createNameExists || !createName.trim()) ? 'not-allowed' : 'pointer',
                 }}
               >
-                {createBusy ? 'Creating...' : 'Create'}
+                {createBusy ? 'Submitting…' : 'Submit request'}
               </button>
             </div>
           </div>
