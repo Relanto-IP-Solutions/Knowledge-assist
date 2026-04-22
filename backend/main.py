@@ -34,7 +34,6 @@ from src.apis.routes import (
     sync_routes,
     zoom_routes,
 )
-from src.apis.routes.sse_routes import sse_router
 from src.services.database_manager.orm import get_db
 from src.services.plugins import oauth_service
 from src.utils.logger import get_logger
@@ -182,7 +181,6 @@ app.include_router(gmail_routes.dashboard_gmail_router)
 app.include_router(slack_routes.router)
 app.include_router(slack_routes.integrations_slack_router)
 app.include_router(admin_routes.router)
-app.include_router(sse_router)
 app.include_router(opportunity_routes.router)
 app.include_router(opportunity_routes.public_router)
 app.include_router(sync_routes.router)
