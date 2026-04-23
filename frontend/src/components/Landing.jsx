@@ -850,32 +850,6 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               </span>
             </div>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
-            <div style={{ display: 'flex', gap: 5 }}>
-              {['all', 'review', 'completed'].map(f => {
-                const tone = f === 'all'
-                  ? { border: `rgba(27,38,79,.35)`, bg: 'rgba(27,38,79,.08)', text: SI_NAVY }
-                  : f === 'review'
-                    ? { border: 'rgba(232,83,46,.35)', bg: 'rgba(232,83,46,.08)', text: SI_ORANGE }
-                    : { border: 'rgba(27,38,79,.32)', bg: 'rgba(27,38,79,.07)', text: SI_NAVY }
-                return (
-                  <button key={f} type="button" onClick={() => setFilter(f)} style={{
-                    padding: '6px 14px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                    border: filter === f ? `1px solid ${tone.border}` : '1px solid var(--border)',
-                    background: filter === f ? tone.bg : 'transparent',
-                    color: filter === f ? tone.text : 'var(--text2)',
-                    transition: 'all .15s', fontFamily: 'var(--font)',
-                  }}>
-                    {f === 'all'
-                      ? `All (${opportunities.length})`
-                      : f === 'review'
-                        ? `Ready (${readyForReviewCount})`
-                        : `Completed (${completedCount})`}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
         </div>
 
         {/* Search — filters the paginated table (name, ID, project line) */}

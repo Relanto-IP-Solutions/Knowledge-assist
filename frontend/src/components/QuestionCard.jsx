@@ -972,22 +972,27 @@ export function QuestionCard({
     st === 'overridden' ||
     Boolean(overrideText) ||
     acceptedValueLooksUserEdited
-  // Persisted submit payload is the source of truth after reload/navigation.
+  // `qState.answerSource` is set at accept-time in QAPage and is the most
+  // reliable signal for the current session.  The backend payload flag
+  // `is_user_override` is stale until submit + reload, so local answerSource
+  // must take priority when the user explicitly edited and accepted.
+  const localSourceIsUser = qState?.answerSource === 'user'
   const acceptedByUserFromPayload = payloadIsUserOverride === true
   const acceptedByAiFromPayload = payloadIsUserOverride === false
   const acceptedByUser =
     isAcceptedLike &&
     (
+      // 1. Local answerSource='user' — user edited then accepted in this session
+      localSourceIsUser ||
+      // 2. Backend payload says user override (persisted after submit + reload)
       acceptedByUserFromPayload ||
-      (
-        !acceptedByAiFromPayload &&
-        (
-          acceptedHasLocalUserEvidence ||
-          (!hasBackendAI && Boolean(acceptedComparableValue))
-        )
-      )
+      // 3. Value-comparison evidence (override text, edited value differs from AI)
+      acceptedHasLocalUserEvidence ||
+      // 4. No backend AI at all but user provided a value
+      (!hasBackendAI && Boolean(acceptedComparableValue))
     )
-  const acceptedByAi = isAcceptedLike && (acceptedByAiFromPayload || !acceptedByUser)
+  // Only treat as AI-accepted when answerSource is NOT 'user' AND payload doesn't say user override
+  const acceptedByAi = isAcceptedLike && !acceptedByUser
   const pendingHasUserEdits =
     st === 'pending' && userHasEditedForLabel
   const reviewHeading =
