@@ -17,6 +17,14 @@ export function normalizeAnswerValueField(v) {
   return s === '' ? null : s
 }
 
+function normalizeBooleanLike(value) {
+  if (value === true || value === false) return value
+  const t = String(value ?? '').trim().toLowerCase()
+  if (t === 'true' || t === '1' || t === 'yes') return true
+  if (t === 'false' || t === '0' || t === 'no') return false
+  return null
+}
+
 /**
  * @typedef {Object} Citation
  * @property {string} source_type
@@ -354,6 +362,7 @@ export function normalizeAnswerRow(row, context = {}) {
     confidence_score,
     citations,
     conflict_id: row.conflict_id ? String(row.conflict_id) : null,
+    is_user_override: normalizeBooleanLike(row.is_user_override ?? row.isUserOverride),
     conflicts,
     ...(typeof row.current_version === 'number' ? { current_version: row.current_version } : {}),
     ...(row.status != null && String(row.status).trim() !== ''
