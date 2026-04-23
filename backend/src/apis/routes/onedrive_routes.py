@@ -15,9 +15,11 @@ from src.services.plugins.onedrive_plugin import (
     sync_onedrive_source,
 )
 from src.services.storage import Storage
+from src.utils.logger import get_logger
 from src.utils.opportunity_id import gcs_opportunity_prefix, normalize_opportunity_oid
 
 
+logger = get_logger(__name__)
 integrations_onedrive_router = APIRouter(
     prefix="/integrations/onedrive", tags=["onedrive"]
 )
