@@ -6,7 +6,7 @@ import { api } from './apiClient'
 
 /**
  * Create a new opportunity.
- * POST http://localhost:8000/opportunities/create
+ * POST /opportunities/create
  * @param {{ name: string }} input
  * @returns {Promise<{ opportunity_id: string, raw: unknown }>}
  */
@@ -15,10 +15,9 @@ export async function createOpportunity(input) {
   if (!name) throw new Error('Opportunity name is required')
 
   const payload = { name }
-  const url = 'http://localhost:8000/opportunities/create'
 
   try {
-    const { data: json } = await api.post(url, payload, {
+    const { data: json } = await api.post('/opportunities/create', payload, {
       headers: { 'Content-Type': 'application/json' },
     })
     const id = String(
