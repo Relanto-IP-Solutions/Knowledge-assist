@@ -52,10 +52,15 @@ function assertRelantoEmail(email) {
 
 export function toSessionUserFromFirebase(fbUser) {
   const name = fbUser.displayName || fbUser.email?.split('@')[0] || 'User'
+  const cached = _readRegisteredDbCache()
+  const role =
+    cached?.uid === fbUser.uid && cached?.displayRole
+      ? cached.displayRole
+      : 'User'
   return {
     name,
     email: normalizeEmail(fbUser.email),
-    role: 'Knowledge User',
+    role,
     avatar: getAvatar(fbUser.displayName, fbUser.email),
     uid: fbUser.uid,
   }
@@ -99,10 +104,9 @@ async function ensureBackendUserRegistered(firebaseUser, name) {
   if (!uid) return
 
   const nameToSend = name == null ? null : String(name)
-  const cached = _readRegisteredDbCache()
-  if (cached?.uid === uid && cached?.name === nameToSend) return
 
-  // Force-refresh so backend gets a fresh, valid token on first register.
+  // Always call the backend on sign-in so role changes in DB (e.g. ADMIN granted/revoked)
+  // are reflected immediately. The endpoint is idempotent.
   const idToken = await firebaseUser.getIdToken(true)
 
   const { data } = await api.post(
@@ -117,7 +121,12 @@ async function ensureBackendUserRegistered(firebaseUser, name) {
   )
 
   if (data?.ok) {
-    _writeRegisteredDbCache({ uid, name: nameToSend, at: Date.now() })
+    _writeRegisteredDbCache({
+      uid,
+      name: nameToSend,
+      displayRole: data?.user?.display_role || 'User',
+      at: Date.now(),
+    })
   }
   return data
 }
