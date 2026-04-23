@@ -57,13 +57,24 @@ export function AIKnowledgeIcon({ size = 16 }) {
   )
 }
 
+export function OneDriveIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" style={{ flexShrink: 0 }}>
+      <path d="M28.6 18.4a9.6 9.6 0 0 1 9 6.3A7.2 7.2 0 0 1 40.8 38H24.6a7.2 7.2 0 0 1-1.8-14.2 9.6 9.6 0 0 1 5.8-5.4z" fill="#0078D4"/>
+      <path d="M20.4 20.6a8.4 8.4 0 0 0-8.4 8.4c0 .3 0 .6.03.9A6 6 0 0 0 13.2 41h11.4a7.2 7.2 0 0 1-1.8-14.2 8.4 8.4 0 0 0-2.4-6.2z" fill="#0058A1"/>
+      <path d="M28.6 18.4a9.6 9.6 0 0 0-8.2 2.2 8.4 8.4 0 0 1 2.4 6.2A7.2 7.2 0 0 1 24.6 38h16.2A7.2 7.2 0 0 0 37.6 24.7a9.6 9.6 0 0 0-9-6.3z" fill="#1490DF"/>
+    </svg>
+  )
+}
+
 export function SourceIcon({ type, size = 14 }) {
   switch (type) {
-    case 'zoom':   return <ZoomIcon size={size} />
-    case 'gdrive': return <GDriveIcon size={size} />
-    case 'gmail':  return <GmailIcon size={size} />
-    case 'slack':  return <SlackIcon size={size} />
-    case 'ai':     return <AIKnowledgeIcon size={size} />
-    default:       return <span style={{ fontSize: size - 2, lineHeight: 1 }}>—</span>
+    case 'zoom':     return <ZoomIcon size={size} />
+    case 'gdrive':   return <GDriveIcon size={size} />
+    case 'gmail':    return <GmailIcon size={size} />
+    case 'slack':    return <SlackIcon size={size} />
+    case 'onedrive': return <OneDriveIcon size={size} />
+    case 'ai':       return <AIKnowledgeIcon size={size} />
+    default:         return <span style={{ fontSize: size - 2, lineHeight: 1 }}>—</span>
   }
 }

@@ -4,6 +4,7 @@ import GmailOpportunityCard from './GmailOpportunityCard'
 import DriveOpportunityCard from './DriveOpportunityCard'
 import SlackOpportunityCard from './SlackOpportunityCard'
 import ZoomOpportunityCard from './ZoomOpportunityCard'
+import OneDriveOpportunityCard from './OneDriveOpportunityCard'
 
 /* ── design tokens ─────────────────────────────────────────────── */
 const NAVY   = '#1B264F'
@@ -19,10 +20,11 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
   // Per-service active map — updated only by the card that just connected/disconnected.
   // No API calls are made here. Each card self-manages its own status.
   const [activeServices, setActiveServices] = useState({
-    drive: false,
-    gmail: false,
-    slack: false,
-    zoom:  false,
+    drive:    false,
+    gmail:    false,
+    slack:    false,
+    zoom:     false,
+    onedrive: false,
   })
 
   // Called by each card when its connection state changes.
@@ -35,7 +37,7 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
   }, [])
 
   const totalConnected = Object.values(activeServices).filter(Boolean).length
-  const totalSources   = 4 // Drive, Gmail, Slack, Zoom
+  const totalSources   = 5 // Drive, Gmail, Slack, Zoom, OneDrive
 
   return (
     <div style={{
@@ -197,6 +199,19 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
             <ZoomOpportunityCard
               opportunityId={apiOppId}
               onStatusChange={(active) => handleStatusChange('zoom', active)}
+            />
+          </div>
+
+          {/* OneDrive */}
+          <div style={{
+            background: '#fff', borderRadius: 16,
+            border: '1.5px solid rgba(27,38,79,.09)',
+            boxShadow: '0 1px 6px rgba(15,23,42,.04)',
+            overflow: 'hidden', transition: 'box-shadow .2s, border-color .2s',
+          }}>
+            <OneDriveOpportunityCard
+              opportunityId={apiOppId}
+              onStatusChange={(active) => handleStatusChange('onedrive', active)}
             />
           </div>
         </div>

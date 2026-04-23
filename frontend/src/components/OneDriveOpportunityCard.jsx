@@ -2,26 +2,28 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { toApiOpportunityId } from '../config/opportunityApi'
 import {
-  connectDrive,
-  fetchDriveMetrics,
-  getDriveAuthUrl,
-  getDriveOAuthRedirectUri,
+  connectOneDrive,
+  fetchOneDriveMetrics,
+  getMicrosoftOAuthUrl,
+  getOneDriveOAuthRedirectUri,
+  getCachedOneDriveMetrics,
+  getOneDriveAuthorizeInfo,
 } from '../services/integrationsAuthApi'
-import { GDriveIcon } from './SourceIcons'
-import { isWorkspacePolicyError, WORKSPACE_POLICY_ERROR_MSG } from '../utils/gmailErrorMapper'
+import { OneDriveIcon } from './SourceIcons'
 
-const DRIVE_BLUE = '#4285F4'
+const OD_BLUE    = '#0078D4'
 const NAVY       = '#1B264F'
 const GREEN      = '#10B981'
+const RELANTO_RE = /@relanto\.ai$/i
 const EMAIL_RE   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-const SS_EMAIL         = (oid) => `pzf_drive_email_${oid}`
-const SS_PENDING_OID   = 'pzf_drive_pending_oid'
-const SS_PENDING_EMAIL = 'pzf_drive_pending_email'
+const SS_EMAIL         = (oid) => `pzf_onedrive_email_${oid}`
+const SS_PENDING_OID   = 'pzf_onedrive_pending_oid'
+const SS_PENDING_EMAIL = 'pzf_onedrive_pending_email'
 
-function ssGet(key) { try { return sessionStorage.getItem(key) } catch { return null } }
-function ssSet(key, val) { try { sessionStorage.setItem(key, val) } catch { /**/ } }
-function ssDel(key) { try { sessionStorage.removeItem(key) } catch { /**/ } }
+function ssGet(k) { try { return sessionStorage.getItem(k) } catch { return null } }
+function ssSet(k, v) { try { sessionStorage.setItem(k, v) } catch { /**/ } }
+function ssDel(k) { try { sessionStorage.removeItem(k) } catch { /**/ } }
 
 function timeAgo(iso) {
   if (!iso) return null
@@ -33,7 +35,7 @@ function timeAgo(iso) {
 
 function SpinIcon({ size = 13 }) {
   return (
-    <svg style={{ animation: 'drSpin .9s linear infinite', flexShrink: 0 }}
+    <svg style={{ animation: 'odSpin .9s linear infinite', flexShrink: 0 }}
       width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
       <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
     </svg>
@@ -44,7 +46,7 @@ function Dot({ active }) {
   const c = active ? GREEN : '#CBD5E1'
   return (
     <span style={{ position: 'relative', width: 8, height: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      {active && <span style={{ position: 'absolute', width: 8, height: 8, borderRadius: '50%', background: c, animation: 'drPulseRing 1.6s ease-out infinite' }} />}
+      {active && <span style={{ position: 'absolute', width: 8, height: 8, borderRadius: '50%', background: c, animation: 'odPulseRing 1.6s ease-out infinite' }} />}
       <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, position: 'relative' }} />
     </span>
   )
@@ -62,8 +64,9 @@ function EmailModal({ oid, onSubmit, onCancel }) {
 
   const submit = () => {
     const t = value.trim()
-    if (!t) { setLocalErr('Enter a Google account email.'); return }
+    if (!t) { setLocalErr('Enter your Microsoft account email.'); return }
     if (!EMAIL_RE.test(t)) { setLocalErr('Enter a valid email address.'); return }
+    if (!RELANTO_RE.test(t)) { setLocalErr('Only @relanto.ai accounts are permitted.'); return }
     setLocalErr('')
     onSubmit(t.toLowerCase())
   }
@@ -73,28 +76,29 @@ function EmailModal({ oid, onSubmit, onCancel }) {
       position: 'fixed', inset: 0, zIndex: 9999,
       background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(4px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 24, animation: 'drFadeIn .15s ease',
+      padding: 24, animation: 'odFadeIn .15s ease',
     }}>
       <div onClick={e => e.stopPropagation()} style={{
         width: '100%', maxWidth: 420, background: 'var(--bg2, #fff)', borderRadius: 16,
         boxShadow: '0 24px 64px rgba(15,23,42,.22)', overflow: 'hidden',
-        animation: 'drSlideUp .18s ease', fontFamily: 'var(--font)',
+        animation: 'odSlideUp .18s ease', fontFamily: 'var(--font)',
       }}>
         <div style={{ padding: '20px 24px 12px' }}>
           <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 800, color: NAVY }}>
-            Connect Google Drive for this project
+            Connect OneDrive for this project
           </h3>
           <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text2)', lineHeight: 1.55 }}>
-            Enter the Google account for project <strong style={{ color: NAVY }}>{oid}</strong>.
+            Enter your <strong style={{ color: NAVY }}>@relanto.ai</strong> Microsoft account email for project{' '}
+            <strong style={{ color: NAVY }}>{oid}</strong>.
           </p>
           <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: NAVY, marginBottom: 6 }}>
-            Google account email
+            Microsoft account email
           </label>
           <input
             type="email" autoComplete="email" value={value}
             onChange={e => { setValue(e.target.value); setLocalErr('') }}
             onKeyDown={e => { if (e.key === 'Enter') submit() }}
-            placeholder="you@company.com"
+            placeholder="you@relanto.ai"
             style={{
               width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10,
               border: `1.5px solid ${localErr ? '#DC2626' : 'rgba(27,38,79,.15)'}`,
@@ -110,8 +114,8 @@ function EmailModal({ oid, onSubmit, onCancel }) {
             cursor: 'pointer', fontFamily: 'var(--font)',
           }}>Cancel</button>
           <button type="button" onClick={submit} style={{
-            padding: '8px 20px', borderRadius: 8, border: `1.5px solid ${DRIVE_BLUE}`,
-            background: DRIVE_BLUE, color: '#fff', fontSize: 12, fontWeight: 700,
+            padding: '8px 20px', borderRadius: 8, border: `1.5px solid ${OD_BLUE}`,
+            background: OD_BLUE, color: '#fff', fontSize: 12, fontWeight: 700,
             cursor: 'pointer', fontFamily: 'var(--font)',
           }}>Connect</button>
         </div>
@@ -121,43 +125,38 @@ function EmailModal({ oid, onSubmit, onCancel }) {
   )
 }
 
-export default function DriveOpportunityCard({ opportunityId, onStatusChange }) {
+export default function OneDriveOpportunityCard({ opportunityId, onStatusChange }) {
   const oid = useMemo(() => toApiOpportunityId(opportunityId), [opportunityId])
 
-  const [metrics, setMetrics]               = useState(null)
-  const [metricsLoading, setMetricsLoading] = useState(true)
+  const [metrics, setMetrics]               = useState(() => getCachedOneDriveMetrics(oid))
+  const [metricsLoading, setMetricsLoading] = useState(() => getCachedOneDriveMetrics(oid) === null)
   const [busy, setBusy]                     = useState(false)
-  const [syncStatus, setSyncStatus]         = useState(null) // 'connecting' | 'success' | null
   const [showModal, setShowModal]           = useState(false)
   const [userEmail, setUserEmail]           = useState(() => ssGet(SS_EMAIL(oid)) ?? '')
-  const [err, setErr]                       = useState(null)
+  const [notice, setNotice]                 = useState(null) // { type: 'success'|'error', msg }
 
   const mountedRef = useRef(true)
   const oidRef     = useRef(oid)
   oidRef.current   = oid
 
-  useEffect(() => {
-    mountedRef.current = true
-    return () => { mountedRef.current = false }
-  }, [])
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false } }, [])
 
   const isActive = String(metrics?.status ?? '').toUpperCase() === 'ACTIVE'
 
   useEffect(() => { onStatusChange?.(isActive) }, [isActive, onStatusChange])
 
-  // ── Step 1: Load metrics on mount to determine initial button state
+  // Load metrics on mount
   useEffect(() => {
     let alive = true
-    setMetricsLoading(true)
-    setErr(null)
-    fetchDriveMetrics(oid)
-      .then(m => { if (alive) setMetrics(m) })
-      .catch(() => { if (alive) setMetrics(null) })
-      .finally(() => { if (alive) setMetricsLoading(false) })
+    const hasCache = getCachedOneDriveMetrics(oid) !== null
+    if (!hasCache) setMetricsLoading(true)
+    fetchOneDriveMetrics(oid)
+      .then(m => { if (alive) { setMetrics(m); setMetricsLoading(false) } })
+      .catch(() => { if (alive) setMetricsLoading(false) })
     return () => { alive = false }
   }, [oid])
 
-  // ── Auto-sync after returning from Google OAuth ───────────────────
+  // OAuth return: auto-connect after redirect
   useEffect(() => {
     const pendingOid   = ssGet(SS_PENDING_OID)
     const pendingEmail = ssGet(SS_PENDING_EMAIL)
@@ -166,120 +165,180 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
     ssDel(SS_PENDING_EMAIL)
     setUserEmail(pendingEmail)
     ssSet(SS_EMAIL(oid), pendingEmail)
-    void runSync(oid, pendingEmail)
+    void runConnectAndMetrics(oid, pendingEmail)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Step 3: POST /integrations/drive/connect/{oid}?user_email= ───
-  const runSync = useCallback(async (runOid, email) => {
-    setBusy(true)
-    setErr(null)
-    setSyncStatus('connecting')
-    try {
-      await connectDrive(runOid, email)
-      if (!mountedRef.current || oidRef.current !== runOid) return
-      setSyncStatus('success')
-      // Refresh metrics after sync
-      const m = await fetchDriveMetrics(runOid, email)
-      if (mountedRef.current && oidRef.current === runOid) setMetrics(m)
-    } catch (e) {
-      if (mountedRef.current && oidRef.current === runOid) {
-        setSyncStatus(null)
-        setErr(isWorkspacePolicyError(e) ? WORKSPACE_POLICY_ERROR_MSG : (e?.response?.data?.detail ?? e?.message ?? 'Drive sync failed. Try again.'))
-      }
-    } finally {
-      if (mountedRef.current && oidRef.current === runOid) setBusy(false)
-    }
+  const doRedirect = useCallback((runOid, email, authUrl) => {
+    ssSet(SS_PENDING_OID, runOid)
+    ssSet(SS_PENDING_EMAIL, email)
+    window.location.href = String(authUrl).trim()
   }, [])
 
-  // ── Step 2: GET /auth/google/url?provider=drive&user_email=&oid=&redirect_uri=
+  // Core: POST connect (always) → GET metrics (always)
+  const runConnectAndMetrics = useCallback(async (runOid, email) => {
+    if (!mountedRef.current) return
+    setBusy(true)
+    setNotice(null)
+
+    let folderError = null
+
+    try {
+      await connectOneDrive(runOid, email)
+    } catch (e) {
+      if (!mountedRef.current || oidRef.current !== runOid) return
+      const status = e?.response?.status
+      const detail = e?.response?.data?.detail ?? ''
+
+      if (status === 401 || status === 400) {
+        // Token expired/missing — redirect to OAuth
+        try {
+          const auth = await getMicrosoftOAuthUrl(getOneDriveOAuthRedirectUri(), email, runOid)
+          if (auth?.auth_url) { doRedirect(runOid, email, auth.auth_url); return }
+        } catch { /**/ }
+        if (mountedRef.current) {
+          setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
+          setBusy(false)
+        }
+        return
+      }
+
+      if (status === 403) {
+        setNotice({ type: 'error', msg: 'Only @relanto.ai accounts are permitted.' })
+        setBusy(false)
+        return
+      }
+
+      // 404 folder-not-found — surface message but still fetch metrics
+      folderError = detail || 'Folder not found for this OID. Create it in OneDrive and click Resync.'
+      setNotice({ type: 'error', msg: folderError })
+    }
+
+    if (!mountedRef.current || oidRef.current !== runOid) return
+
+    // Always fetch metrics regardless of connect result
+    try {
+      const m = await fetchOneDriveMetrics(runOid)
+      if (mountedRef.current && oidRef.current === runOid) {
+        setMetrics(m)
+        if (!folderError) setNotice({ type: 'success', msg: 'Sync started! Your files will appear shortly.' })
+      }
+    } catch { /**/ } finally {
+      if (mountedRef.current && oidRef.current === runOid) setBusy(false)
+    }
+  }, [doRedirect])
+
+  // ── Connect flow ─────────────────────────────────────────────────
   const handleConnectWithEmail = useCallback(async (email) => {
-    const runOid = oid
     setShowModal(false)
     setUserEmail(email)
-    ssSet(SS_EMAIL(runOid), email)
+    ssSet(SS_EMAIL(oid), email)
     setBusy(true)
-    setErr(null)
-    setSyncStatus(null)
+    setNotice(null)
+
+    let auth = null
     try {
-      const result = await getDriveAuthUrl(email, runOid, getDriveOAuthRedirectUri())
-
-      if (result?.already_connected) {
-        // Already connected — go straight to sync
-        await runSync(runOid, email)
-        return
-      }
-
-      if (result?.auth_url) {
-        // Needs OAuth — save pending and redirect to Google
-        ssSet(SS_PENDING_OID, runOid)
-        ssSet(SS_PENDING_EMAIL, email)
-        window.location.href = String(result.auth_url).trim()
-        return
-      }
-
-      // Fallback: try sync anyway
-      await runSync(runOid, email)
+      auth = await getMicrosoftOAuthUrl(getOneDriveOAuthRedirectUri(), email, oid)
     } catch (e) {
-      if (mountedRef.current && oidRef.current === runOid) {
-        setErr(isWorkspacePolicyError(e) ? WORKSPACE_POLICY_ERROR_MSG : (e?.response?.data?.detail ?? e?.message ?? 'Connection failed. Try again.'))
+      if (!mountedRef.current) return
+      const status = e?.response?.status
+      if (status === 403) {
+        setNotice({ type: 'error', msg: 'Only @relanto.ai accounts are permitted.' })
         setBusy(false)
+        return
       }
+      // Error body might still carry an auth_url
+      const authUrl = e?.response?.data?.auth_url
+      if (authUrl) { doRedirect(oid, email, authUrl); return }
+      setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
+      setBusy(false)
+      return
     }
-  }, [oid, runSync])
 
-  // Connect button handler — skip modal if email already stored
+    if (!mountedRef.current) return
+
+    if (auth?.already_connected === true) {
+      await runConnectAndMetrics(oid, email)
+    } else if (auth?.auth_url) {
+      doRedirect(oid, email, auth.auth_url)
+    } else {
+      setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
+      setBusy(false)
+    }
+  }, [oid, doRedirect, runConnectAndMetrics])
+
   const handleConnect = useCallback(() => {
-    setErr(null)
-    setSyncStatus(null)
+    setNotice(null)
     const email = userEmail || ssGet(SS_EMAIL(oid)) || ''
-    if (email) { void handleConnectWithEmail(email); return }
-    setShowModal(true)
+    if (!email || !RELANTO_RE.test(email)) { setShowModal(true); return }
+    void handleConnectWithEmail(email)
   }, [oid, userEmail, handleConnectWithEmail])
 
-  // Resync button handler — go straight to sync, no auth check
-  const handleResync = useCallback(() => {
-    setErr(null)
-    setSyncStatus(null)
+  // ── Resync flow ──────────────────────────────────────────────────
+  const handleResync = useCallback(async () => {
     const email = userEmail || ssGet(SS_EMAIL(oid)) || ''
-    if (!email) { setErr('No account found. Please use Connect to re-enter your Google account.'); return }
-    void runSync(oid, email)
-  }, [oid, userEmail, runSync])
+    if (!email) { setShowModal(true); return }
+
+    setBusy(true)
+    setNotice(null)
+
+    // Step 1: check authorize-info to confirm connection exists
+    let authorizeInfo = null
+    try {
+      authorizeInfo = await getOneDriveAuthorizeInfo(oid, email)
+    } catch { /* unknown — proceed to connect and let it decide */ }
+
+    if (!mountedRef.current || oidRef.current !== oid) return
+
+    if (authorizeInfo?.has_onedrive_connection === false) {
+      // No connection — route to OAuth
+      try {
+        const auth = await getMicrosoftOAuthUrl(getOneDriveOAuthRedirectUri(), email, oid)
+        if (auth?.auth_url) { doRedirect(oid, email, auth.auth_url); return }
+      } catch { /**/ }
+      setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
+      setBusy(false)
+      return
+    }
+
+    // Connection exists (or unknown) — run connect + metrics
+    await runConnectAndMetrics(oid, email)
+  }, [oid, userEmail, doRedirect, runConnectAndMetrics])
 
   const totalFilesCount = Number(metrics?.total_files ?? 0)
+  const noticeColor = notice?.type === 'success' ? '#047857' : '#DC2626'
 
   return (
     <>
       <style>{`
-        @keyframes drSpin       { to { transform: rotate(360deg) } }
-        @keyframes drPulseRing  { 0%{transform:scale(1);opacity:.6}70%{transform:scale(2.2);opacity:0}100%{transform:scale(1);opacity:0} }
-        @keyframes drFadeIn     { from{opacity:0} to{opacity:1} }
-        @keyframes drSlideUp    { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
-        @keyframes drPulse      { 0%,100%{opacity:.45} 50%{opacity:1} }
+        @keyframes odSpin       { to { transform: rotate(360deg) } }
+        @keyframes odPulseRing  { 0%{transform:scale(1);opacity:.6}70%{transform:scale(2.2);opacity:0}100%{transform:scale(1);opacity:0} }
+        @keyframes odFadeIn     { from{opacity:0} to{opacity:1} }
+        @keyframes odSlideUp    { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
       `}</style>
 
-      {/* Header row */}
+      {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 14,
         padding: '18px 22px', borderBottom: isActive ? '1px solid var(--border)' : 'none',
       }}>
         <div style={{
           width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-          background: 'rgba(66,133,244,.06)', border: '1.5px solid rgba(66,133,244,.15)',
+          background: 'rgba(0,120,212,.06)', border: '1.5px solid rgba(0,120,212,.15)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <GDriveIcon size={22} />
+          <OneDriveIcon size={22} />
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: NAVY }}>Google Drive</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: NAVY }}>OneDrive</span>
             <Dot active={isActive} />
             <span style={{ fontSize: 11, color: isActive ? GREEN : '#94A3B8', fontWeight: 600 }}>
               {metricsLoading ? 'Checking…' : isActive ? 'Active' : 'Not connected'}
             </span>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>Documents &amp; Files</div>
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>Microsoft OneDrive Files</div>
           {userEmail && (
             <div style={{ fontSize: 10.5, color: 'var(--text2)', marginTop: 2 }}>
               <span style={{ fontWeight: 600 }}>Account: </span>
@@ -288,80 +347,72 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
           )}
         </div>
 
-        {/* Connect button — status != ACTIVE */}
+        {/* Connect — not active */}
         {!metricsLoading && !isActive && (
           <button type="button" disabled={busy} onClick={handleConnect}
             style={{
               flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '7px 14px', borderRadius: 20, fontSize: 11, fontWeight: 700,
               cursor: busy ? 'not-allowed' : 'pointer',
-              border: `1.5px solid ${DRIVE_BLUE}`, background: DRIVE_BLUE, color: '#fff',
-              fontFamily: 'var(--font)', transition: 'opacity .12s', opacity: busy ? 0.55 : 1,
+              border: `1.5px solid ${OD_BLUE}`, background: OD_BLUE, color: '#fff',
+              fontFamily: 'var(--font)', opacity: busy ? 0.55 : 1, transition: 'opacity .12s',
             }}
             onMouseEnter={e => { if (!busy) e.currentTarget.style.opacity = '0.85' }}
             onMouseLeave={e => { e.currentTarget.style.opacity = busy ? '0.55' : '1' }}
           >
             {busy && <SpinIcon size={11} />}
-            {busy ? 'Connecting…' : 'Connect Google Drive'}
+            {busy ? 'Connecting…' : 'Connect OneDrive'}
           </button>
         )}
 
-        {/* Resync button — status == ACTIVE */}
+        {/* Resync — active */}
         {!metricsLoading && isActive && (
           <button type="button" disabled={busy} onClick={handleResync}
             style={{
               flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '7px 14px', borderRadius: 20, fontSize: 11, fontWeight: 700,
               cursor: busy ? 'not-allowed' : 'pointer',
-              border: `1.5px solid ${DRIVE_BLUE}`, background: 'rgba(66,133,244,.1)', color: DRIVE_BLUE,
-              fontFamily: 'var(--font)', transition: 'opacity .12s', opacity: busy ? 0.55 : 1,
+              border: `1.5px solid ${OD_BLUE}`, background: 'rgba(0,120,212,.1)', color: OD_BLUE,
+              fontFamily: 'var(--font)', opacity: busy ? 0.55 : 1, transition: 'opacity .12s',
             }}
             onMouseEnter={e => { if (!busy) e.currentTarget.style.opacity = '0.85' }}
             onMouseLeave={e => { e.currentTarget.style.opacity = busy ? '0.55' : '1' }}
           >
             {busy && <SpinIcon size={11} />}
-            {busy ? 'Syncing…' : 'Resync Drive'}
+            {busy ? 'Syncing…' : 'Resync Items'}
           </button>
         )}
       </div>
 
-      {/* Sync status feedback */}
-      {syncStatus === 'connecting' && (
-        <div style={{ padding: '10px 22px 14px 80px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <SpinIcon size={12} />
-          <span style={{ fontSize: 12, color: DRIVE_BLUE, fontWeight: 600 }}>Connecting project folder…</span>
-        </div>
-      )}
-      {syncStatus === 'success' && (
-        <div style={{ padding: '10px 22px 14px 80px' }}>
-          <span style={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>
-            Drive connected successfully. Files are being synced.
-          </span>
+      {/* Notice */}
+      {notice && (
+        <div style={{ padding: '0 22px 14px 80px' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: noticeColor }}>{notice.msg}</span>
         </div>
       )}
 
-      {/* Metrics — status == ACTIVE */}
+      {/* Metrics */}
       {isActive && metrics && (
         <div style={{ padding: '12px 22px 18px 80px' }}>
           <div style={{
-            borderRadius: 12, border: '1px solid rgba(66,133,244,.15)',
-            background: 'rgba(66,133,244,.03)', overflow: 'hidden',
+            borderRadius: 12, border: '1px solid rgba(0,120,212,.15)',
+            background: 'rgba(0,120,212,.03)', overflow: 'hidden',
           }}>
             <div style={{
-              padding: '9px 16px 8px', borderBottom: '1px solid rgba(66,133,244,.1)',
+              padding: '9px 16px 8px', borderBottom: '1px solid rgba(0,120,212,.1)',
               display: 'flex', alignItems: 'center', gap: 6,
             }}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={DRIVE_BLUE} strokeWidth="2.5" strokeLinecap="round">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={OD_BLUE} strokeWidth="2.5" strokeLinecap="round">
                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
               </svg>
-              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: DRIVE_BLUE }}>
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: OD_BLUE }}>
                 Sync metadata
               </span>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', padding: '12px 16px 16px' }}>
               <div style={{
                 flex: '1 1 120px', padding: '4px 14px 4px 0',
-                borderRight: metrics?.last_synced_at ? '1px solid rgba(66,133,244,.1)' : 'none',
+                borderRight: metrics?.last_synced_at ? '1px solid rgba(0,120,212,.1)' : 'none',
               }}>
                 <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, marginBottom: 4 }}>Total files</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
@@ -380,26 +431,6 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
               )}
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Error */}
-      {err && err === WORKSPACE_POLICY_ERROR_MSG && (
-        <div style={{ padding: '0 22px 14px 80px' }}>
-          <div style={{
-            display: 'flex', gap: 10, padding: '10px 14px', borderRadius: 10,
-            background: 'rgba(234,179,8,.08)', border: '1px solid rgba(234,179,8,.35)',
-          }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}>
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-            <span style={{ fontSize: 12, color: '#92400E', fontWeight: 600, lineHeight: 1.5 }}>{err}</span>
-          </div>
-        </div>
-      )}
-      {err && err !== WORKSPACE_POLICY_ERROR_MSG && (
-        <div style={{ padding: '0 22px 14px 80px' }}>
-          <span style={{ fontSize: 12, color: '#DC2626' }}>{err}</span>
         </div>
       )}
 
