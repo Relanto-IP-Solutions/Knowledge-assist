@@ -1,4 +1,6 @@
-"""Resolve which ``users`` row should authorize Drive/Gmail sync for an opportunity."""
+"""Resolve which ``users`` row should authorize Drive/Gmail sync.
+STRICT PRIVACY: FALLBACKS DISABLED.
+"""
 
 from __future__ import annotations
 

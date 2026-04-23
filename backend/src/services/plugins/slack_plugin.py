@@ -22,7 +22,11 @@ from configs.settings import get_settings
 from src.services.database_manager.models.auth_models import OpportunitySource
 from src.services.storage.service import Storage
 from src.utils.logger import get_logger
-from src.utils.opportunity_id import gcs_opportunity_prefix, gcs_path_prefix_candidates
+from src.utils.opportunity_id import (
+    gcs_opportunity_prefix,
+    gcs_path_prefix_candidates,
+    normalize_opportunity_oid,
+)
 
 
 logger = get_logger(__name__)
@@ -41,7 +45,10 @@ def _get_headers() -> dict | None:
 
 def _oid_to_slack_channel_prefix(oid: str) -> str:
     """Format OID to a safe slack channel prefix (e.g. OID/1023 -> oid1023)."""
-    return "".join(c for c in str(oid) if c.isalnum()).lower()
+    try:
+        return normalize_opportunity_oid(oid)
+    except ValueError:
+        return "".join(c for c in str(oid) if c.isalnum()).lower()
 
 
 def _utc_fetched_at() -> str:
