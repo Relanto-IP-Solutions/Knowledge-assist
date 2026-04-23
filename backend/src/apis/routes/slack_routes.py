@@ -558,6 +558,35 @@ def orchestrate_slack_channel(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Validate and resolve authorized members first so channel creation only happens
+    # after we have at least one confirmed @relanto.ai Slack user.
+    raw_emails = []
+    for item in body.team_emails:
+        raw_emails.extend(str(item).split(","))
+    valid_relanto_emails = sorted(
+        {
+            email.strip().lower()
+            for email in raw_emails
+            if email.strip().lower().endswith("@relanto.ai")
+        }
+    )
+    if not valid_relanto_emails:
+        raise HTTPException(
+            status_code=400,
+            detail="No authorized team members found. Provide at least one @relanto.ai email.",
+        )
+
+    resolved_member_ids: list[str] = []
+    for email in valid_relanto_emails:
+        slack_id = _lookup_slack_id_by_email(token, email)
+        if slack_id:
+            resolved_member_ids.append(slack_id)
+    if not resolved_member_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No authorized team members found...",
+        )
+
     requested_name = (body.custom_channel_name or normalized_oid).strip().lower()
     parsed_oid = _oid_from_channel_name(requested_name)
     if not parsed_oid or parsed_oid != normalized_oid:
@@ -580,24 +609,6 @@ def orchestrate_slack_channel(
     channel_id = (channel.get("id") or "").strip()
     if not channel_id:
         raise HTTPException(status_code=502, detail="Slack channel ID missing from API response.")
-
-    # Harden email input: handle potential comma-separated strings inside the list
-    raw_emails = []
-    for item in body.team_emails:
-        raw_emails.extend(str(item).split(","))
-
-    valid_relanto_emails = sorted(
-        {
-            email.strip().lower()
-            for email in raw_emails
-            if email.strip().lower().endswith("@relanto.ai")
-        }
-    )
-    resolved_member_ids: list[str] = []
-    for email in valid_relanto_emails:
-        slack_id = _lookup_slack_id_by_email(token, email)
-        if slack_id:
-            resolved_member_ids.append(slack_id)
 
     invited_count = _batch_invite_members(token, channel_id, resolved_member_ids)
     _, source, opp_created, src_created = _ensure_opportunity_and_source_for_channel(
