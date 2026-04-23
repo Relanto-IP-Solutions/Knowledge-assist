@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS teams (
 );
 
 -- Add FK after teams exists (opportunities is created in earlier module).
+ALTER TABLE opportunities
+    ADD COLUMN IF NOT EXISTS team_id INTEGER;
+
 DO $$
 BEGIN
     IF NOT EXISTS (
