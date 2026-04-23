@@ -25,6 +25,20 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 external_router = APIRouter(tags=["auth"])
 
 
+def _derive_display_role(roles_assigned) -> str:
+    """Return "Admin" if roles_assigned contains ADMIN (case-insensitive), else "User"."""
+    if not roles_assigned:
+        return "User"
+    try:
+        for r in roles_assigned:
+            if str(r).strip().upper() == "ADMIN":
+                return "Admin"
+    except TypeError:
+        if str(roles_assigned).strip().upper() == "ADMIN":
+            return "Admin"
+    return "User"
+
+
 class AuthCodeRequest(BaseModel):
     code: str
     redirect_uri: str
@@ -70,7 +84,13 @@ async def update_my_profile(
     db.add(user)
     db.commit()
     db.refresh(user)
-    return {"status": "success", "id": user.id, "email": user.email, "name": user.name}
+    return {
+        "status": "success",
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "display_role": _derive_display_role(getattr(user, "roles_assigned", None)),
+    }
 
 
 @router.get("/google/url")
@@ -222,6 +242,9 @@ async def register(
                 "email": existing.email,
                 "name": existing.name,
                 "roles_assigned": getattr(existing, "roles_assigned", None),
+                "display_role": _derive_display_role(
+                    getattr(existing, "roles_assigned", None)
+                ),
             },
         }
 
@@ -253,6 +276,9 @@ async def register(
                 "email": by_email.email,
                 "name": by_email.name,
                 "roles_assigned": getattr(by_email, "roles_assigned", None),
+                "display_role": _derive_display_role(
+                    getattr(by_email, "roles_assigned", None)
+                ),
             },
         }
 
@@ -294,4 +320,6 @@ async def register(
     if not created:
         raise HTTPException(status_code=500, detail="Failed to register user.")
 
-    return {"ok": True, "user": dict(created)}
+    user_payload = dict(created)
+    user_payload["display_role"] = _derive_display_role(user_payload.get("roles_assigned"))
+    return {"ok": True, "user": user_payload}
