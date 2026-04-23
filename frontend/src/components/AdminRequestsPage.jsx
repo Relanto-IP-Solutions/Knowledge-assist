@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { listOpportunityRequests, reviewOpportunityRequest } from '../services/requestsApi'
 
 const SI_NAVY = '#1B264F'
 const SI_ORANGE = '#E8532E'
 
 const STATUS_META = {
-  PENDING:  { bg: 'rgba(234,179,8,.1)',      text: '#854d0e', border: 'rgba(234,179,8,.3)',      dot: '#d97706' },
-  APPROVED: { bg: 'rgba(5,150,105,.1)',       text: '#065f46', border: 'rgba(5,150,105,.25)',     dot: '#059669' },
-  REJECTED: { bg: 'rgba(220,38,38,.08)',      text: '#991b1b', border: 'rgba(220,38,38,.2)',      dot: '#dc2626' },
+  PENDING:  { bg: 'rgba(234,179,8,.1)',  text: '#854d0e', border: 'rgba(234,179,8,.3)',  dot: '#d97706' },
+  APPROVED: { bg: 'rgba(5,150,105,.1)',   text: '#065f46', border: 'rgba(5,150,105,.25)', dot: '#059669' },
+  REJECTED: { bg: 'rgba(220,38,38,.08)', text: '#991b1b', border: 'rgba(220,38,38,.2)',  dot: '#dc2626' },
 }
 
 function StatusBadge({ status }) {
@@ -17,7 +18,7 @@ function StatusBadge({ status }) {
       display: 'inline-flex', alignItems: 'center', gap: 5,
       padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
       background: m.bg, color: m.text, border: `1px solid ${m.border}`,
-      letterSpacing: '0.04em', textTransform: 'uppercase',
+      letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap',
     }}>
       <span style={{ width: 6, height: 6, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
       {status}
@@ -45,8 +46,41 @@ function Avatar({ name }) {
   )
 }
 
-function ReviewModal({ request, onClose, onDone }) {
-  const [action, setAction] = useState('APPROVED')
+/* ── Stat Card ─────────────────────────────────────────────── */
+function StatCard({ icon, value, label, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        flex: 1, minWidth: 160,
+        display: 'flex', alignItems: 'center', gap: 14,
+        padding: '18px 20px', borderRadius: 14,
+        border: active ? `2px solid ${SI_NAVY}` : '1px solid rgba(27,38,79,.10)',
+        background: '#fff', cursor: 'pointer',
+        boxShadow: active ? '0 2px 12px rgba(27,38,79,.08)' : '0 1px 4px rgba(15,23,42,.04)',
+        fontFamily: 'var(--font, "Plus Jakarta Sans", sans-serif)',
+        transition: 'all .15s',
+      }}
+    >
+      <div style={{
+        width: 42, height: 42, borderRadius: 10, flexShrink: 0,
+        background: icon.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {icon.el}
+      </div>
+      <div style={{ textAlign: 'left' }}>
+        <div style={{ fontSize: 24, fontWeight: 800, color: SI_NAVY, lineHeight: 1.1 }}>{value}</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginTop: 2 }}>{label}</div>
+      </div>
+    </button>
+  )
+}
+
+/* ── Review Modal ──────────────────────────────────────────── */
+function ReviewModal({ request, onClose, onDone, mode }) {
+  const isReconsider = mode === 'reconsider'
+  const [action, setAction] = useState(isReconsider ? 'APPROVED' : 'APPROVED')
   const [remarks, setRemarks] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -91,7 +125,7 @@ function ReviewModal({ request, onClose, onDone }) {
         fontFamily: 'var(--font, "Plus Jakarta Sans", sans-serif)',
       }}>
         <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700, color: SI_NAVY }}>
-          Review Request
+          {isReconsider ? 'Reconsider Request' : 'Review Request'}
         </h3>
         <p style={{ margin: '0 0 20px', fontSize: 13, color: '#64748b' }}>
           <strong style={{ color: SI_NAVY }}>{request.opportunity_title}</strong>
@@ -158,93 +192,151 @@ function ReviewModal({ request, onClose, onDone }) {
   )
 }
 
-function RequestCard({ r, onReview }) {
-  const submitted = new Date(r.submitted_at)
+/* ── Common action button style ────────────────────────────── */
+const actionBtnBase = {
+  padding: '8px 0',
+  width: 110,
+  borderRadius: 8,
+  fontWeight: 700,
+  fontSize: 12,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  whiteSpace: 'nowrap',
+  textAlign: 'center',
+  display: 'inline-block',
+  boxSizing: 'border-box',
+}
+
+/* ── View Detail Modal ─────────────────────────────────────── */
+function ViewDetailModal({ request, onClose }) {
+  if (!request) return null
+  const submitted = new Date(request.submitted_at)
   const dateStr = submitted.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   const timeStr = submitted.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-  const isPending = r.status === 'PENDING'
+
+  const rows = [
+    { label: 'Request ID', value: request.request_id },
+    { label: 'Opportunity Title', value: request.opportunity_title },
+    { label: 'Opportunity ID', value: request.opportunity_id || '—' },
+    { label: 'Requested By', value: request.user_name || `User #${request.user_id}` },
+    { label: 'User ID', value: request.user_id },
+    { label: 'User Email', value: request.user_email || '—' },
+    { label: 'Status', value: request.status, badge: true },
+    { label: 'Submitted On', value: `${dateStr} at ${timeStr}` },
+    { label: 'Admin Remarks', value: request.admin_remarks || '—' },
+    { label: 'Reviewed By', value: request.reviewed_by || request.admin_name || '—' },
+    { label: 'Reviewed On', value: request.reviewed_at ? new Date(request.reviewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + new Date(request.reviewed_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—' },
+  ]
 
   return (
-    <div style={{
-      background: '#fff',
-      borderRadius: 14,
-      border: `1px solid ${isPending ? 'rgba(234,179,8,.25)' : 'rgba(27,38,79,.08)'}`,
-      boxShadow: isPending
-        ? '0 2px 12px rgba(234,179,8,.08)'
-        : '0 1px 4px rgba(15,23,42,.05)',
-      padding: '20px 20px 18px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 14,
-      transition: 'box-shadow .15s',
-    }}>
-      {/* Top row: title + badge */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-        <h3 style={{
-          margin: 0, fontSize: 14, fontWeight: 700, color: SI_NAVY,
-          lineHeight: 1.35, flex: 1, wordBreak: 'break-word',
-        }}>
-          {r.opportunity_title}
-        </h3>
-        <StatusBadge status={r.status} />
-      </div>
-
-      {/* Requester */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-        <Avatar name={r.user_name || String(r.user_id)} />
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', lineHeight: 1.2 }}>
-            {r.user_name || `User #${r.user_id}`}
-          </div>
-          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-            {dateStr} · {timeStr}
-          </div>
-        </div>
-      </div>
-
-      {/* Remarks (if any) */}
-      {r.admin_remarks && (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 300,
+        background: 'rgba(15,23,42,.45)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div style={{
+        background: '#fff', borderRadius: 16, padding: 0, width: '100%', maxWidth: 520,
+        boxShadow: '0 20px 60px rgba(15,23,42,.18)',
+        fontFamily: 'var(--font, "Plus Jakarta Sans", sans-serif)',
+        overflow: 'hidden',
+      }}>
+        {/* Header */}
         <div style={{
-          padding: '9px 12px', borderRadius: 8,
-          background: r.status === 'REJECTED' ? 'rgba(220,38,38,.05)' : 'rgba(5,150,105,.05)',
-          border: `1px solid ${r.status === 'REJECTED' ? 'rgba(220,38,38,.12)' : 'rgba(5,150,105,.12)'}`,
-          fontSize: 12, color: '#475569', lineHeight: 1.5,
+          padding: '20px 28px 16px',
+          borderBottom: '1px solid rgba(27,38,79,.08)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <span style={{ fontWeight: 700, fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: '#94a3b8', display: 'block', marginBottom: 3 }}>Admin remarks</span>
-          {r.admin_remarks}
+          <div>
+            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: SI_NAVY }}>
+              Request Details
+            </h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: '#94a3b8' }}>
+              Full details for this opportunity request
+            </p>
+          </div>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: '#94a3b8', fontSize: 20, padding: '4px 8px', lineHeight: 1,
+          }}>✕</button>
         </div>
-      )}
 
-      {/* Action */}
-      {isPending ? (
-        <button
-          onClick={() => onReview(r)}
-          style={{
-            marginTop: 'auto',
-            padding: '9px 0', borderRadius: 9,
-            border: `1.5px solid ${SI_NAVY}`,
-            background: 'transparent', color: SI_NAVY,
-            fontWeight: 700, fontSize: 12, cursor: 'pointer',
-            fontFamily: 'var(--font, "Plus Jakarta Sans", sans-serif)',
-            width: '100%', transition: 'background .15s, color .15s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = SI_NAVY; e.currentTarget.style.color = '#fff' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = SI_NAVY }}
-        >
-          Review
-        </button>
-      ) : (
-        <div style={{
-          marginTop: 'auto', padding: '9px 0', borderRadius: 9, textAlign: 'center',
-          background: '#f8fafc', border: '1px solid #e2e8f0',
-          fontSize: 12, fontWeight: 600,
-          color: r.status === 'APPROVED' ? '#059669' : '#dc2626',
-        }}>
-          {r.status === 'APPROVED' ? '✓ Approved' : '✕ Rejected'}
+        {/* Detail rows */}
+        <div style={{ padding: '8px 28px 24px', maxHeight: 420, overflowY: 'auto' }}>
+          {rows.map(row => {
+            const val = row.value
+            if (val == null || val === undefined) return null
+            return (
+              <div key={row.label} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                padding: '12px 0',
+                borderBottom: '1px solid rgba(27,38,79,.05)',
+                gap: 16,
+              }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b', flexShrink: 0, minWidth: 120 }}>
+                  {row.label}
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', textAlign: 'right', wordBreak: 'break-all' }}>
+                  {row.badge ? <StatusBadge status={String(val)} /> : String(val)}
+                </span>
+              </div>
+            )
+          })}
         </div>
-      )}
+
+        {/* Footer */}
+        <div style={{ padding: '14px 28px', borderTop: '1px solid rgba(27,38,79,.08)', textAlign: 'right' }}>
+          <button onClick={onClose} style={{
+            padding: '9px 24px', borderRadius: 8, border: '1px solid #e2e8f0',
+            background: '#f8fafc', color: '#64748b', fontWeight: 600, fontSize: 13,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}>
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   )
+}
+
+/* ── Stat Icons ────────────────────────────────────────────── */
+const iconTotal = {
+  bg: 'rgba(27,38,79,.06)',
+  el: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={SI_NAVY} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
+}
+const iconPending = {
+  bg: 'rgba(234,179,8,.1)',
+  el: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+}
+const iconApproved = {
+  bg: 'rgba(5,150,105,.1)',
+  el: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
+}
+const iconRejected = {
+  bg: 'rgba(220,38,38,.08)',
+  el: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>,
+}
+
+/* ── Column header style ───────────────────────────────────── */
+const thStyle = {
+  padding: '12px 16px',
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: '.06em',
+  textTransform: 'uppercase',
+  color: '#64748b',
+  textAlign: 'left',
+  borderBottom: '1px solid rgba(27,38,79,.10)',
+  whiteSpace: 'nowrap',
+}
+const tdStyle = {
+  padding: '14px 16px',
+  fontSize: 13,
+  color: '#1e293b',
+  borderBottom: '1px solid rgba(27,38,79,.06)',
+  verticalAlign: 'middle',
 }
 
 export default function AdminRequestsPage({ onBack }) {
@@ -253,6 +345,8 @@ export default function AdminRequestsPage({ onBack }) {
   const [error, setError] = useState(null)
   const [filterStatus, setFilterStatus] = useState('ALL')
   const [reviewing, setReviewing] = useState(null)
+  const [reviewMode, setReviewMode] = useState('review')
+  const [viewing, setViewing] = useState(null)
   const [toastMsg, setToastMsg] = useState(null)
   const toastTimer = useRef(null)
 
@@ -294,77 +388,91 @@ export default function AdminRequestsPage({ onBack }) {
     REJECTED: requests.filter(r => r.status === 'REJECTED').length,
   }
 
+  const openReview = (r, mode = 'review') => {
+    setReviewMode(mode)
+    setReviewing(r)
+  }
+
   return (
     <div style={{
       minHeight: 'calc(100vh - 56px)',
       background: 'var(--bg, #f4f6f9)',
-      padding: '24px 20px 48px',
+      padding: '32px 64px 48px',
       fontFamily: 'var(--font, "Plus Jakarta Sans", sans-serif)',
     }}>
-      <div style={{ maxWidth: 1040, margin: '0 auto' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto' }}>
 
-        {/* Back */}
-        <button onClick={onBack} style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '8px 4px 8px 0', border: 'none', background: 'none',
-          cursor: 'pointer', fontSize: 13, fontWeight: 600,
-          color: 'var(--text2)', marginBottom: 20, fontFamily: 'inherit',
-        }}>
-          <span aria-hidden style={{ fontSize: 16 }}>←</span>
-          Back
-        </button>
+        {/* Breadcrumbs */}
+        <nav aria-label="Breadcrumb" style={{ marginBottom: 18 }}>
+          <ol style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            listStyle: 'none', margin: 0, padding: 0,
+            fontSize: 11, fontWeight: 600, flexWrap: 'wrap',
+          }}>
+            {[
+              { label: 'Knowledge Assist', to: '/knowledge-assist' },
+              { label: 'Sales Intelligence', to: '/knowledge-assist' },
+              { label: 'Admin Panel', to: null },
+              { label: 'Opportunity Requests', to: null },
+            ].map((crumb, index, arr) => {
+              const isLast = index === arr.length - 1
+              return (
+                <li key={crumb.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {crumb.to && !isLast ? (
+                    <Link
+                      to={crumb.to}
+                      style={{ color: 'rgba(77,85,119,.65)', fontWeight: 500, textDecoration: 'none', transition: 'color .15s' }}
+                      onMouseEnter={e => { e.currentTarget.style.color = SI_NAVY }}
+                      onMouseLeave={e => { e.currentTarget.style.color = 'rgba(77,85,119,.65)' }}
+                    >
+                      {crumb.label}
+                    </Link>
+                  ) : (
+                    <span style={{ color: isLast ? SI_NAVY : 'rgba(77,85,119,.65)', fontWeight: isLast ? 700 : 500 }}>
+                      {crumb.label}
+                    </span>
+                  )}
+                  {!isLast && <span style={{ opacity: 0.45, fontSize: 10 }}>&gt;</span>}
+                </li>
+              )
+            })}
+          </ol>
+        </nav>
 
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: SI_NAVY }}>
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: SI_NAVY }}>
               Opportunity Requests
             </h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>
+            <p style={{ margin: '6px 0 0', fontSize: 14, color: '#64748b' }}>
               Review and act on pending opportunity creation requests.
             </p>
           </div>
           <button onClick={() => load()} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '8px 16px', borderRadius: 8, border: '1px solid #e2e8f0',
+            display: 'inline-flex', alignItems: 'center', gap: 7,
+            padding: '10px 20px', borderRadius: 10, border: '1px solid #e2e8f0',
             background: '#fff', color: SI_NAVY, fontWeight: 600, fontSize: 13,
             cursor: 'pointer', fontFamily: 'inherit',
+            boxShadow: '0 1px 3px rgba(15,23,42,.06)',
           }}>
-            ↺ Refresh
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Refresh
           </button>
         </div>
 
-        {/* Filter tabs */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 22, flexWrap: 'wrap' }}>
-          {['ALL', 'PENDING', 'APPROVED', 'REJECTED'].map(s => (
-            <button key={s} onClick={() => setFilterStatus(s)} style={{
-              padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-              cursor: 'pointer',
-              border: filterStatus === s ? `1.5px solid ${SI_NAVY}` : '1.5px solid #e2e8f0',
-              background: filterStatus === s ? SI_NAVY : '#fff',
-              color: filterStatus === s ? '#fff' : '#64748b',
-              fontFamily: 'inherit',
-            }}>
-              {s}&nbsp;<span style={{ opacity: .65 }}>({counts[s]})</span>
-            </button>
-          ))}
+        {/* Stat cards */}
+        <div style={{ display: 'flex', gap: 16, marginBottom: 28, flexWrap: 'wrap' }}>
+          <StatCard icon={iconTotal}    value={counts.ALL}      label="Total Requests"  active={filterStatus === 'ALL'}      onClick={() => setFilterStatus('ALL')} />
+          <StatCard icon={iconPending}  value={counts.PENDING}  label="Pending Review"  active={filterStatus === 'PENDING'}  onClick={() => setFilterStatus('PENDING')} />
+          <StatCard icon={iconApproved} value={counts.APPROVED} label="Approved"         active={filterStatus === 'APPROVED'} onClick={() => setFilterStatus('APPROVED')} />
+          <StatCard icon={iconRejected} value={counts.REJECTED} label="Rejected"         active={filterStatus === 'REJECTED'} onClick={() => setFilterStatus('REJECTED')} />
         </div>
 
-        {/* States */}
+        {/* Table */}
         {loading && (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: 16,
-          }}>
-            {[1,2,3].map(i => (
-              <div key={i} style={{
-                background: '#fff', borderRadius: 14, border: '1px solid rgba(27,38,79,.08)',
-                padding: '20px', height: 180,
-                animation: 'skPulse 1.5s ease-in-out infinite',
-                animationDelay: `${i * .1}s`,
-              }} />
-            ))}
+          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(27,38,79,.08)', padding: 40, textAlign: 'center' }}>
+            <div style={{ fontSize: 14, color: '#94a3b8', fontWeight: 600 }}>Loading requests…</div>
             <style>{`@keyframes skPulse{0%,100%{opacity:1}50%{opacity:.45}}`}</style>
           </div>
         )}
@@ -392,14 +500,116 @@ export default function AdminRequestsPage({ onBack }) {
 
         {!loading && !error && filteredRequests.length > 0 && (
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(288px, 1fr))',
-            gap: 16,
-            alignItems: 'start',
+            background: '#fff', borderRadius: 14,
+            border: '1px solid rgba(27,38,79,.08)',
+            boxShadow: '0 1px 4px rgba(15,23,42,.04)',
+            overflow: 'hidden',
           }}>
-            {filteredRequests.map(r => (
-              <RequestCard key={r.request_id} r={r} onReview={setReviewing} />
-            ))}
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+              <thead>
+                <tr style={{ background: '#FAFBFD' }}>
+                  <th style={thStyle}>Opportunity</th>
+                  <th style={thStyle}>Requested By</th>
+                  <th style={thStyle}>Requested On</th>
+                  <th style={thStyle}>Status</th>
+                  <th style={thStyle}>Admin Remarks</th>
+                  <th style={{ ...thStyle, textAlign: 'center' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRequests.map(r => {
+                  const submitted = new Date(r.submitted_at)
+                  const dateStr = submitted.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                  const timeStr = submitted.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                  const isPending = r.status === 'PENDING'
+                  const isRejected = r.status === 'REJECTED'
+                  const isApproved = r.status === 'APPROVED'
+
+                  return (
+                    <tr key={r.request_id} style={{ transition: 'background .12s' }}
+                      onMouseEnter={e => { e.currentTarget.style.background = '#FAFBFD' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      {/* Opportunity */}
+                      <td style={tdStyle}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{
+                            width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                            background: 'rgba(27,38,79,.05)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                          </div>
+                          <span style={{ fontWeight: 600, color: SI_NAVY }}>{r.opportunity_title}</span>
+                        </div>
+                      </td>
+                      {/* Requested By */}
+                      <td style={tdStyle}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                          <Avatar name={r.user_name || String(r.user_id)} />
+                          <span style={{ fontWeight: 600 }}>{r.user_name || `User #${r.user_id}`}</span>
+                        </div>
+                      </td>
+                      {/* Requested On */}
+                      <td style={tdStyle}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{dateStr}</div>
+                            <div style={{ fontSize: 11, color: '#94a3b8' }}>{timeStr}</div>
+                          </div>
+                        </div>
+                      </td>
+                      {/* Status */}
+                      <td style={tdStyle}><StatusBadge status={r.status} /></td>
+                      {/* Admin Remarks */}
+                      <td style={{ ...tdStyle, color: r.admin_remarks ? '#475569' : '#cbd5e1', fontSize: 12 }}>
+                        {r.admin_remarks || '—'}
+                      </td>
+                      {/* Action */}
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>
+                        {isPending && (
+                          <button
+                            onClick={() => openReview(r, 'review')}
+                            style={{
+                              ...actionBtnBase,
+                              border: 'none',
+                              background: SI_NAVY, color: '#fff',
+                            }}
+                          >
+                            Review
+                          </button>
+                        )}
+                        {isApproved && (
+                          <button
+                            onClick={() => setViewing(r)}
+                            style={{
+                              ...actionBtnBase,
+                              border: '1.5px solid rgba(27,38,79,.18)',
+                              background: '#fff', color: SI_NAVY,
+                            }}
+                          >
+                            View
+                          </button>
+                        )}
+                        {isRejected && (
+                          <button
+                            onClick={() => openReview(r, 'reconsider')}
+                            style={{
+                              ...actionBtnBase,
+                              border: 'none',
+                              background: SI_ORANGE, color: '#fff',
+                            }}
+                          >
+                            Reconsider
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -407,8 +617,16 @@ export default function AdminRequestsPage({ onBack }) {
       {reviewing && (
         <ReviewModal
           request={reviewing}
+          mode={reviewMode}
           onClose={() => setReviewing(null)}
           onDone={handleReviewDone}
+        />
+      )}
+
+      {viewing && (
+        <ViewDetailModal
+          request={viewing}
+          onClose={() => setViewing(null)}
         />
       )}
 

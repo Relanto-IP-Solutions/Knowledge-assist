@@ -7,6 +7,7 @@ import SourcesPage from './components/SourcesPage'
 import GmailResultPage from './components/GmailResultPage'
 import CreateOpportunityPage from './components/CreateOpportunityPage'
 import AdminRequestsPage from './components/AdminRequestsPage'
+import TeamBuilderPage from './components/TeamBuilderPage'
 import LoginWithTheme from './components/Login'
 import { subscribeAuth, signOutUser } from './services/authService'
 import {
@@ -357,6 +358,7 @@ export default function App() {
         onSwitchModule={switchModule}
         user={user}
         onLogout={handleLogout}
+        onNavigate={(path) => navigate(path)}
       />
 
       {activeModule === 'sales' && (
@@ -398,6 +400,10 @@ export default function App() {
           <Route
             path="/admin/requests"
             element={<AdminRequestsPage user={user} onBack={() => navigate('/')} />}
+          />
+          <Route
+            path="/admin/team-builder"
+            element={<TeamBuilderPage onBack={() => navigate('/admin/requests')} />}
           />
           <Route path="/gmail-result" element={<GmailResultPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

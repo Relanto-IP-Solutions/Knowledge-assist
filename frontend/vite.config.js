@@ -40,6 +40,7 @@ export default defineConfig(({ mode }) => {
         '/drive': { target: apiTarget, changeOrigin: true, secure: false },
         /** POST /zoom/discover (see integrationsAuthApi.discoverZoom) — root path, not under /integrations */
         '/zoom': { target: apiTarget, changeOrigin: true, secure: false },
+        '/teams': { target: apiTarget, changeOrigin: true, secure: false },
       },
     },
     test: {
