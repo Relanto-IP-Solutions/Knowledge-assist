@@ -29,6 +29,7 @@ from src.services.database_manager.models.auth_models import (
 from src.services.database_manager.opportunity_state import STATUS_DISCOVERED
 from src.services.database_manager.orm import get_db, get_engine
 from src.services.database_manager.user_connection_utils import get_active_connection
+from src.services.plugins import oauth_service
 from src.services.plugins.drive_plugin import find_drive_project_folder, sync_drive_source
 from src.services.storage.service import Storage
 from src.utils.logger import get_logger
@@ -275,57 +276,6 @@ def discover_drive_folders(
         skipped=skipped,
         mode=mode,
         matched_folder_name=folders_to_scan[0]["name"] if folders_to_scan else None,
-    )
-
-
-@integrations_drive_router.post("/connect/{oid}", response_model=DriveProfessionalConnectResponse)
-async def drive_professional_connect_integrations(
-    oid: str,
-    db: Annotated[Session, Depends(get_db)],
-    user_email: str | None = Query(default=None),
-):
-    """Professional ingestion: email-based lookup -> discover project folder -> ACTIVE -> Sync (awaited)."""
-    try:
-        normalized_oid = normalize_opportunity_oid(oid)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    # Resolve identity by email (Non-Firebase matching Gmail flow)
-    email = (user_email or "").strip().lower()
-    if not email:
-        raise HTTPException(status_code=400, detail="user_email query parameter is required.")
-        
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail=f"User not found for email '{email}'. Login with Drive first.")
-
-    # 1. Surgical project-scoped discovery
-    discovery_result = discover_drive_folders(db, user=user, oid_filter=normalized_oid)
-
-    opp = db.query(Opportunity).filter(Opportunity.opportunity_id == normalized_oid).first()
-    if not opp:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No project folder found for '{normalized_oid}' in your Drive.",
-        )
-
-    # 2. Activate and Sync
-    source = _ensure_drive_source(db, opp)
-    source.status = "ACTIVE"
-    db.commit()
-
-    o = get_settings().oauth_plugin
-    files_uploaded = sync_drive_source(db, source, o.google_client_id, o.google_client_secret)
-
-    storage = Storage()
-    total_files = len(storage.list_objects("raw", normalized_oid, "documents"))
-
-    return DriveProfessionalConnectResponse(
-        oid=normalized_oid,
-        status="ACTIVE",
-        total_files=total_files,
-        files_uploaded=files_uploaded,
-        discovery_result=discovery_result,
     )
 
 
