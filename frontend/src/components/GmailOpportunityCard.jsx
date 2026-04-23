@@ -13,7 +13,7 @@ import {
   gmailConnectorEmailSessionKey,
 } from '../hooks/useGmailConnector'
 import { toApiOpportunityId } from '../config/opportunityApi'
-import { mapGmailError } from '../utils/gmailErrorMapper'
+import { mapGmailError, WORKSPACE_POLICY_ERROR_MSG } from '../utils/gmailErrorMapper'
 import {
   connectGmail,
   fetchGmailConnectInfo,
@@ -699,7 +699,20 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
         </div>
       )}
 
-      {err && (
+      {err && err === WORKSPACE_POLICY_ERROR_MSG && (
+        <div style={{ padding: '0 22px 14px 80px' }}>
+          <div style={{
+            display: 'flex', gap: 10, padding: '10px 14px', borderRadius: 10,
+            background: 'rgba(234,179,8,.08)', border: '1px solid rgba(234,179,8,.35)',
+          }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}>
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span style={{ fontSize: 12, color: '#92400E', fontWeight: 600, lineHeight: 1.5 }}>{err}</span>
+          </div>
+        </div>
+      )}
+      {err && err !== WORKSPACE_POLICY_ERROR_MSG && (
         <div style={{ padding: '0 22px 14px 80px' }}>
           <span style={{ fontSize: 12, color: '#DC2626' }}>{err}</span>
         </div>
