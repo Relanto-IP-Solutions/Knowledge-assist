@@ -38,6 +38,12 @@ def _ensure_onedrive_source(
         )
         db.add(opp)
         db.flush()
+    else:
+        # Transfer ownership if a different user is now connecting the OneDrive
+        if opp.owner_id != owner.id:
+            logger.info("OneDrive: Transferring ownership of {} from id={} to id={}", oid, opp.owner_id, owner.id)
+            opp.owner_id = owner.id
+            db.flush()
 
     source = (
         db.query(OpportunitySource)
