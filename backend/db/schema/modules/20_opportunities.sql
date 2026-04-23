@@ -22,33 +22,37 @@ CREATE TABLE IF NOT EXISTS opportunities (
     team_id INTEGER
 );
 
--- Generate human-friendly business ids (oid0001, oid0002, ...) in the DB.
--- This lets the API accept only `name` and return the generated opportunity_id.
-CREATE SEQUENCE IF NOT EXISTS opportunity_oid_seq;
+ALTER TABLE opportunities
+    ADD COLUMN IF NOT EXISTS team_id INTEGER;
 
--- Align the sequence with existing rows (best-effort). If there are no existing
--- opportunities or ids don't contain digits, start from 1.
 DO $$
 BEGIN
-    PERFORM setval(
-        'opportunity_oid_seq',
-        COALESCE(
-            (
-                SELECT
-                    MAX(
-                        NULLIF(regexp_replace(opportunity_id, '\D', '', 'g'), '')::bigint
-                    )
-                FROM opportunities
-            ),
-            0
-        ) + 1,
-        false
-    );
-EXCEPTION WHEN undefined_table THEN
-    -- Table doesn't exist yet in this migration run; ignore.
-    NULL;
-END
-$$;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'unique_opportunity_id'
+    ) THEN
+        ALTER TABLE opportunities
+            ADD CONSTRAINT unique_opportunity_id UNIQUE (opportunity_id);
+    END IF;
+END $$;
+
+-- Generate human-friendly business ids (oid0001, oid0002, ...) in the DB.
+-- This lets the API accept only `name` and return the generated opportunity_id.
+CREATE SEQUENCE IF NOT EXISTS opportunity_oid_seq START 1;
+
+SELECT setval(
+  'opportunity_oid_seq',
+  COALESCE(
+    (
+      SELECT MAX(CAST(SUBSTRING(opportunity_id FROM 4) AS INTEGER))
+      FROM opportunities
+      WHERE opportunity_id ~ '^oid[0-9]+$'
+    ),
+    0
+  ) + 1,
+  false
+);
 
 ALTER TABLE opportunities
     ALTER COLUMN opportunity_id
@@ -58,6 +62,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS unique_opportunity_name
     ON opportunities (LOWER(name));
 
 CREATE INDEX IF NOT EXISTS idx_opportunities_owner ON opportunities (owner_id);
+CREATE INDEX IF NOT EXISTS idx_opportunities_team_id ON opportunities (team_id);
 CREATE INDEX IF NOT EXISTS idx_opportunities_status ON opportunities (status);
 CREATE INDEX IF NOT EXISTS idx_opportunities_updated ON opportunities (updated_at DESC);
 -- list_opportunity_ids: ORDER BY created_at DESC, opportunity_id ASC with filters
