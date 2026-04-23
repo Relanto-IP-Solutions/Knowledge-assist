@@ -10,6 +10,7 @@ from src.services.database_manager.opportunity_state import STATUS_DISCOVERED
 from src.services.database_manager.orm import get_db, get_engine
 from src.services.database_manager.user_connection_utils import get_active_connection
 from src.services.plugins.onedrive_plugin import (
+    _get_graph_access_token,
     find_onedrive_project_folder,
     sync_onedrive_source,
 )
@@ -104,8 +105,15 @@ async def connect_onedrive_project(
         )
 
     _, source = _ensure_onedrive_source(db, normalized_oid, user)
+    access_token = await _get_graph_access_token(conn.refresh_token)
+    if not access_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Failed to refresh OneDrive token. Please re-authorize.",
+        )
+
     folder_id, _folder_name = await find_onedrive_project_folder(
-        conn.access_token, normalized_oid
+        access_token, normalized_oid
     )
     if not folder_id:
         raise HTTPException(
