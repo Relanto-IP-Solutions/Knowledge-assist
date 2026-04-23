@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { clearOpportunityIdsCache, fetchOpportunityIds } from '../services/opportunityIdsApi'
 import { checkNameExists, createOpportunityRequest } from '../services/requestsApi'
+import { lockOpportunity } from '../services/opportunitiesApi'
 import { useIsAdmin } from '../hooks/useIsAdmin'
 // ── Fiscal Quarter data ──────────────────────────────────────────────────────
 const FISCAL_YEARS = [2025, 2026]
@@ -455,6 +456,23 @@ function mapApiIdRowToOpportunity(r) {
   return out
 }
 
+function LockIcon({ size = 14, locked }) {
+  if (locked) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+      </svg>
+    )
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+    </svg>
+  )
+}
+
 export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onOpportunitiesRefresh, onAdminPanel }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -495,6 +513,10 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
   const createDebounceRef = useRef(null)
   const NAME_VALID_RE = /^[A-Za-z0-9 -]*$/
   const { isAdmin } = useIsAdmin()
+  const [lockedIds, setLockedIds] = useState(() => new Set())
+  const [lockConfirm, setLockConfirm] = useState(null)
+  const [lockBusy, setLockBusy] = useState(false)
+  const [lockError, setLockError] = useState(null)
 
   const loadDashboard = useCallback(async (forceRefresh = false, requestedPage = 1) => {
     const parsedRequestedPage = Number(requestedPage)
@@ -741,32 +763,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               ) : null}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-              {isAdmin && onAdminPanel && (
-                <button
-                  type="button"
-                  onClick={onAdminPanel}
-                  style={{
-                    padding: '12px 18px',
-                    borderRadius: 12,
-                    border: `1.5px solid ${SI_NAVY}`,
-                    background: 'transparent',
-                    color: SI_NAVY,
-                    fontSize: 13,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    fontFamily: 'var(--font)',
-                    whiteSpace: 'nowrap',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 7,
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-                  </svg>
-                  Requests
-                </button>
-              )}
+              {/* Admin Requests button removed — access via profile dropdown Admin Panel */}
               <button
                 type="button"
                 onClick={openCreateModal}
@@ -1005,6 +1002,8 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
                     o={o}
                     last={i === pageSlice.length - 1}
                     onOpen={() => onOpenOpp(o.id, o.name || o.id, page)}
+                    isLocked={lockedIds.has(o.id)}
+                    onLockClick={(opp) => { setLockConfirm(opp); setLockError(null) }}
                   />
                 ))
               )}
@@ -1192,11 +1191,99 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
           </div>
         </div>
       ) : null}
+
+      {/* Lock Confirmation Dialog */}
+      {lockConfirm && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 300,
+            background: 'rgba(15,23,42,.45)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget && !lockBusy) { setLockConfirm(null); setLockError(null) } }}
+        >
+          <div style={{
+            background: '#fff', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420,
+            boxShadow: '0 20px 60px rgba(15,23,42,.18)',
+            fontFamily: 'var(--font, "Plus Jakarta Sans", sans-serif)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                background: 'rgba(220,38,38,.08)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#dc2626',
+              }}>
+                <LockIcon size={20} locked />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: SI_NAVY }}>Lock Opportunity</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>This action will restrict access</p>
+              </div>
+            </div>
+
+            <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.6, margin: '0 0 8px' }}>
+              Are you sure you want to lock <strong style={{ color: SI_NAVY }}>{lockConfirm.name || lockConfirm.id}</strong>?
+            </p>
+            <p style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5, margin: '0 0 20px' }}>
+              Locked opportunities cannot be opened or modified by team members.
+            </p>
+
+            {lockError && (
+              <div style={{ marginBottom: 14, padding: '8px 12px', borderRadius: 8, background: 'rgba(220,38,38,.06)', border: '1px solid rgba(220,38,38,.15)', fontSize: 12, color: '#dc2626', fontWeight: 600 }}>
+                {lockError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                disabled={lockBusy}
+                onClick={() => { setLockConfirm(null); setLockError(null) }}
+                style={{
+                  padding: '9px 20px', borderRadius: 8, border: '1px solid #e2e8f0',
+                  background: '#f8fafc', color: '#64748b', fontWeight: 600, fontSize: 13,
+                  cursor: lockBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={lockBusy}
+                onClick={async () => {
+                  setLockBusy(true)
+                  setLockError(null)
+                  try {
+                    await lockOpportunity(lockConfirm.id)
+                    setLockedIds(prev => new Set([...prev, lockConfirm.id]))
+                    setLockConfirm(null)
+                  } catch (e) {
+                    setLockError(e?.message || 'Failed to lock opportunity.')
+                  } finally {
+                    setLockBusy(false)
+                  }
+                }}
+                style={{
+                  padding: '9px 22px', borderRadius: 8, border: 'none',
+                  background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 13,
+                  cursor: lockBusy ? 'not-allowed' : 'pointer',
+                  opacity: lockBusy ? 0.7 : 1, fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', gap: 7,
+                }}
+              >
+                <LockIcon size={13} locked />
+                {lockBusy ? 'Locking…' : 'Lock Opportunity'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function TableRow({ o, last, onOpen }) {
+function TableRow({ o, last, onOpen, isLocked, onLockClick }) {
   const [hov, setHov] = useState(false)
   const aiCount = Number(o.ai_count) || 0
   const humanCount = Number(o.human_count) || 0
@@ -1211,15 +1298,45 @@ function TableRow({ o, last, onOpen }) {
 
   return (
     <tr
-      onClick={onOpen}
+      onClick={isLocked ? undefined : onOpen}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
-      style={{ cursor: 'pointer', transition: 'background .12s', background: hov ? 'rgba(27,38,79,.04)' : 'transparent' }}
+      style={{
+        cursor: isLocked ? 'not-allowed' : 'pointer',
+        transition: 'background .12s',
+        background: hov ? (isLocked ? 'rgba(220,38,38,.03)' : 'rgba(27,38,79,.04)') : 'transparent',
+        opacity: isLocked ? 0.55 : 1,
+      }}
     >
       <td style={{ padding: '16px 18px', borderBottom: last ? 'none' : '1px solid var(--border)', verticalAlign: 'top', maxWidth: 320 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: hov ? SI_NAVY : 'var(--text0)', letterSpacing: '-.02em' }}>
-          {o.name}
-          <span style={{ fontWeight: 600, color: 'var(--text2)' }}> – {project}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ flex: 1, fontSize: 14, fontWeight: 800, color: hov && !isLocked ? SI_NAVY : 'var(--text0)', letterSpacing: '-.02em' }}>
+            {o.name}
+            <span style={{ fontWeight: 600, color: 'var(--text2)' }}> – {project}</span>
+          </div>
+          {(
+            <button
+              type="button"
+              title={isLocked ? 'Opportunity is locked' : 'Lock this opportunity'}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!isLocked) onLockClick?.(o)
+              }}
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 30, height: 30, borderRadius: 7, flexShrink: 0,
+                border: 'none',
+                background: isLocked ? 'rgba(220,38,38,.1)' : 'rgba(27,38,79,.06)',
+                color: isLocked ? '#dc2626' : 'rgba(27,38,79,.45)',
+                cursor: isLocked ? 'default' : 'pointer',
+                transition: 'all .15s',
+              }}
+              onMouseEnter={e => { if (!isLocked) { e.currentTarget.style.background = 'rgba(27,38,79,.12)'; e.currentTarget.style.color = SI_NAVY } }}
+              onMouseLeave={e => { if (!isLocked) { e.currentTarget.style.background = 'rgba(27,38,79,.06)'; e.currentTarget.style.color = 'rgba(27,38,79,.45)' } }}
+            >
+              <LockIcon size={14} locked={isLocked} />
+            </button>
+          )}
         </div>
         {o.conflictMessage && (
           <div style={{

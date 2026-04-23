@@ -40,3 +40,31 @@ export async function createOpportunity(input) {
     throw new Error(bodyText || e?.message || (status ? `HTTP ${status}` : 'Request failed'))
   }
 }
+
+/**
+ * Lock an opportunity (admin only).
+ * POST /opportunities/{opportunity_id}/lock
+ * Bearer token is auto-attached by apiClient interceptor.
+ * @param {string} opportunityId
+ * @returns {Promise<unknown>}
+ */
+export async function lockOpportunity(opportunityId) {
+  const id = String(opportunityId || '').trim()
+  if (!id) throw new Error('opportunity_id is required')
+  try {
+    const { data } = await api.post(`/opportunities/${encodeURIComponent(id)}/lock`, {
+      opportunity_id: id,
+    })
+    return data
+  } catch (e) {
+    const status = e?.response?.status
+    const detail =
+      e?.response?.data?.detail ||
+      (typeof e?.response?.data === 'string' ? e.response.data : null) ||
+      e?.message ||
+      'Failed to lock opportunity.'
+    const err = new Error(detail)
+    err.status = status
+    throw err
+  }
+}
