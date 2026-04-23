@@ -29,6 +29,7 @@ from src.apis.routes import (
     auth_routes,
     drive_routes,
     gmail_routes,
+    onedrive_routes,
     opportunity_routes,
     slack_routes,
     sync_routes,
@@ -174,11 +175,11 @@ async def google_oauth_browser_callback(
 app.include_router(auth_routes.router)
 app.include_router(auth_routes.external_router)
 app.include_router(drive_routes.router)
-app.include_router(drive_routes.dashboard_drive_router)
 app.include_router(drive_routes.integrations_drive_router)
 app.include_router(gmail_routes.router)
 app.include_router(gmail_routes.integrations_gmail_router)
 app.include_router(gmail_routes.dashboard_gmail_router)
+app.include_router(onedrive_routes.integrations_onedrive_router)
 app.include_router(slack_routes.router)
 app.include_router(slack_routes.integrations_slack_router)
 app.include_router(admin_routes.router)

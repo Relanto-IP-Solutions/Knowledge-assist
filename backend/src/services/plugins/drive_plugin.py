@@ -4,6 +4,7 @@ import io
 from datetime import datetime
 from typing import Any
 
+from fastapi import HTTPException
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -11,9 +12,8 @@ from googleapiclient.http import MediaIoBaseDownload
 from sqlalchemy.orm import Session
 
 from configs.settings import get_settings
-from src.services.database_manager.models.auth_models import OpportunitySource
+from src.services.database_manager.models.auth_models import OpportunitySource, User
 from src.services.database_manager.user_connection_utils import get_active_connection
-from src.services.plugins.google_connector_user import resolve_google_user_for_sync
 from src.services.storage.service import Storage
 from src.utils.logger import get_logger
 from src.utils.opportunity_id import find_opportunity_oid, gcs_opportunity_prefix, normalize_opportunity_oid
@@ -51,9 +51,8 @@ def _drive_list_query_pages(
             "fields": fields,
             "pageToken": page_token,
         }
-        if supports_all_drives:
-            kwargs["supportsAllDrives"] = True
-            kwargs["includeItemsFromAllDrives"] = True
+        kwargs["supportsAllDrives"] = True
+        kwargs["includeItemsFromAllDrives"] = True
         r = service.files().list(**kwargs).execute()
         out.extend(r.get("files") or [])
         page_token = r.get("nextPageToken")
@@ -133,7 +132,7 @@ def _get_credentials(
 
 
 def sync_drive_source(
-    db: Session, source: OpportunitySource, client_id: str, client_secret: str
+    db: Session, source: OpportunitySource, client_id: str, client_secret: str, user: User | None = None
 ) -> int:
     """Sync Google Drive documents matching the OID and upload to GCS raw/."""
     opp = source.opportunity
@@ -146,20 +145,17 @@ def sync_drive_source(
             repr(gcs_opp_prefix),
             repr(gcs_opp_prefix),
         )
-    user = resolve_google_user_for_sync(db, opp, provider="drive")
-    if not user:
-        logger.warning(
-            "Drive sync: no user with active drive connection for opportunity_id={}",
-            opp.opportunity_id,
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Personal Drive connection required.",
         )
-        return 0
     conn = get_active_connection(db, user.id, "drive")
     if not conn or not (conn.refresh_token or "").strip():
-        logger.warning(
-            "Drive sync: user {} has no active drive refresh token",
-            user.id,
+        raise HTTPException(
+            status_code=401,
+            detail="Please login to your Google Drive first.",
         )
-        return 0
     creds = _get_credentials(conn.refresh_token, client_id, client_secret)
     if not creds:
         logger.warning(
@@ -175,44 +171,40 @@ def sync_drive_source(
         logger.exception("Failed to build Drive service: {}", e)
         return 0
 
-    settings = get_settings().drive
-    supports_all_drives = bool(settings.drive_supports_all_drives)
-
-    root_folder_id, root_folder_display = find_drive_project_folder(
-        service, str(opp.opportunity_id), supports_all_drives=supports_all_drives
-    )
-    if not root_folder_id:
-        logger.info("No Drive folder found for opportunity_id: {}", opp.opportunity_id)
-        return 0
-    logger.info(
-        "Found root folder {} with ID {}", repr(root_folder_display), root_folder_id
-    )
-
     # 2. List all files recursively in that folder tree
-    def list_files_in_folder(folder_id: str) -> list[dict]:
+    def list_files_in_folder(folder_id: str, path_breadcrumb: str, seen_ids: set[str] | None = None) -> list[dict]:
+        if seen_ids is None:
+            seen_ids = set()
+            
+        if folder_id in seen_ids:
+            logger.warning("Drive sync: circular folder reference detected at {}", path_breadcrumb)
+            return []
+        seen_ids.add(folder_id)
+
         all_files = []
         page_token = None
-
         while True:
             # Look for all files AND folders inside this directory
             query = f"'{folder_id}' in parents and trashed = false"
             kwargs = {
                 "q": query,
                 "spaces": "drive",
-                "fields": "nextPageToken, files(id, name, mimeType, modifiedTime)",
+                "fields": "nextPageToken, files(id, name, mimeType, modifiedTime, size)",
                 "pageToken": page_token,
+                "supportsAllDrives": True,
+                "includeItemsFromAllDrives": True,
             }
-            if supports_all_drives:
-                kwargs.update({
-                    "supportsAllDrives": True,
-                    "includeItemsFromAllDrives": True,
-                })
-            results = service.files().list(**kwargs).execute()
+            try:
+                results = service.files().list(**kwargs).execute()
+            except Exception as e:
+                logger.warning("Drive sync error listing folder {}: {}", folder_id, e)
+                break
+
             items = results.get("files", [])
             for item in items:
                 if item["mimeType"] == "application/vnd.google-apps.folder":
                     # Recurse into subdirectories
-                    all_files.extend(list_files_in_folder(item["id"]))
+                    all_files.extend(list_files_in_folder(item["id"], f"{path_breadcrumb}/{item.get('name')}", seen_ids))
                 else:
                     all_files.append(item)
 
@@ -221,13 +213,73 @@ def sync_drive_source(
                 break
         return all_files
 
-    files_to_sync = list_files_in_folder(root_folder_id)
+    # Always search user's full visibility scope (My Drive + Shared Drives).
+    supports_all_drives = True
+    try:
+        normalized_oid = normalize_opportunity_oid(str(opp.opportunity_id))
+    except ValueError:
+        normalized_oid = str(opp.opportunity_id).strip().lower()
+
+    # 2) Candidate folder loop: try every OID-matching folder until one has files.
+    digits = normalized_oid[3:] if normalized_oid.startswith("oid") else ""
+    terms = [normalized_oid]
+    if digits:
+        terms.extend([f"oid {digits}", f"OID {digits}", f"Project {normalized_oid}"])
+    seen: dict[str, dict] = {}
+    for term in terms:
+        qq = (
+            "mimeType = 'application/vnd.google-apps.folder' "
+            f"and name contains '{_escape_drive_query_string(term)}' "
+            "and trashed = false"
+        )
+        for f in _drive_list_query_pages(
+            service, qq, "nextPageToken, files(id, name)", supports_all_drives
+        ):
+            seen[f["id"]] = f
+    candidates = [
+        f
+        for f in seen.values()
+        if drive_folder_name_matches_opportunity(f.get("name") or "", normalized_oid)
+    ]
+    candidates.sort(key=lambda x: (x.get("name") or ""))
+    if not candidates:
+        logger.info("No Drive folder found for opportunity_id: {}", opp.opportunity_id)
+        return 0
+
+    files_to_sync: list[dict] = []
+    root_folder_display = None
+    for candidate in candidates:
+        root_folder_id = candidate.get("id")
+        root_folder_display = (candidate.get("name") or "").strip() or normalized_oid
+        if not root_folder_id:
+            continue
+        logger.info(
+            "Drive sync: trying candidate folder {} ({})",
+            repr(root_folder_display),
+            root_folder_id,
+        )
+        files_to_sync = list_files_in_folder(
+            root_folder_id,
+            f"/{root_folder_display or str(opp.opportunity_id)}",
+        )
+        if files_to_sync:
+            logger.info(
+                "Drive sync: selected non-empty candidate folder {} ({}) with files={}",
+                repr(root_folder_display),
+                root_folder_id,
+                len(files_to_sync),
+            )
+            break
+        logger.info(
+            "Drive sync: candidate folder {} ({}) is empty; trying next.",
+            repr(root_folder_display),
+            root_folder_id,
+        )
+
     if not files_to_sync:
         logger.info(
-            "Drive sync: no files under folder db_opp_id={} gcs_prefix={} root={}",
+            "Drive sync: all candidate folders for {} are empty; uploaded=0",
             opp.opportunity_id,
-            gcs_opp_prefix,
-            repr(root_folder_display),
         )
         return 0
 
@@ -301,11 +353,11 @@ def sync_drive_source(
             while done is False:
                 _status, done = downloader.next_chunk()
 
-            # Upload to GCS raw/ tier under documents source (use canonical oid prefix for path)
+            # Upload to GCS raw/ tier under drive source (use canonical oid prefix for path)
             storage.write(
                 tier="raw",
                 opportunity_id=gcs_opp_prefix,
-                source="documents",  # the gcs_file_processor.py looks at 'documents' for PDFs/DOCXs
+                source="drive",
                 object_name=file_name,
                 content=fh.getvalue(),
                 content_type="application/octet-stream",
@@ -313,7 +365,7 @@ def sync_drive_source(
             count += 1
             new_checkpoint[file_id] = modified_time
             logger.info(
-                "Drive→GCS uploaded db_opp_id={} gcs_prefix={} object=raw/documents/{}",
+                "Drive→GCS uploaded db_opp_id={} gcs_prefix={} object=raw/drive/{}",
                 opp.opportunity_id,
                 gcs_opp_prefix,
                 file_name,
