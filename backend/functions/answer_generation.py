@@ -21,6 +21,7 @@ import functions_framework
 from src.services.pipelines.agent_pipeline import (
     AnswerGenerationAlreadyRunningError,
     AnswerGenerationPipeline,
+    OpportunityLockedError,
 )
 from src.utils.logger import get_logger
 
@@ -56,6 +57,13 @@ def handle_http(request):
 
     except AnswerGenerationAlreadyRunningError as exc:
         logger.bind(**extras).warning("Answer generation rejected (already running): {}", exc)
+        return (
+            json.dumps({"error": str(exc)}),
+            409,
+            {"Content-Type": "application/json"},
+        )
+    except OpportunityLockedError as exc:
+        logger.bind(**extras).warning("Answer generation rejected (opportunity locked): {}", exc)
         return (
             json.dumps({"error": str(exc)}),
             409,

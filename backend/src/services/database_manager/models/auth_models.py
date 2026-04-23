@@ -103,6 +103,7 @@ class Opportunity(Base):
 
     # Pipeline / UI state (updated by discover, sync, ingestion, answer-generation)
     status = Column(String(64), nullable=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
     total_documents = Column(Integer, nullable=False, server_default="0")
     processed_documents = Column(Integer, nullable=False, server_default="0")
     last_extraction_at = Column(DateTime(timezone=True), nullable=True)
