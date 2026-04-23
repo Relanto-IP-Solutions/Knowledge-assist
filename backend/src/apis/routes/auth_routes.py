@@ -14,7 +14,7 @@ from src.apis.deps.firebase_auth import (
 )
 from configs.settings import get_settings
 from src.services.database_manager.orm import get_db
-from src.services.database_manager.models.auth_models import User
+from src.services.database_manager.models.auth_models import User, UserConnection
 from src.services.plugins import oauth_service
 from src.utils.logger import get_logger
 from src.utils.opportunity_id import normalize_opportunity_oid
@@ -148,6 +148,7 @@ async def slack_url(redirect_uri: str, user_email: str | None = None):
 @router.get("/microsoft/url")
 async def microsoft_url(
     redirect_uri: str,
+    db: Annotated[Session, Depends(get_db)],
     oid: str | None = Query(
         default=None,
         description="Optional project oid encoded in OAuth state.",
@@ -157,12 +158,30 @@ async def microsoft_url(
         description="Optional user email encoded in OAuth state for callback token binding.",
     ),
 ):
+    email = (user_email or "").strip().lower()
+    if email:
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            existing_conn = (
+                db.query(UserConnection)
+                .filter(
+                    UserConnection.user_id == user.id,
+                    UserConnection.provider == "onedrive",
+                    UserConnection.refresh_token.is_not(None),
+                    UserConnection.refresh_token != "",
+                )
+                .order_by(UserConnection.id.desc())
+                .first()
+            )
+            if existing_conn:
+                return {"auth_url": None, "already_connected": True}
+
     state = _build_microsoft_oauth_state(oid=oid, user_email=user_email)
     try:
         url = await oauth_service.get_microsoft_auth_url(redirect_uri, state=state)
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return {"auth_url": url}
+    return {"auth_url": url, "already_connected": False}
 
 
 @router.post("/slack/callback")
