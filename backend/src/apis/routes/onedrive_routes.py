@@ -127,6 +127,7 @@ async def connect_onedrive_project(
     source.channel_id = folder_id
     source.status = "ACTIVE"
     db.commit()
+
     background_tasks.add_task(_run_onedrive_sync_background, normalized_oid)
     return {
         "oid": normalized_oid,
