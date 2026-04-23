@@ -530,7 +530,7 @@ async def drive_professional_connect_integrations(
     files_uploaded = sync_drive_source(db, source, o.google_client_id, o.google_client_secret)
     db.refresh(source)
 
-    metrics = _drive_gcs_metrics_payload(db, normalized_oid)
+    metrics = _drive_gcs_metrics_payload(Storage(), db, normalized_oid)
     return DriveProfessionalConnectResponse(
         oid=normalized_oid,
         status=str(metrics["status"]),
