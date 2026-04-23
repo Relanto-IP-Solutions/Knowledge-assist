@@ -7,15 +7,12 @@ under a shared Drive parent folder (e.g. Requirements/).
 from __future__ import annotations
 
 from typing import Annotated, Any
-from urllib.parse import quote_plus
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from datetime import UTC, datetime
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload, sessionmaker
 
 from configs.settings import get_settings
@@ -24,7 +21,6 @@ from src.services.database_manager.models.auth_models import (
     Opportunity,
     OpportunitySource,
     User,
-    UserConnection,
 )
 from src.services.database_manager.opportunity_state import STATUS_DISCOVERED
 from src.services.database_manager.orm import get_db, get_engine
@@ -39,70 +35,7 @@ from src.utils.opportunity_id import find_opportunity_oid, gcs_opportunity_prefi
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/drive", tags=["drive"])
-dashboard_drive_router = APIRouter(tags=["drive"])
 integrations_drive_router = APIRouter(prefix="/integrations/drive", tags=["drive"])
-
-
-def _escape_drive_query_string(value: str) -> str:
-    return (value or "").replace("'", "\\'")
-
-
-def _get_connector_user(db: Session) -> User:
-    """Pick the single Drive connector user with an active drive connection."""
-    email = (get_settings().drive.drive_connector_user_email or "").strip().lower()
-    now = datetime.now(UTC)
-
-    # 1. If an email is hardcoded in .env, find that specific user
-    if email:
-        u = (
-            db.query(User)
-            .join(UserConnection, User.id == UserConnection.user_id)
-            .filter(
-                User.email == email,
-                UserConnection.provider == "drive",
-                or_(
-                    UserConnection.expires_at.is_(None),
-                    UserConnection.expires_at > now,
-                ),
-            )
-            .first()
-        )
-        if not u:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"DRIVE_CONNECTOR_USER_EMAIL is set to {email!r} but no user with an "
-                    "active drive connection was found."
-                ),
-            )
-        return u
-
-    # 2. Otherwise, pick the user belonging to the single most recent connection
-    conn = (
-        db.query(UserConnection)
-        .filter(
-            UserConnection.provider == "drive",
-            or_(UserConnection.expires_at.is_(None), UserConnection.expires_at > now),
-        )
-        .order_by(UserConnection.id.desc())
-        .first()
-    )
-    if not conn:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "No active drive connection found. Complete Drive OAuth first "
-                "(GET /auth/google/url?provider=drive -> POST /auth/google/callback)."
-            ),
-        )
-    return conn.user
-
-
-def _try_get_connector_user(db: Session) -> User | None:
-    try:
-        return _get_connector_user(db)
-    except HTTPException:
-        return None
 
 
 def _drive_service_for_user(db: Session, user: User) -> Any:
@@ -147,7 +80,6 @@ def _list_files(service: Any, q: str, fields: str) -> dict:
 
 class DriveDiscoverResponse(BaseModel):
     connector_user_email: str
-    drive_root_folder_name: str
     folders_total: int
     folders_parsed: int
     opportunities_created: int
@@ -157,8 +89,8 @@ class DriveDiscoverResponse(BaseModel):
         description="Folder names skipped (no opportunity id token like 'oid1234').",
     )
     mode: str = Field(
-        default="connector",
-        description="'connector' (shared DRIVE_ROOT_FOLDER_NAME) or 'user_scoped' (caller's Drive).",
+        default="user_scoped",
+        description="Discovery mode (always user_scoped global Drive search).",
     )
     matched_folder_name: str | None = Field(
         default=None,
@@ -169,32 +101,29 @@ class DriveDiscoverResponse(BaseModel):
 class DriveProfessionalConnectResponse(BaseModel):
     oid: str
     status: str = "ACTIVE"
+    connected_user: str
     total_files: int
     files_uploaded: int
-    discovery_result: DriveDiscoverResponse
-    message: str = "Drive discovery, activation, and ingestion completed."
+    matched_folder: str | None = None
+    last_synced_at: str | None = None
 
 
 def discover_drive_folders(
     db: Session,
     *,
-    user: User | None = None,
+    user: User | None,
     oid_filter: str | None = None,
 ) -> DriveDiscoverResponse:
-    """Discover folders: either via DRIVE_ROOT_FOLDER_NAME (connector) or specific user Drive (user_scoped).
+    """Discover folders via global user-scoped Drive search.
 
-    When ``oid_filter`` is set, we surgically search for folders matching that OID only.
+    When ``oid_filter`` is set, surgically search for folders matching that OID only.
     """
-    ds = get_settings().drive
-    connector = user if user else _try_get_connector_user(db)
-    if not connector:
-        raise HTTPException(status_code=400, detail="No active Drive connection found.")
+    if user is None:
+        raise HTTPException(status_code=401, detail="Unauthorized: user is required.")
 
-    service = _drive_service_for_user(db, connector)
-    supports_all_drives = bool(ds.drive_supports_all_drives)
-    
-    root_name = (ds.drive_root_folder_name or "").strip()
-    mode = "user_scoped" if user else "connector"
+    service = _drive_service_for_user(db, user)
+    supports_all_drives = bool(get_settings().drive.drive_supports_all_drives)
+    mode = "user_scoped"
 
     folders_to_scan = []
     normalized_filter = normalize_opportunity_oid(oid_filter) if oid_filter else None
@@ -206,24 +135,14 @@ def discover_drive_folders(
         )
         if folder_id:
             folders_to_scan = [{"id": folder_id, "name": folder_name}]
-    elif root_name:
-        # Legacy/Connector discovery under a shared root
-        q_root = (
+    else:
+        # Default to global user-scoped search across full Drive visibility.
+        query = (
             "mimeType = 'application/vnd.google-apps.folder' "
-            f"and name = '{_escape_drive_query_string(root_name)}' "
+            "and name contains 'oid' "
             "and trashed = false"
         )
-        roots = _list_files(service, q_root, "files(id, name)")
-        root_files = roots.get("files", []) or []
-        if root_files:
-            root_id = root_files[0]["id"]
-            q_children = (
-                "mimeType = 'application/vnd.google-apps.folder' "
-                f"and '{root_id}' in parents "
-                "and trashed = false"
-            )
-            kids = _list_files(service, q_children, "files(id, name)")
-            folders_to_scan = kids.get("files", []) or []
+        folders_to_scan = _list_files(service, query, "files(id, name)").get("files", []) or []
 
     created_opps = 0
     created_sources = 0
@@ -251,7 +170,7 @@ def discover_drive_folders(
             opp = Opportunity(
                 opportunity_id=oid,
                 name=name or oid,
-                owner_id=connector.id,
+                owner_id=user.id,
                 status=STATUS_DISCOVERED,
                 total_documents=0,
                 processed_documents=0,
@@ -267,8 +186,7 @@ def discover_drive_folders(
     db.commit()
 
     return DriveDiscoverResponse(
-        connector_user_email=connector.email,
-        drive_root_folder_name=root_name or "Personal/Shared Drive",
+        connector_user_email=user.email,
         folders_total=len(folders_to_scan),
         folders_parsed=parsed,
         opportunities_created=created_opps,
@@ -277,17 +195,6 @@ def discover_drive_folders(
         mode=mode,
         matched_folder_name=folders_to_scan[0]["name"] if folders_to_scan else None,
     )
-
-
-def _drive_master_folder_url() -> str:
-    ds = get_settings().drive
-    if (ds.drive_master_folder_url or "").strip():
-        return ds.drive_master_folder_url.strip()
-        
-    root = (ds.drive_root_folder_name or "").strip()
-    if not root:
-        return "https://drive.google.com/drive/my-drive"
-    return f"https://drive.google.com/drive/search?q={quote_plus(root)}"
 
 
 def _ensure_drive_source(db: Session, opp: Opportunity) -> OpportunitySource:
@@ -357,7 +264,7 @@ def _drive_gcs_metrics_payload(storage: Storage, db: Session, oid: str):
         .filter(OpportunitySource.opportunity_id == opp.id, OpportunitySource.source_type == "drive")
         .first()
     )
-    names = storage.list_objects("raw", normalized_oid, "documents")
+    names = storage.list_objects("raw", normalized_oid, "drive")
     return {
         "total_files": len(names),
         "last_synced_at": (source.last_synced_at.isoformat() if source and source.last_synced_at else None),
@@ -408,60 +315,18 @@ def drive_metrics_integrations(
 
 
 @router.post("/discover", response_model=DriveDiscoverResponse)
-def discover_drive_folders_endpoint(db: Annotated[Session, Depends(get_db)]):
-    return discover_drive_folders(db)
-
-
-@dashboard_drive_router.get("/metrics/drive/{oid}")
-def drive_metrics_legacy(
-    oid: str,
+def discover_drive_folders_endpoint(
     db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_firebase_user)],
 ):
-    storage = Storage()
-    return _drive_gcs_metrics_payload(storage, db, oid)
-
-
-@dashboard_drive_router.get("/authorize-info/drive/{oid}")
-def drive_authorize_info(
-    oid: str,
-    db: Annotated[Session, Depends(get_db)],
-):
-    normalized_oid = normalize_opportunity_oid(oid)
-    # Re-use metrics logic for status consistency
-    stats = _drive_gcs_metrics_payload(Storage(), db, normalized_oid)
-    
-    connector = _try_get_connector_user(db)
-    has_conn = bool(connector and get_active_connection(db, connector.id, "drive"))
-    
-    return {
-        "oid": normalized_oid,
-        "status": stats["status"],
-        "has_drive_connection": has_conn,
-        "connector_user_email": (connector.email if connector else None),
-        "master_folder_url": _drive_master_folder_url(),
-        "message": f"Connecting will automatically sync all files from the folder matching '{normalized_oid}' in your Drive.",
-    }
-
-
-@dashboard_drive_router.post("/authorize/drive/{oid}")
-def drive_authorize_legacy(
-    oid: str,
-    background_tasks: BackgroundTasks,
-    db: Annotated[Session, Depends(get_db)],
-):
-    normalized_oid = normalize_opportunity_oid(oid)
-    opp = db.query(Opportunity).filter(Opportunity.opportunity_id == normalized_oid).first()
-    if not opp:
-        raise HTTPException(status_code=404, detail=f"Opportunity not found for '{normalized_oid}'.")
-    source = _ensure_drive_source(db, opp)
-    source.status = "ACTIVE"
-    db.commit()
-    background_tasks.add_task(_run_drive_sync_background, normalized_oid)
-    return {"oid": normalized_oid, "status": "ACTIVE", "sync_started": True}
+    return discover_drive_folders(db=db, user=user)
 
 
 def discover_drive_folders_impl(db: Session) -> DriveDiscoverResponse:
-    return discover_drive_folders(db=db)
+    raise HTTPException(
+        status_code=401,
+        detail="Unauthorized: user is required for Drive discovery.",
+    )
 
 
 @integrations_drive_router.post("/connect/{oid}", response_model=DriveProfessionalConnectResponse)
@@ -488,11 +353,8 @@ async def drive_professional_connect_integrations(
     conn = get_active_connection(db, user.id, "drive")
     if not conn or not (conn.refresh_token or "").strip():
         raise HTTPException(
-            status_code=400,
-            detail=(
-                "No active Google Drive connection for this user. Authorize with "
-                "GET /auth/google/url?provider=drive (optional &oid=...) and complete OAuth."
-            ),
+            status_code=401,
+            detail="Please login to your Google Drive first.",
         )
 
     try:
@@ -527,15 +389,16 @@ async def drive_professional_connect_integrations(
         raise HTTPException(status_code=500, detail="Drive source missing after connect.")
 
     o = get_settings().oauth_plugin
-    files_uploaded = sync_drive_source(db, source, o.google_client_id, o.google_client_secret)
+    files_uploaded = sync_drive_source(db, source, o.google_client_id, o.google_client_secret, user)
     db.refresh(source)
 
     metrics = _drive_gcs_metrics_payload(Storage(), db, normalized_oid)
     return DriveProfessionalConnectResponse(
         oid=normalized_oid,
         status=str(metrics["status"]),
+        connected_user=email,
         total_files=int(metrics["total_files"]),
+        matched_folder=discovery_result.matched_folder_name,
         last_synced_at=metrics.get("last_synced_at"),
         files_uploaded=files_uploaded,
-        discovery_result=discovery_result,
     )

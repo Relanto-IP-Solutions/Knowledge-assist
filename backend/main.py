@@ -173,7 +173,6 @@ async def google_oauth_browser_callback(
 app.include_router(auth_routes.router)
 app.include_router(auth_routes.external_router)
 app.include_router(drive_routes.router)
-app.include_router(drive_routes.dashboard_drive_router)
 app.include_router(drive_routes.integrations_drive_router)
 app.include_router(gmail_routes.router)
 app.include_router(gmail_routes.integrations_gmail_router)
