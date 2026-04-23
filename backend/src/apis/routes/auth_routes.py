@@ -159,6 +159,11 @@ async def microsoft_url(
     ),
 ):
     email = (user_email or "").strip().lower()
+    if email and not email.endswith("@relanto.ai"):
+        raise HTTPException(
+            status_code=403,
+            detail="Unauthorized: Only @relanto.ai accounts are permitted.",
+        )
     if email:
         user = db.query(User).filter(User.email == email).first()
         if user:
@@ -243,6 +248,14 @@ async def microsoft_oauth_browser_callback(
                 ),
             },
             status_code=400,
+        )
+    if not user_email.endswith("@relanto.ai"):
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "Unauthorized: Only @relanto.ai accounts are permitted.",
+            },
+            status_code=403,
         )
 
     u = request.url
