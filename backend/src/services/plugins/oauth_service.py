@@ -7,6 +7,7 @@ at import time, so values in configs/.env and configs/secrets/.env are visible h
 from __future__ import annotations
 
 import base64
+import os
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote_plus
 
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from configs.settings import get_settings
 from src.services.database_manager.models.auth_models import User, UserConnection
+from src.utils.logger import get_logger
 from src.utils.opportunity_id import normalize_opportunity_oid
 
 
@@ -32,6 +34,10 @@ GOOGLE_SCOPES = {
 # Base OIDC + profile; provider-specific scope appended when ``provider`` is set.
 _GOOGLE_BASE_SCOPES = "openid email profile"
 MICROSOFT_SCOPES = "offline_access openid profile Files.Read"
+_MICROSOFT_PROMPT_DEFAULT = "select_account"
+_MICROSOFT_PROMPT_ALLOWED = {"select_account", "consent", "login", "none"}
+
+logger = get_logger(__name__)
 
 
 def _oauth():
@@ -250,13 +256,31 @@ async def get_microsoft_auth_url(redirect_uri: str, state: str | None = None) ->
             "MICROSOFT_CLIENT_SECRET) in configs/.env or configs/secrets/.env, "
             "then restart the API."
         )
+    prompt_raw = (os.getenv("MICROSOFT_OAUTH_PROMPT") or "").strip().lower()
+    force_consent = (
+        os.getenv("MICROSOFT_OAUTH_FORCE_CONSENT", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    if force_consent:
+        prompt = "consent"
+    elif prompt_raw in _MICROSOFT_PROMPT_ALLOWED:
+        prompt = prompt_raw
+    else:
+        prompt = _MICROSOFT_PROMPT_DEFAULT
+    logger.info(
+        "Microsoft OAuth prompt mode: {} (force_consent={})",
+        prompt,
+        force_consent,
+    )
+
     encoded_redirect_uri = quote_plus(redirect_uri)
     url = (
         f"https://login.microsoftonline.com/{quote_plus(tenant_id)}/oauth2/v2.0/authorize?"
         f"client_id={quote_plus(client_id)}&"
         f"redirect_uri={encoded_redirect_uri}&"
         f"response_type=code&"
-        f"scope={quote_plus(MICROSOFT_SCOPES)}"
+        f"scope={quote_plus(MICROSOFT_SCOPES)}&"
+        f"prompt={quote_plus(prompt)}"
     )
     if state:
         url += f"&state={quote_plus(state)}"
