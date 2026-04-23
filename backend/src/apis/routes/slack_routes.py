@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/slack", tags=["slack"])
 integrations_slack_router = APIRouter(prefix="/integrations/slack", tags=["slack"])
 SLACK_API_BASE = "https://slack.com/api"
-STRICT_OID_IN_CHANNEL_RE = re.compile(r"(?:^|[^a-z0-9])(oid\d{4})(?=[^a-z0-9]|$)", re.IGNORECASE)
+STRICT_OID_IN_CHANNEL_RE = re.compile(r"(?:^|[^a-z0-9])(oid\d+)(?=[^a-z0-9]|$)", re.IGNORECASE)
 
 
 def _slack_bot_token() -> str:
@@ -617,7 +617,7 @@ def orchestrate_slack_channel(
             status_code=400,
             detail=(
                 f"Channel name must include strict signature '{normalized_oid}' "
-                "using oid#### format."
+                "using oid + digits format."
             ),
         )
 

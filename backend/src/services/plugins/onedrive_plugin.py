@@ -19,7 +19,7 @@ from src.utils.opportunity_id import gcs_opportunity_prefix, normalize_opportuni
 
 logger = get_logger(__name__)
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
-_OID_PREFIX_RE = re.compile(r"oid(\d{4,})", re.IGNORECASE)
+_OID_PREFIX_RE = re.compile(r"oid(\d+)", re.IGNORECASE)
 
 
 def _resolve_onedrive_user(db: Session, source: OpportunitySource) -> User | None:
