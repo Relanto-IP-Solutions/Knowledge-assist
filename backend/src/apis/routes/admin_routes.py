@@ -12,7 +12,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.exc import DatabaseError, IntegrityError
@@ -28,6 +28,216 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
+
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _require_safe_identifier(kind: str, value: str) -> str:
+    v = (value or "").strip()
+    if not v:
+        raise HTTPException(status_code=400, detail=f"{kind} is required.")
+    if not _IDENT_RE.match(v):
+        raise HTTPException(status_code=400, detail=f"Invalid {kind}.")
+    return v
+
+
+def _require_table_column_exist(db: Session, table: str, column: str) -> None:
+    # Avoid leaking metadata from non-public schemas.
+    row = db.execute(
+        text(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = :table
+              AND column_name = :column
+            LIMIT 1
+            """
+        ),
+        {"table": table, "column": column},
+    ).first()
+    if not row:
+        raise HTTPException(
+            status_code=404, detail="Table/column not found in public schema."
+        )
+
+
+class GenericSearchResponse(BaseModel):
+    rows: list[dict[str, object]]
+
+
+def _run_generic_search(
+    *,
+    db: Session,
+    table: str,
+    column: str | None,
+    query: str | None,
+    limit: int | None,
+) -> GenericSearchResponse:
+    table_n = _require_safe_identifier("table", table)
+    q = (query or "").strip() if query is not None else ""
+    column_n: str | None = None
+    if q:
+        if column is None:
+            raise HTTPException(status_code=400, detail="column is required when query is set.")
+        column_n = _require_safe_identifier("column", column)
+
+    limit_raw = 50 if limit is None else int(limit)
+    limit_n = min(max(int(limit_raw), 1), 200)
+    if column_n is not None:
+        _require_table_column_exist(db, table_n, column_n)
+
+    if column_n is not None and q:
+        sql = text(
+            f"""
+            SELECT *
+            FROM "{table_n}"
+            WHERE CAST("{column_n}" AS TEXT) ILIKE :pattern
+            LIMIT :limit
+            """
+        )
+        params = {"pattern": f"%{q}%", "limit": limit_n}
+    else:
+        sql = text(
+            f"""
+            SELECT *
+            FROM "{table_n}"
+            LIMIT :limit
+            """
+        )
+        params = {"limit": limit_n}
+
+    rows = db.execute(sql, params).mappings().all()
+    return GenericSearchResponse(rows=[dict(r) for r in rows])
+
+
+def _require_columns_exist(db: Session, table: str, columns: list[str]) -> None:
+    for c in columns:
+        _require_table_column_exist(db, table, c)
+
+
+def _parse_filter_expr(raw: str) -> tuple[str, str, str]:
+    # Format: column|op|value
+    parts = [p.strip() for p in (raw or "").split("|", 2)]
+    if len(parts) != 3 or not parts[0] or not parts[1]:
+        raise HTTPException(
+            status_code=400, detail="Invalid filter format. Use: filter=column|op|value"
+        )
+    return parts[0], parts[1].lower(), parts[2]
+
+
+def _build_advanced_search_sql(
+    *,
+    db: Session,
+    table: str,
+    filters: list[str],
+    select: list[str] | None,
+    group_by: list[str] | None,
+    agg: str | None,
+    order_by: list[str] | None,
+    limit: int,
+    offset: int,
+) -> tuple[any, dict[str, object]]:
+    table_n = _require_safe_identifier("table", table)
+
+    select_cols = [(_require_safe_identifier("select", c), c) for c in (select or [])]
+    group_cols = [(_require_safe_identifier("group_by", c), c) for c in (group_by or [])]
+
+    where_clauses: list[str] = []
+    params: dict[str, object] = {"limit": int(limit), "offset": int(offset)}
+    referenced_cols: list[str] = []
+
+    allowed_ops = {"=", "!=", "like", "ilike", "is", "isnot"}
+    for i, f in enumerate(filters or []):
+        col_raw, op, val = _parse_filter_expr(f)
+        if op not in allowed_ops:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported op '{op}'. Allowed: {', '.join(sorted(allowed_ops))}",
+            )
+        col_n = _require_safe_identifier("column", col_raw)
+        referenced_cols.append(col_n)
+        vnorm = (val or "").strip().lower()
+        if op in {"is", "isnot"}:
+            if vnorm != "null":
+                raise HTTPException(
+                    status_code=400,
+                    detail="For op 'is'/'isnot', value must be NULL. Example: filter=team_id|is|NULL",
+                )
+            where_clauses.append(
+                f'"{col_n}" IS {"NOT " if op == "isnot" else ""}NULL'
+            )
+        else:
+            pname = f"p{i}"
+            # Type-safe across unknown schemas: compare on text representations.
+            if op in {"like", "ilike"}:
+                where_clauses.append(f'CAST("{col_n}" AS TEXT) {op.upper()} :{pname}')
+                params[pname] = str(val)
+            else:
+                where_clauses.append(f'CAST("{col_n}" AS TEXT) {op} :{pname}')
+                params[pname] = str(val)
+
+    # Validate all referenced columns exist in public schema.
+    need_cols = set(referenced_cols)
+    need_cols.update([c for c, _ in select_cols])
+    need_cols.update([c for c, _ in group_cols])
+    _require_columns_exist(db, table_n, sorted(need_cols))
+
+    # SELECT clause
+    agg_n = (agg or "").strip().lower() or None
+    select_sql: str
+    if group_cols:
+        if agg_n != "count":
+            raise HTTPException(
+                status_code=400,
+                detail="When group_by is set, agg must be 'count' (for now).",
+            )
+        gb_cols_sql = ", ".join([f'"{c}"' for c, _ in group_cols])
+        select_sql = f"{gb_cols_sql}, COUNT(*)::bigint AS count"
+        group_by_sql = f" GROUP BY {gb_cols_sql}"
+    else:
+        group_by_sql = ""
+        if agg_n is not None:
+            raise HTTPException(
+                status_code=400, detail="agg is only supported with group_by."
+            )
+        if select_cols:
+            select_sql = ", ".join([f'"{c}"' for c, _ in select_cols])
+        else:
+            select_sql = "*"
+
+    # ORDER BY clause
+    order_sql = ""
+    if order_by:
+        order_parts: list[str] = []
+        for ob in order_by:
+            bits = [b.strip() for b in (ob or "").split("|", 1)]
+            col = _require_safe_identifier("order_by", bits[0] if bits else "")
+            direction = (bits[1].lower() if len(bits) == 2 else "asc").strip()
+            if direction not in {"asc", "desc"}:
+                raise HTTPException(
+                    status_code=400, detail="order_by direction must be asc or desc."
+                )
+            # Ensure column exists
+            _require_table_column_exist(db, table_n, col)
+            order_parts.append(f'"{col}" {direction.upper()}')
+        if order_parts:
+            order_sql = " ORDER BY " + ", ".join(order_parts)
+
+    where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+    sql = text(
+        f"""
+        SELECT {select_sql}
+        FROM "{table_n}"
+        {where_sql}
+        {group_by_sql}
+        {order_sql}
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    return sql, params
+
+
 
 
 def _sync_opportunity_oid_sequence(db: Session) -> None:
@@ -115,6 +325,77 @@ class ReviewOpportunityRequestBody(BaseModel):
     status: str = Field(..., description="APPROVED or REJECTED")
     admin_remarks: str | None = None
     reviewed_at: datetime | None = None
+
+
+@router.get("/search", response_model=GenericSearchResponse)
+def generic_search(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_existing_firebase_user)],
+    table: str = Query(..., description="Target table name (public schema only)."),
+    column: str | None = Query(
+        None, description="Target column name to search (required when query is set)."
+    ),
+    query: str | None = Query(None, description="Search query (substring match)."),
+    filter: list[str] = Query(
+        default_factory=list,
+        description="Repeatable. Format: filter=column|op|value. Ops: =, !=, like, ilike. ANDed together.",
+    ),
+    select: list[str] | None = Query(
+        None, description="Optional repeatable select columns: select=col&select=col2"
+    ),
+    group_by: list[str] | None = Query(
+        None,
+        description="Optional repeatable group_by columns (requires agg=count): group_by=col",
+    ),
+    agg: str | None = Query(
+        None, description="Optional aggregate. Currently only supports agg=count with group_by."
+    ),
+    order_by: list[str] | None = Query(
+        None, description="Optional repeatable. Format: order_by=column|asc (or |desc)"
+    ),
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Generic admin-only search across a table.
+
+    Supports two modes on the same endpoint:
+    - Simple mode: table + (optional) column + (optional) query (ILIKE)
+    - Advanced mode: repeated filter params + optional select/group_by/agg/order_by/offset
+    """
+    if not is_admin(user):
+        raise HTTPException(status_code=403, detail="Admin access required.")
+
+    limit_n = min(max(int(limit), 1), 200)
+    offset_n = max(int(offset), 0)
+
+    # If any advanced parameter is used, switch to advanced builder.
+    advanced_mode = bool(
+        filter
+        or select
+        or group_by
+        or (agg is not None)
+        or order_by
+        or (offset_n != 0)
+    )
+    if advanced_mode:
+        sql, params = _build_advanced_search_sql(
+            db=db,
+            table=table,
+            filters=filter,
+            select=select,
+            group_by=group_by,
+            agg=agg,
+            order_by=order_by,
+            limit=limit_n,
+            offset=offset_n,
+        )
+        rows = db.execute(sql, params).mappings().all()
+        return GenericSearchResponse(rows=[dict(r) for r in rows])
+
+    # Simple mode fallback.
+    return _run_generic_search(
+        db=db, table=table, column=column, query=query, limit=limit_n
+    )
 
 
 @router.post("/create", response_model=CreateOpportunityResponse)

@@ -107,6 +107,9 @@ class OpportunityListResponse(BaseModel):
     opportunities: list[OpportunitySummaryOut]
 
 
+class LockOpportunityResponse(BaseModel):
+    opportunity_id: str
+    is_active: bool
 class MyOpportunityOut(BaseModel):
     id: int
     opportunity_id: str
@@ -356,6 +359,36 @@ def list_opportunity_ids(
     )
 
 
+@router.post("/{opportunity_id}/lock", response_model=LockOpportunityResponse)
+def lock_opportunity(
+    opportunity_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_firebase_user)],
+):
+    """Lock an opportunity (set `opportunities.is_active=false`).
+
+    Only ADMIN or the opportunity owner (opportunities.owner_id) may lock.
+    """
+    oid = (opportunity_id or "").strip()
+    if not oid:
+        raise HTTPException(status_code=400, detail="opportunity_id is required")
+
+    opp = db.query(Opportunity).filter(Opportunity.opportunity_id == oid).first()
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    if not is_admin(user) and int(getattr(opp, "owner_id")) != int(getattr(user, "id")):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not bool(getattr(opp, "is_active", True)):
+        return LockOpportunityResponse(opportunity_id=oid, is_active=False)
+
+    opp.is_active = False
+    db.add(opp)
+    db.commit()
+    return LockOpportunityResponse(opportunity_id=oid, is_active=False)
+
+
 @public_router.get("/questions")
 async def get_questions():
     """Return all SASE questions (legacy endpoint)."""
@@ -421,6 +454,7 @@ async def answer_generation(request: Request):
     from src.services.pipelines.agent_pipeline import (
         AnswerGenerationAlreadyRunningError,
         AnswerGenerationPipeline,
+        OpportunityLockedError,
     )
 
     extras: dict = {}
@@ -437,6 +471,9 @@ async def answer_generation(request: Request):
         return result
     except AnswerGenerationAlreadyRunningError as exc:
         logger.bind(**extras).warning("Answer generation rejected (already running): {}", exc)
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except OpportunityLockedError as exc:
+        logger.bind(**extras).warning("Answer generation rejected (opportunity locked): {}", exc)
         raise HTTPException(status_code=409, detail=str(exc)) from None
     except ValueError as exc:
         logger.bind(**extras).warning("Answer generation invalid request: {}", exc)
@@ -1451,6 +1488,21 @@ def save_or_resolve_answers(
     # - TEAM_LEAD can post for opportunities in teams they lead (team_members.is_lead)
     def _assert_can_post_answers(cur, user_id: int, user_obj: User) -> None:
         if is_admin(user_obj):
+            # Admin can post anywhere, but still cannot post to a locked opportunity.
+            cur.execute(
+                """
+                SELECT is_active
+                FROM opportunities
+                WHERE opportunity_id = %s
+                LIMIT 1
+                """,
+                (str(opportunity_id),),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Opportunity not found")
+            if not bool(row[0]):
+                raise HTTPException(status_code=409, detail="Opportunity is locked")
             return
 
         # One round-trip: opportunity row + whether this user leads the opp's team (if any).
@@ -1459,6 +1511,7 @@ def save_or_resolve_answers(
             SELECT
                 o.owner_id,
                 o.team_id,
+                o.is_active,
                 EXISTS (
                     SELECT 1
                     FROM team_members tm
@@ -1477,7 +1530,11 @@ def save_or_resolve_answers(
             raise HTTPException(status_code=404, detail="Opportunity not found")
         opp_owner_id = opp_row[0]
         opp_team_id = opp_row[1]
-        user_leads_team = bool(opp_row[2])
+        opp_is_active = bool(opp_row[2])
+        user_leads_team = bool(opp_row[3])
+
+        if not opp_is_active:
+            raise HTTPException(status_code=409, detail="Opportunity is locked")
 
         # Owner can always post for their own opportunity.
         if opp_owner_id is not None and int(opp_owner_id) == user_id:
