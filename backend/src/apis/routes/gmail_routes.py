@@ -1071,8 +1071,14 @@ async def gmail_callback_integrations(
                         url=f"{return_url}{sep}gmail_login=success&email={email}&mode=discover&oid={normalized_oid}",
                         status_code=302,
                     )
+                frontend_base = (
+                    get_settings().app.frontend_app_url.strip().rstrip("/")
+                )
                 return RedirectResponse(
-                    url=f"http://localhost:5173/gmail-result?oid={normalized_oid}&gmailConnect=1",
+                    url=(
+                        f"{frontend_base}/dashboard/opportunities/{normalized_oid}"
+                        f"?connected=gmail&mode=discover&email={quote_plus(email)}"
+                    ),
                     status_code=302,
                 )
 
@@ -1110,8 +1116,12 @@ async def gmail_callback_integrations(
                 url=f"{return_url}{sep}gmail_login=success&email={email}&mode=connect&oid={normalized_oid}",
                 status_code=302,
             )
+        frontend_base = get_settings().app.frontend_app_url.strip().rstrip("/")
         return RedirectResponse(
-            url=f"http://localhost:5173/gmail-result?oid={normalized_oid}&gmailConnect=1",
+            url=(
+                f"{frontend_base}/dashboard/opportunities/{normalized_oid}"
+                f"?connected=gmail&mode=connect&email={quote_plus(email)}"
+            ),
             status_code=302,
         )
 

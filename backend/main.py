@@ -28,6 +28,7 @@ from src.apis.routes import (
     auth_routes,
     drive_routes,
     gmail_routes,
+    onedrive_routes,
     opportunity_routes,
     slack_routes,
     sync_routes,
@@ -177,6 +178,7 @@ app.include_router(drive_routes.integrations_drive_router)
 app.include_router(gmail_routes.router)
 app.include_router(gmail_routes.integrations_gmail_router)
 app.include_router(gmail_routes.dashboard_gmail_router)
+app.include_router(onedrive_routes.integrations_onedrive_router)
 app.include_router(slack_routes.router)
 app.include_router(slack_routes.integrations_slack_router)
 app.include_router(opportunity_routes.router)
