@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, joinedload, sessionmaker
 
@@ -75,7 +76,20 @@ def _list_files(service: Any, q: str, fields: str) -> dict:
     kwargs = {"q": q, "spaces": "drive", "fields": fields}
     if ds.drive_supports_all_drives:
         kwargs.update({"supportsAllDrives": True, "includeItemsFromAllDrives": True})
-    return service.files().list(**kwargs).execute()
+    try:
+        return service.files().list(**kwargs).execute()
+    except HttpError as exc:
+        err = str(exc)
+        if "failedPrecondition" in err:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Google Workspace domain policies are restricting access. "
+                    "Your administrator has blocked Google Drive API access for this "
+                    "account or OAuth app."
+                ),
+            ) from exc
+        raise
 
 
 class DriveDiscoverResponse(BaseModel):

@@ -25,6 +25,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -555,7 +556,20 @@ def _list_thread_ids(service: Any, q: str, max_threads: int) -> list[str]:
                 pageToken=page_token,
             )
         )
-        resp = req.execute()
+        try:
+            resp = req.execute()
+        except HttpError as exc:
+            err = str(exc)
+            if "failedPrecondition" in err:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Google Workspace domain policies are restricting access. "
+                        "Your administrator has blocked Gmail API access for this "
+                        "account or OAuth app."
+                    ),
+                ) from exc
+            raise
         for th in resp.get("threads") or []:
             tid = th.get("id")
             if tid:
