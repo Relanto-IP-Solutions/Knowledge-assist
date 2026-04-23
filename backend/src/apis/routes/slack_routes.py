@@ -297,6 +297,24 @@ class SlackDiscoverResponse(BaseModel):
     )
 
 
+class SlackMetricsChannelItem(BaseModel):
+    """One Slack opportunity source (channel) linked to the project."""
+
+    id: str
+    name: str
+    last_synced_at: str | None = None
+
+
+class SlackOpportunityMetricsResponse(BaseModel):
+    """Aggregated Slack ingestion metrics; ``total_files`` is across all project Slack sources."""
+
+    total_files: int
+    status: str
+    last_synced_at: str | None = None
+    sync_checkpoint: str | None = None
+    channels: list[SlackMetricsChannelItem]
+
+
 class SlackProfessionalConnectResponse(BaseModel):
     """Synchronous professional ingestion: discovery → ACTIVE → Slack → GCS, with immediate counts."""
 
@@ -366,8 +384,6 @@ def discover_slack_channels(
     matched = 0
     skipped: list[str] = []
 
-    seen_oids: set[str] = set()
-
     for ch in channels:
         name = (ch.get("name") or "").strip()
         oid = _oid_from_channel_name(name)
@@ -392,9 +408,6 @@ def discover_slack_channels(
             continue
 
         matched += 1
-        if oid in seen_oids:
-            continue
-        seen_oids.add(oid)
 
         opp = db.query(Opportunity).filter(Opportunity.opportunity_id == oid).first()
         if not opp:
@@ -416,31 +429,55 @@ def discover_slack_channels(
             if not (opp.name or "").strip():
                 opp.name = name or oid
 
+        channel_id = (ch.get("id") or "").strip()
+        if not channel_id:
+            logger.debug(
+                "Slack discover: matched channel has no id (name={}); skip source row",
+                name,
+            )
+            continue
+
         src = (
-            db
-            .query(OpportunitySource)
+            db.query(OpportunitySource)
             .filter(
                 OpportunitySource.opportunity_id == opp.id,
                 OpportunitySource.source_type == "slack",
+                OpportunitySource.channel_id == channel_id,
             )
             .first()
         )
-        channel_id = (ch.get("id") or "").strip()
         if not src:
-            db.add(
-                OpportunitySource(
-                    opportunity_id=opp.id,
-                    source_type="slack",
-                    channel_id=channel_id or None,
-                    status="PENDING_AUTHORIZATION",
+            unfilled = (
+                db.query(OpportunitySource)
+                .filter(
+                    OpportunitySource.opportunity_id == opp.id,
+                    OpportunitySource.source_type == "slack",
+                    OpportunitySource.channel_id.is_(None),
                 )
+                .first()
             )
-            created_sources += 1
-            logger.info(
-                "Slack discover created slack source for opportunity_id={}", opp.id
-            )
-        elif channel_id and not src.channel_id:
-            src.channel_id = channel_id
+            if unfilled is not None:
+                unfilled.channel_id = channel_id
+                logger.info(
+                    "Slack discover: backfilled channel_id for opportunity_id={} ch={}",
+                    opp.id,
+                    channel_id,
+                )
+            else:
+                db.add(
+                    OpportunitySource(
+                        opportunity_id=opp.id,
+                        source_type="slack",
+                        channel_id=channel_id,
+                        status="PENDING_AUTHORIZATION",
+                    )
+                )
+                created_sources += 1
+                logger.info(
+                    "Slack discover: created slack source opportunity_id={} channel_id={}",
+                    opp.id,
+                    channel_id,
+                )
 
     db.commit()
 
@@ -475,6 +512,24 @@ def _slack_raw_file_count(storage: Storage, opportunity_id: str) -> int:
     """Count objects under ``{gcs_prefix}/raw/slack/`` for ingestion metrics."""
     prefix = gcs_opportunity_prefix(opportunity_id)
     return len(storage.list_objects("raw", prefix, "slack"))
+
+
+def _opportunity_source_status_str(raw: object) -> str:
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return "DISCOVERED"
+    return raw.strip() if isinstance(raw, str) else str(raw)
+
+
+def _aggregate_slack_sources_status(sources: list) -> str:
+    """If any source is ACTIVE, return ACTIVE; else if all match, that value; else the first."""
+    if not sources:
+        return "DISCOVERED"
+    norms = [_opportunity_source_status_str(s.status) for s in sources]
+    if any(n.upper() == "ACTIVE" for n in norms):
+        return "ACTIVE"
+    if len(set(norms)) == 1:
+        return norms[0]
+    return norms[0]
 
 
 def _ensure_slack_source(db: Session, opp: Opportunity) -> OpportunitySource:
@@ -527,21 +582,33 @@ def _ensure_opportunity_and_source_for_channel(
         .filter(
             OpportunitySource.opportunity_id == opp.id,
             OpportunitySource.source_type == "slack",
+            OpportunitySource.channel_id == channel_id,
         )
         .first()
     )
     if not source:
-        source = OpportunitySource(
-            opportunity_id=opp.id,
-            source_type="slack",
-            channel_id=channel_id,
-            status="PENDING_AUTHORIZATION",
+        unfilled = (
+            db.query(OpportunitySource)
+            .filter(
+                OpportunitySource.opportunity_id == opp.id,
+                OpportunitySource.source_type == "slack",
+                OpportunitySource.channel_id.is_(None),
+            )
+            .first()
         )
-        db.add(source)
-        db.flush()
-        source_created = True
-    elif not source.channel_id:
-        source.channel_id = channel_id
+        if unfilled is not None:
+            unfilled.channel_id = channel_id
+            source = unfilled
+        else:
+            source = OpportunitySource(
+                opportunity_id=opp.id,
+                source_type="slack",
+                channel_id=channel_id,
+                status="PENDING_AUTHORIZATION",
+            )
+            db.add(source)
+            db.flush()
+            source_created = True
 
     return opp, source, opportunity_created, source_created
 
@@ -552,7 +619,7 @@ async def _run_slack_sync_background(oid: str) -> None:
         if not opp:
             logger.warning("Slack sync_start skipped: oid={} not found", oid)
             return
-        source = (
+        sources = (
             db.query(OpportunitySource)
             .options(
                 joinedload(OpportunitySource.opportunity).joinedload(Opportunity.owner)
@@ -561,12 +628,14 @@ async def _run_slack_sync_background(oid: str) -> None:
                 OpportunitySource.opportunity_id == opp.id,
                 OpportunitySource.source_type == "slack",
             )
-            .first()
+            .order_by(OpportunitySource.id.asc())
+            .all()
         )
-        if not source:
+        if not sources:
             logger.warning("Slack sync_start skipped: no source row for oid={}", oid)
             return
-        await sync_slack_source(db, source)
+        for source in sources:
+            await sync_slack_source(db, source)
 
 
 @integrations_slack_router.post("/orchestrate/{oid}", response_model=SlackOrchestrateResponse)
@@ -695,12 +764,31 @@ async def slack_connect_integrations(
             status_code=404,
             detail=f"Opportunity not found for '{normalized_oid}'.",
         )
-    source = _ensure_slack_source(db, opp)
-    source.status = "ACTIVE"
+    sources = (
+        db.query(OpportunitySource)
+        .filter(
+            OpportunitySource.opportunity_id == opp.id,
+            OpportunitySource.source_type == "slack",
+        )
+        .all()
+    )
+    if not sources:
+        _ensure_slack_source(db, opp)
+        sources = (
+            db.query(OpportunitySource)
+            .filter(
+                OpportunitySource.opportunity_id == opp.id,
+                OpportunitySource.source_type == "slack",
+            )
+            .all()
+        )
+    for source in sources:
+        source.status = "ACTIVE"
     db.commit()
     logger.info(
-        "Slack connect_start: action=connect oid={} result=activated",
+        "Slack connect_start: action=connect oid={} result=activated sources={}",
         normalized_oid,
+        len(sources),
     )
     background_tasks.add_task(_run_slack_sync_background, normalized_oid)
     return {
@@ -743,26 +831,47 @@ async def slack_professional_connect_integrations(
             ),
         )
 
-    source = _ensure_slack_source(db, opp)
-    source.status = "ACTIVE"
+    sources = (
+        db.query(OpportunitySource)
+        .filter(
+            OpportunitySource.opportunity_id == opp.id,
+            OpportunitySource.source_type == "slack",
+        )
+        .all()
+    )
+    if not sources:
+        _ensure_slack_source(db, opp)
+        sources = (
+            db.query(OpportunitySource)
+            .filter(
+                OpportunitySource.opportunity_id == opp.id,
+                OpportunitySource.source_type == "slack",
+            )
+            .all()
+        )
+    for s in sources:
+        s.status = "ACTIVE"
     db.commit()
 
-    source = (
+    sources = (
         db.query(OpportunitySource)
         .options(joinedload(OpportunitySource.opportunity))
         .filter(
             OpportunitySource.opportunity_id == opp.id,
             OpportunitySource.source_type == "slack",
         )
-        .first()
+        .order_by(OpportunitySource.id.asc())
+        .all()
     )
-    if not source or not source.opportunity:
+    if not sources or not sources[0].opportunity:
         raise HTTPException(
             status_code=500,
             detail="Slack source row missing after connect; retry discovery.",
         )
 
-    messages_synced = await sync_slack_source(db, source)
+    messages_synced = 0
+    for source in sources:
+        messages_synced += await sync_slack_source(db, source)
 
     storage = Storage()
     total_files = _slack_raw_file_count(storage, opp.opportunity_id)
@@ -802,15 +911,15 @@ def slack_connect_info_integrations(
             status_code=404,
             detail=f"Opportunity not found for '{normalized_oid}'.",
         )
-    source = (
+    sources = (
         db.query(OpportunitySource)
         .filter(
             OpportunitySource.opportunity_id == opp.id,
             OpportunitySource.source_type == "slack",
         )
-        .first()
+        .all()
     )
-    if source and (source.status or "").strip().upper() == "ACTIVE":
+    if any((s.status or "").strip().upper() == "ACTIVE" for s in sources):
         return {
             "oid": normalized_oid,
             "status": "ACTIVE",
@@ -836,13 +945,16 @@ def slack_connect_info_integrations(
     }
 
 
-@integrations_slack_router.get("/metrics/{oid}")
+@integrations_slack_router.get(
+    "/metrics/{oid}",
+    response_model=SlackOpportunityMetricsResponse,
+)
 def slack_metrics_for_opportunity(
     oid: str,
     db: Annotated[Session, Depends(get_db)],
 ):
-    """Return Slack ingestion metrics for one opportunity."""
-    _slack_bot_token()
+    """Return Slack ingestion metrics for one opportunity (all linked Slack channel sources)."""
+    token = _slack_bot_token()
     try:
         normalized_oid = normalize_opportunity_oid(oid)
     except ValueError as exc:
@@ -855,44 +967,61 @@ def slack_metrics_for_opportunity(
             detail=f"Opportunity not found for '{normalized_oid}'.",
         )
 
-    source = (
+    sources = (
         db.query(OpportunitySource)
         .filter(
             OpportunitySource.opportunity_id == opp.id,
             OpportunitySource.source_type == "slack",
         )
-        .first()
+        .order_by(OpportunitySource.id.asc())
+        .all()
     )
-    if not source:
+    if not sources:
         raise HTTPException(
             status_code=404,
             detail=f"No slack opportunity source found for oid '{normalized_oid}'.",
         )
 
-    channel_id = (source.channel_id or "").strip() or None
-    channel_name = "Unknown"
-    if channel_id:
-        info = _get_channel_info(_slack_bot_token(), channel_id)
-        channel_name = (info or {}).get("name") or channel_id
+    channels: list[SlackMetricsChannelItem] = []
+    for source in sources:
+        raw_cid = (source.channel_id or "").strip()
+        if raw_cid:
+            info = _get_channel_info(token, raw_cid)
+            ch_name = (info or {}).get("name") or raw_cid
+            ch_id = raw_cid
+        else:
+            ch_id = f"unlinked:{source.id}"
+            ch_name = "Unknown"
+        ch_last: str | None = None
+        if source.last_synced_at is not None:
+            ch_last = source.last_synced_at.isoformat()
+        channels.append(
+            SlackMetricsChannelItem(
+                id=ch_id,
+                name=ch_name,
+                last_synced_at=ch_last,
+            )
+        )
 
     storage = Storage()
     total_files = _slack_raw_file_count(storage, opp.opportunity_id)
 
-    raw_status = source.status
-    if raw_status is None or (isinstance(raw_status, str) and not raw_status.strip()):
-        status_out = "DISCOVERED"
-    else:
-        status_out = raw_status.strip() if isinstance(raw_status, str) else str(raw_status)
+    status_out = _aggregate_slack_sources_status(sources)
 
-    last_synced_out: str | None = None
-    if source.last_synced_at is not None:
-        last_synced_out = source.last_synced_at.isoformat()
+    last_ts = [s.last_synced_at for s in sources if s.last_synced_at is not None]
+    max_last = max(last_ts) if last_ts else None
+    last_synced_out: str | None = max_last.isoformat() if max_last is not None else None
 
-    return {
-        "total_files": total_files,
-        "status": status_out,
-        "last_synced_at": last_synced_out,
-        "sync_checkpoint": source.sync_checkpoint,
-        "channel_id": channel_id,
-        "channel_name": channel_name,
-    }
+    first_ck: str | None = None
+    for s in sources:
+        if s.sync_checkpoint:
+            first_ck = s.sync_checkpoint
+            break
+
+    return SlackOpportunityMetricsResponse(
+        total_files=total_files,
+        status=status_out,
+        last_synced_at=last_synced_out,
+        sync_checkpoint=first_ck,
+        channels=channels,
+    )
