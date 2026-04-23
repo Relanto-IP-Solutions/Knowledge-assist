@@ -11,10 +11,7 @@ from sqlalchemy.orm import Session
 
 from configs.settings import get_settings
 from src.services.database_manager.models.auth_models import OpportunitySource, User
-from src.services.database_manager.user_connection_utils import (
-    get_active_connection,
-    query_users_with_active_provider,
-)
+from src.services.database_manager.user_connection_utils import get_active_connection
 from src.services.storage.service import Storage
 from src.utils.logger import get_logger
 from src.utils.opportunity_id import gcs_opportunity_prefix, normalize_opportunity_oid
@@ -30,7 +27,7 @@ def _resolve_onedrive_user(db: Session, source: OpportunitySource) -> User | Non
     owner = opp.owner
     if owner and get_active_connection(db, owner.id, "onedrive"):
         return owner
-    return query_users_with_active_provider(db, "onedrive").order_by(User.id.asc()).first()
+    return None
 
 
 async def _get_graph_access_token(refresh_token: str) -> str | None:
@@ -154,10 +151,7 @@ async def sync_onedrive_source(db: Session, source: OpportunitySource) -> int:
     opp = source.opportunity
     user = _resolve_onedrive_user(db, source)
     if not user:
-        logger.warning(
-            "OneDrive sync: no user with active onedrive connection for opportunity_id={}",
-            opp.opportunity_id,
-        )
+        logger.warning("Sync skipped: User has not connected their OneDrive account.")
         return 0
 
     conn = get_active_connection(db, user.id, "onedrive")
