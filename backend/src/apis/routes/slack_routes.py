@@ -263,6 +263,29 @@ def _lookup_slack_id_by_email(token: str, email: str) -> str | None:
     return user_id or None
 
 
+def _get_channel_info(token: str, channel_id: str) -> dict | None:
+    cid = (channel_id or "").strip()
+    if not cid:
+        return None
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    with httpx.Client(timeout=30.0) as client:
+        r = client.get(
+            f"{SLACK_API_BASE}/conversations.info",
+            headers=headers,
+            params={"channel": cid},
+        )
+    if r.status_code != 200:
+        return None
+    data = r.json()
+    if not data.get("ok"):
+        return None
+    ch = data.get("channel") or {}
+    return ch if isinstance(ch, dict) else None
+
+
 class SlackDiscoverResponse(BaseModel):
     channels_total: int
     channels_matched: int
@@ -846,6 +869,12 @@ def slack_metrics_for_opportunity(
             detail=f"No slack opportunity source found for oid '{normalized_oid}'.",
         )
 
+    channel_id = (source.channel_id or "").strip() or None
+    channel_name = "Unknown"
+    if channel_id:
+        info = _get_channel_info(_slack_bot_token(), channel_id)
+        channel_name = (info or {}).get("name") or channel_id
+
     storage = Storage()
     total_files = _slack_raw_file_count(storage, opp.opportunity_id)
 
@@ -864,4 +893,6 @@ def slack_metrics_for_opportunity(
         "status": status_out,
         "last_synced_at": last_synced_out,
         "sync_checkpoint": source.sync_checkpoint,
+        "channel_id": channel_id,
+        "channel_name": channel_name,
     }
