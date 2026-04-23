@@ -99,6 +99,7 @@ async def update_my_profile(
 @router.get("/google/url")
 async def google_url(
     redirect_uri: str,
+    db: Annotated[Session, Depends(get_db)],
     provider: str | None = Query(
         default=None,
         description="Optional: 'gmail' or 'drive' to request only that Google API scope.",
@@ -107,12 +108,41 @@ async def google_url(
         default=None,
         description="Optional project oid; encoded in OAuth state (e.g. drive:oid560) for redirect after login.",
     ),
+    user_email: str | None = Query(
+        default=None,
+        description="Optional user email for smart already-connected check.",
+    ),
 ):
     if oid and not provider:
         raise HTTPException(
             status_code=400,
             detail="Query parameter 'provider' is required when 'oid' is set.",
         )
+
+    email = (user_email or "").strip().lower()
+    if email:
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            provider_key = (provider or "").strip().lower()
+            if provider_key in {"gmail", "drive", "google"}:
+                providers = [provider_key]
+            else:
+                providers = ["gmail", "drive", "google"]
+
+            existing_conn = (
+                db.query(UserConnection)
+                .filter(
+                    UserConnection.user_id == user.id,
+                    UserConnection.provider.in_(providers),
+                    UserConnection.refresh_token.is_not(None),
+                    UserConnection.refresh_token != "",
+                )
+                .order_by(UserConnection.id.desc())
+                .first()
+            )
+            if existing_conn:
+                return {"auth_url": None, "already_connected": True}
+
     try:
         state = oauth_service.build_google_oauth_state(provider, oid)
         url = await oauth_service.get_google_auth_url(
@@ -120,7 +150,7 @@ async def google_url(
         )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return {"auth_url": url}
+    return {"auth_url": url, "already_connected": False}
 
 
 @router.post("/google/callback")
