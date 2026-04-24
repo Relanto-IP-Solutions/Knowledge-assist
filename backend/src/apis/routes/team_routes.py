@@ -422,7 +422,7 @@ def get_team_details(
     opportunity_rows = db.execute(
         text(
             """
-            SELECT id, opportunity_id, name, owner_id, team_id, status
+            SELECT id, opportunity_id, organization_name, name, owner_id, team_id, status
             FROM opportunities
             WHERE team_id = :team_id
             ORDER BY created_at DESC, id DESC
@@ -563,7 +563,7 @@ def assign_opportunities_to_team(
             UPDATE opportunities
             SET team_id = :team_id, updated_at = NOW()
             WHERE {where_clause}
-            RETURNING id, opportunity_id, name, owner_id, team_id, status
+            RETURNING id, opportunity_id, organization_name, name, owner_id, team_id, status
             """
         ),
         {"team_id": team_id, "opportunity_ids": opp_ids},
