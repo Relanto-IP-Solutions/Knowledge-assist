@@ -90,6 +90,7 @@ def _get_total_sase_questions_count_cached(
 
 class OpportunitySummaryOut(BaseModel):
     opportunity_id: str
+    organization_name: str | None = None
     name: str
     owner_id: int
     status: str = ""
@@ -113,6 +114,7 @@ class LockOpportunityResponse(BaseModel):
 class MyOpportunityOut(BaseModel):
     id: int
     opportunity_id: str
+    organization_name: str | None = None
     name: str
     owner_id: int
     team_id: int | None = None
@@ -137,7 +139,7 @@ def list_unassigned_opportunities(
     rows = db.execute(
         text(
             """
-            SELECT id, opportunity_id, name, owner_id, status
+            SELECT id, opportunity_id, organization_name, name, owner_id, status
             FROM opportunities
             WHERE team_id IS NULL
             ORDER BY created_at DESC, id DESC
@@ -163,6 +165,7 @@ def get_my_opportunities(
             SELECT DISTINCT
                 o.id,
                 o.opportunity_id,
+                o.organization_name,
                 o.name,
                 o.owner_id,
                 o.team_id,
@@ -204,6 +207,11 @@ def get_my_opportunities(
             MyOpportunityOut(
                 id=int(row["id"]),
                 opportunity_id=str(row["opportunity_id"]),
+                organization_name=(
+                    str(row["organization_name"])
+                    if row["organization_name"] is not None
+                    else None
+                ),
                 name=str(row["name"] or ""),
                 owner_id=int(row["owner_id"]),
                 team_id=int(row["team_id"]) if row["team_id"] is not None else None,
@@ -268,6 +276,7 @@ def list_opportunity_ids(
             WITH recent_o AS (
                 SELECT
                     o.opportunity_id,
+                    o.organization_name,
                     o.name,
                     o.owner_id,
                     o.status,
@@ -291,6 +300,7 @@ def list_opportunity_ids(
             )
             SELECT
                 ro.opportunity_id,
+                ro.organization_name,
                 ro.name,
                 ro.owner_id,
                 ro.status,
@@ -343,15 +353,16 @@ def list_opportunity_ids(
         opportunities=[
             OpportunitySummaryOut(
                 opportunity_id=str(r[0]),
-                name=str(r[1] or ""),
-                owner_id=int(r[2]),
-                status=str(r[3] or ""),
-                human_count=int(r[4] or 0),
-                ai_count=int(r[5] or 0),
-                total_questions=int(r[6] or 0),
-                percentage=float(r[7] or 0.0),
-                human_percentage=float(r[8] or 0.0),
-                ai_percentage=float(r[9] or 0.0),
+                organization_name=str(r[1]) if r[1] is not None else None,
+                name=str(r[2] or ""),
+                owner_id=int(r[3]),
+                status=str(r[4] or ""),
+                human_count=int(r[5] or 0),
+                ai_count=int(r[6] or 0),
+                total_questions=int(r[7] or 0),
+                percentage=float(r[8] or 0.0),
+                human_percentage=float(r[9] or 0.0),
+                ai_percentage=float(r[10] or 0.0),
             )
             for r in rows
             if r[0] is not None
