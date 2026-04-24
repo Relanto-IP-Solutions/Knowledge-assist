@@ -11,6 +11,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from src.services.database_manager.orm import Base
@@ -93,6 +94,7 @@ class Opportunity(Base):
             "('oid' || lpad(nextval('opportunity_oid_seq')::text, 4, '0'))"
         ),
     )  # Example: oid1023
+    organization_name = Column(String, nullable=True)
     name = Column(String, nullable=False)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
@@ -102,6 +104,7 @@ class Opportunity(Base):
 
     # Pipeline / UI state (updated by discover, sync, ingestion, answer-generation)
     status = Column(String(64), nullable=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
     total_documents = Column(Integer, nullable=False, server_default="0")
     processed_documents = Column(Integer, nullable=False, server_default="0")
     last_extraction_at = Column(DateTime(timezone=True), nullable=True)
@@ -121,6 +124,7 @@ class OpportunitySource(Base):
     source_type = Column(
         String, nullable=False
     )  # e.g., "slack", "gmail", "zoom", "drive"
+    channel_id = Column(String, nullable=True, index=True)
 
     # Last synced tracker for generic plugins
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
@@ -133,3 +137,21 @@ class OpportunitySource(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     opportunity = relationship("Opportunity", back_populates="sources")
+
+
+class OpportunityRequest(Base):
+    __tablename__ = "opportunity_requests"
+
+    request_id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    organization_name = Column(String(512), nullable=True)
+    opportunity_title = Column(String(512), nullable=False)
+    submitted_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    status = Column(String(16), nullable=False, server_default="PENDING")
+
+    admin_remarks = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_opportunity_id = Column(
+        Integer, ForeignKey("opportunities.id", ondelete="SET NULL"), nullable=True
+    )

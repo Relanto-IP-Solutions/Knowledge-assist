@@ -323,6 +323,14 @@ class GmailSettings(_BaseEnvSettings):
     )
 
 
+class OneDriveSettings(_BaseEnvSettings):
+    """Microsoft OneDrive connector settings."""
+
+    client_id: str = Field(default="", alias="MICROSOFT_CLIENT_ID")
+    client_secret: str = Field(default="", alias="MICROSOFT_CLIENT_SECRET")
+    tenant_id: str = Field(default="common", alias="MICROSOFT_TENANT_ID")
+
+
 @dataclass(frozen=True)
 class Settings:
     app: AppSettings
@@ -338,6 +346,7 @@ class Settings:
     slack: SlackSettings
     drive: DriveSettings
     gmail: GmailSettings
+    onedrive: OneDriveSettings
 
 
 @lru_cache
@@ -356,6 +365,7 @@ def get_settings() -> Settings:
         slack=SlackSettings(),
         drive=DriveSettings(),
         gmail=GmailSettings(),
+        onedrive=OneDriveSettings(),
     )
 
 

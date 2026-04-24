@@ -118,6 +118,7 @@ class RegistryClient:
         doc_hash: str,
         total_chunks: int,
         chunks: list[dict[str, Any]],
+        source_type: str = "documents",
     ) -> None:
         """Write or update document_registry and chunk_registry for a single document.
 
@@ -150,7 +151,7 @@ class RegistryClient:
                 (
                     document_id,
                     opportunity_id,
-                    "documents",
+                    source_type,
                     gcs_path,
                     doc_hash,
                     total_chunks,
@@ -244,8 +245,15 @@ def write_ingestion_registry(
     doc_hash: str,
     total_chunks: int,
     chunks: list[dict[str, Any]],
+    source_type: str = "documents",
 ) -> None:
     """Write or update document_registry and chunk_registry for a single document."""
     RegistryClient().write_registry(
-        document_id, opportunity_id, gcs_path, doc_hash, total_chunks, chunks
+        document_id,
+        opportunity_id,
+        gcs_path,
+        doc_hash,
+        total_chunks,
+        chunks,
+        source_type=source_type,
     )

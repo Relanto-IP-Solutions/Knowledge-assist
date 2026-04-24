@@ -38,6 +38,7 @@ export async function fetchOpportunityIds(options = {}) {
         'percentage',
         'ai_percentage',
         'human_percentage',
+        'organization_name',
         'project_line',
         'projectLine',
         'conflict_message',

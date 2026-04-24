@@ -19,8 +19,13 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-def _infer_source_type_from_datapoint_id(datapoint_id: str) -> str:
-    """Infer source type from datapoint_id prefix set during ingestion."""
+def _infer_source_type(datapoint_id: str, registry_source_type: str | None) -> str:
+    """Infer source type using document_registry first, then datapoint fallback."""
+    st = (registry_source_type or "").strip().lower()
+    if st == "onedrive":
+        return "onedrive_doc"
+    if st == "documents":
+        return "gdrive_doc"
     if "_slack_" in datapoint_id:
         return "slack_messages"
     if "_zoom_" in datapoint_id:
@@ -64,6 +69,7 @@ def retrieve_topk_from_combined_source(
                 cr.datapoint_id,
                 cr.chunk_text,
                 dr.gcs_path,
+                dr.source_type,
                 COALESCE(dr.document_id, cr.document_id) AS logical_document_id,
                 1 - (cr.embedding <=> %s::vector) AS similarity_score
             FROM chunk_registry cr
@@ -90,8 +96,11 @@ def retrieve_topk_from_combined_source(
     per_source_count: dict[str, int] = {}
 
     for rank, row in enumerate(rows, start=1):
-        datapoint_id, chunk_text, gcs_path, logical_document_id, similarity_score = row
-        source_type = _infer_source_type_from_datapoint_id(datapoint_id or "")
+        datapoint_id, chunk_text, gcs_path, registry_source_type, logical_document_id, similarity_score = row
+        source_type = _infer_source_type(
+            datapoint_id or "",
+            registry_source_type,
+        )
         if per_source_count.get(source_type, 0) >= top_k:
             continue
         per_source_count[source_type] = per_source_count.get(source_type, 0) + 1
@@ -121,9 +130,10 @@ def retrieve_topk_from_combined_source(
 
     logger.debug(
         "retrieve_topk_from_combined_source: %d candidates returned "
-        "(gdrive_doc=%d, slack_messages=%d, zoom_transcript=%d)",
+        "(gdrive_doc=%d, onedrive_doc=%d, slack_messages=%d, zoom_transcript=%d)",
         len(results),
         per_source_count.get("gdrive_doc", 0),
+        per_source_count.get("onedrive_doc", 0),
         per_source_count.get("slack_messages", 0),
         per_source_count.get("zoom_transcript", 0),
     )

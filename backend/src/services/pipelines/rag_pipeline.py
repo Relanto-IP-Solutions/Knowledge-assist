@@ -10,6 +10,7 @@ import google.auth.transport.requests
 import google.oauth2.id_token
 
 from configs.settings import get_settings
+from src.services.database_manager.connection import get_db_connection
 from src.services.pipelines.retrieval_pipeline import RetrievalPipeline
 from src.services.rag_engine.retrieval.http_client import get_http_session
 from src.utils.logger import get_logger
@@ -76,6 +77,42 @@ class RagPipeline:
                 "ANSWER_GENERATION_URL not set; returning retrieval only"
             )
             return result
+
+        # Do not call answer-generation for locked opportunities (saves Cloud Run time).
+        # Transient DB errors here are non-fatal: answer-generation performs its own
+        # lock check, so we fall through and let it enforce the policy authoritatively.
+        try:
+            con = get_db_connection()
+            try:
+                cur = con.cursor()
+                cur.execute(
+                    """
+                    SELECT is_active
+                    FROM opportunities
+                    WHERE opportunity_id = %s
+                    LIMIT 1
+                    """,
+                    (str(opportunity_id),),
+                )
+                row = cur.fetchone()
+                if row and (not bool(row[0])):
+                    logger.bind(opportunity_id=opportunity_id).info(
+                        "Skipping answer-generation (opportunity locked)"
+                    )
+                    if isinstance(result, dict):
+                        result["_answer_generation_skipped"] = True
+                        result["_answer_generation_skip_reason"] = "opportunity_locked"
+                    return result
+            finally:
+                try:
+                    con.close()
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.bind(opportunity_id=opportunity_id).warning(
+                "is_active pre-check failed (non-fatal), proceeding to answer-generation: {}",
+                exc,
+            )
 
         logger.bind(opportunity_id=opportunity_id).info(
             "Calling answer-generation for opportunity_id={}",

@@ -1,9 +1,7 @@
 import { inferSourceTypeFromCitationFields } from '../utils/citationSourceInference'
 import { enrichAnswerRowAfterNormalize } from '../utils/enrichAnswerIds'
 import { serializeAssistMultiValue } from '../utils/opportunityAnswerRowToReviewQuestion'
-import { api } from './apiClient'
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+import { api, API_BASE } from './apiClient'
 
 /** String or array (e.g. multi-select) → stable string for UI + conflict matching */
 export function normalizeAnswerValueField(v) {
@@ -15,6 +13,14 @@ export function normalizeAnswerValueField(v) {
   }
   const s = String(v).trim()
   return s === '' ? null : s
+}
+
+function normalizeBooleanLike(value) {
+  if (value === true || value === false) return value
+  const t = String(value ?? '').trim().toLowerCase()
+  if (t === 'true' || t === '1' || t === 'yes') return true
+  if (t === 'false' || t === '0' || t === 'no') return false
+  return null
 }
 
 /**
@@ -354,6 +360,7 @@ export function normalizeAnswerRow(row, context = {}) {
     confidence_score,
     citations,
     conflict_id: row.conflict_id ? String(row.conflict_id) : null,
+    is_user_override: normalizeBooleanLike(row.is_user_override ?? row.isUserOverride),
     conflicts,
     ...(typeof row.current_version === 'number' ? { current_version: row.current_version } : {}),
     ...(row.status != null && String(row.status).trim() !== ''

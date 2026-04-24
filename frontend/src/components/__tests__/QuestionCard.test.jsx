@@ -85,5 +85,27 @@ describe('QuestionCard AI vs edited labels', () => {
     render(<QuestionCard {...props} />)
     expect(screen.getByText('ACCEPTED EDITED RESPONSE')).toBeInTheDocument()
   })
+
+  it('uses payload override flag for accepted edited label', () => {
+    const props = buildBaseProps({
+      q: { is_user_override: true },
+      qState: { status: 'accepted', answerSource: 'ai', editedAnswer: '' },
+    })
+    render(<QuestionCard {...props} />)
+    expect(screen.getByText('ACCEPTED EDITED RESPONSE')).toBeInTheDocument()
+  })
+
+  it('uses payload override flag for accepted ai label after reload', () => {
+    const props = buildBaseProps({
+      q: { is_user_override: false },
+      qState: {
+        status: 'accepted',
+        answerSource: 'ai',
+        editedAnswer: '',
+      },
+    })
+    render(<QuestionCard {...props} />)
+    expect(screen.getByText('ACCEPTED AI RESPONSE')).toBeInTheDocument()
+  })
 })
 

@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react'
-import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom'
 import Topbar from './components/Topbar'
 import Landing from './components/Landing'
 import QAPage from './components/QAPage'
 import SourcesPage from './components/SourcesPage'
 import GmailResultPage from './components/GmailResultPage'
 import CreateOpportunityPage from './components/CreateOpportunityPage'
+import AdminRequestsPage from './components/AdminRequestsPage'
+import TeamBuilderPage from './components/TeamBuilderPage'
 import LoginWithTheme from './components/Login'
 import { subscribeAuth, signOutUser } from './services/authService'
 import {
@@ -25,9 +27,73 @@ export const MODULES = [
   { id: 'market', label: 'Market Intelligence', icon: null, enabled: true },
 ]
 
+const KNOWLEDGE_ASSIST_PAGE_SESSION_KEY = 'knowledgeAssist:lastPage'
+const KNOWLEDGE_ASSIST_FRESH_LOGIN_RESET_KEY = 'knowledgeAssist:freshLoginReset'
+
+function getStoredKnowledgeAssistPage() {
+  try {
+    const raw = sessionStorage.getItem(KNOWLEDGE_ASSIST_PAGE_SESSION_KEY)
+    const parsed = Number(raw)
+    if (Number.isInteger(parsed) && parsed > 0) return parsed
+    return null
+  } catch {
+    return null
+  }
+}
+
+function setStoredKnowledgeAssistPage(page) {
+  const parsed = Number(page)
+  if (!Number.isInteger(parsed) || parsed <= 0) return
+  try {
+    sessionStorage.setItem(KNOWLEDGE_ASSIST_PAGE_SESSION_KEY, String(parsed))
+  } catch {
+    /* noop */
+  }
+}
+
+function markKnowledgeAssistFreshLoginReset() {
+  try {
+    sessionStorage.setItem(KNOWLEDGE_ASSIST_FRESH_LOGIN_RESET_KEY, '1')
+  } catch {
+    /* noop */
+  }
+}
+
+function parsePositivePage(value) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+}
+
+function getKnowledgeAssistPageFromSearch(search) {
+  try {
+    const params = new URLSearchParams(String(search ?? ''))
+    return parsePositivePage(params.get('kaPage'))
+  } catch {
+    return null
+  }
+}
+
 function SourcesRoute({ user }) {
-  const { oid } = useParams()
+  const { opportunityId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  const searchPage = getKnowledgeAssistPageFromSearch(location.search)
+  const statePage = parsePositivePage(location.state?.knowledgeAssistPage)
+  const storedPage = getStoredKnowledgeAssistPage()
+  const knowledgeAssistPage = searchPage ?? statePage ?? storedPage
+  const knowledgeAssistNavState = Number.isFinite(Number(knowledgeAssistPage))
+    ? { knowledgeAssistPage: Number(knowledgeAssistPage), forceRefresh: true }
+    : { forceRefresh: true }
+  const safeKnowledgeAssistPage = Number(knowledgeAssistPage)
+  const knowledgeAssistBackTarget =
+    Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
+      ? { pathname: '/knowledge-assist', search: `?page=${safeKnowledgeAssistPage}` }
+      : { pathname: '/knowledge-assist' }
+
+  useEffect(() => {
+    if (!Number.isInteger(safeKnowledgeAssistPage) || safeKnowledgeAssistPage <= 0) return
+    setStoredKnowledgeAssistPage(safeKnowledgeAssistPage)
+  }, [safeKnowledgeAssistPage])
 
   // Popup lands here after per-opportunity Gmail connect OAuth.
   useEffect(() => {
@@ -36,55 +102,110 @@ function SourcesRoute({ user }) {
     if (params.get('gmail_connect') !== 'success') return
     try {
       window.opener.postMessage(
-        { type: 'gmail_oauth_result', gmailConnect: 'success', oid },
+        { type: 'gmail_oauth_result', gmailConnect: 'success', oid: opportunityId },
         window.location.origin,
       )
     } catch {
       /* noop */
     }
     window.close()
-  }, [oid])
+  }, [opportunityId])
 
   return (
     <SourcesPage
-      opportunityId={oid}
-      opportunityName={oid}
+      opportunityId={opportunityId}
+      opportunityName={opportunityId}
       userEmail={user?.email || ''}
-      onContinue={() => navigate('/qa/' + oid)}
-      onBack={() => navigate('/')}
+      onContinue={() => navigate(
+        '/qa/' + opportunityId,
+        {
+          state: Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
+            ? { ...(location.state ?? {}), knowledgeAssistPage: safeKnowledgeAssistPage }
+            : location.state ?? undefined,
+        },
+      )}
+      onBack={() => {
+        if (Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0) {
+          setStoredKnowledgeAssistPage(safeKnowledgeAssistPage)
+        }
+        navigate(knowledgeAssistBackTarget, { state: knowledgeAssistNavState })
+      }}
     />
   )
 }
 
-function QARoute({ onReviewSaved }) {
+function LegacySourcesRedirect() {
   const { oid } = useParams()
+  return <Navigate to={`/data-connectors/${oid}`} replace />
+}
+
+function QARoute({ onReviewSaved }) {
+  const { opportunityId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  const searchPage = getKnowledgeAssistPageFromSearch(location.search)
+  const statePage = parsePositivePage(location.state?.knowledgeAssistPage)
+  const storedPage = getStoredKnowledgeAssistPage()
+  const knowledgeAssistPage = searchPage ?? statePage ?? storedPage
+  const knowledgeAssistNavState = Number.isFinite(Number(knowledgeAssistPage))
+    ? { knowledgeAssistPage: Number(knowledgeAssistPage), forceRefresh: true }
+    : { forceRefresh: true }
+  const safeKnowledgeAssistPage = Number(knowledgeAssistPage)
+  const knowledgeAssistBackTarget =
+    Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
+      ? { pathname: '/knowledge-assist', search: `?page=${safeKnowledgeAssistPage}` }
+      : { pathname: '/knowledge-assist' }
+
+  useEffect(() => {
+    if (!Number.isInteger(safeKnowledgeAssistPage) || safeKnowledgeAssistPage <= 0) return
+    setStoredKnowledgeAssistPage(safeKnowledgeAssistPage)
+  }, [safeKnowledgeAssistPage])
   return (
     <QAPage
-      oppId={oid}
-      onBack={() => navigate('/')}
+      oppId={opportunityId}
+      onBack={() => {
+        if (Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0) {
+          setStoredKnowledgeAssistPage(safeKnowledgeAssistPage)
+        }
+        navigate(knowledgeAssistBackTarget, { state: knowledgeAssistNavState })
+      }}
+      onBackToDataConnectors={() => navigate(
+        '/data-connectors/' + opportunityId,
+        {
+          state: Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
+            ? { ...(location.state ?? {}), knowledgeAssistPage: safeKnowledgeAssistPage }
+            : location.state ?? undefined,
+        },
+      )}
       onReviewSaved={onReviewSaved}
     />
   )
 }
 
-function CreateRoute({ user }) {
-  const navigate = useNavigate()
+function CreateRoute({ user, onBackToKnowledgeAssist, onCreated }) {
   return (
     <CreateOpportunityPage
       user={user}
-      onBack={() => navigate('/')}
-      onCreated={(id) => navigate('/sources/' + id)}
+      onBack={onBackToKnowledgeAssist}
+      onCreated={onCreated}
     />
   )
 }
 
 export default function App() {
   const navigate = useNavigate()
+  const hasHandledInitialAuthRef = useRef(false)
+  const previousAuthUidRef = useRef(null)
   const [user, setUser] = useState(null)
   const [authReady, setAuthReady] = useState(false)
   const [activeModule, setActiveModule] = useState('sales')
   const [landingRefreshKey, setLandingRefreshKey] = useState(0)
+  const getKnowledgeAssistNavState = () => {
+    const page = getStoredKnowledgeAssistPage()
+    return Number.isInteger(page) && page > 0
+      ? { knowledgeAssistPage: page, forceRefresh: true }
+      : { forceRefresh: true }
+  }
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'relanto')
@@ -92,10 +213,22 @@ export default function App() {
 
   useEffect(() => {
     return subscribeAuth((nextUser) => {
+      const nextUid = nextUser?.uid ?? null
+      const isFreshLogin = hasHandledInitialAuthRef.current && !previousAuthUidRef.current && !!nextUid
+      if (isFreshLogin) {
+        setStoredKnowledgeAssistPage(1)
+        markKnowledgeAssistFreshLoginReset()
+        navigate(
+          { pathname: '/knowledge-assist', search: '?page=1' },
+          { replace: true, state: { knowledgeAssistPage: 1, forceRefresh: true } },
+        )
+      }
+      previousAuthUidRef.current = nextUid
+      hasHandledInitialAuthRef.current = true
       setUser(nextUser)
       setAuthReady(true)
     })
-  }, [])
+  }, [navigate])
 
   const bumpDashboardRefresh = () => setLandingRefreshKey(k => k + 1)
 
@@ -111,8 +244,8 @@ export default function App() {
         const oid = sessionStorage.getItem(OAUTH_OPP_ID_KEY)
         sessionStorage.removeItem(OAUTH_RETURN_CREATE_OPP_KEY)
         sessionStorage.removeItem(OAUTH_OPP_ID_KEY)
-        if (oid) navigate('/sources/' + oid)
-        else navigate('/')
+        if (oid) navigate('/data-connectors/' + oid)
+        else navigate('/knowledge-assist', { state: getKnowledgeAssistNavState() })
       }
     } catch {
       /* noop */
@@ -128,7 +261,7 @@ export default function App() {
 
       if (msg.gmailDiscover) {
         bumpDashboardRefresh()
-        navigate('/')
+        navigate('/knowledge-assist', { state: getKnowledgeAssistNavState() })
       }
 
       if (msg.gmailConnect && msg.oid) {
@@ -157,7 +290,7 @@ export default function App() {
           /* noop */
         }
 
-        navigate('/sources/' + msg.oid)
+        navigate('/data-connectors/' + msg.oid)
       }
     }
     window.addEventListener('message', handler)
@@ -167,19 +300,30 @@ export default function App() {
   const handleLogin = (loggedInUser, module) => {
     setUser(loggedInUser)
     if (module) setActiveModule(module)
-    navigate('/')
+    // Fresh sign-in should always start the dashboard table at page 1.
+    setStoredKnowledgeAssistPage(1)
+    markKnowledgeAssistFreshLoginReset()
+    navigate(
+      { pathname: '/knowledge-assist', search: '?page=1' },
+      { replace: true, state: { knowledgeAssistPage: 1, forceRefresh: true } },
+    )
   }
 
   const handleLogout = async () => {
     await signOutUser()
     setUser(null)
-    navigate('/')
+    // Reset landing pagination context on sign-out so next sign-in starts fresh.
+    setStoredKnowledgeAssistPage(1)
+    navigate(
+      { pathname: '/knowledge-assist', search: '?page=1' },
+      { replace: true, state: { knowledgeAssistPage: 1, forceRefresh: true } },
+    )
   }
 
   const switchModule = (mod) => {
     if (!mod.enabled) return
     setActiveModule(mod.id)
-    navigate('/')
+    navigate('/knowledge-assist', { state: getKnowledgeAssistNavState() })
   }
 
   if (!authReady) {
@@ -196,7 +340,7 @@ export default function App() {
           fontSize: 14,
         }}
       >
-        Signing in...
+        Loading...
       </div>
     )
   }
@@ -209,29 +353,57 @@ export default function App() {
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
       <Topbar
         activeModule={activeModule}
-        onLogoClick={() => navigate('/')}
+        onLogoClick={() => navigate('/knowledge-assist', { state: getKnowledgeAssistNavState() })}
         onSwitchModule={switchModule}
         user={user}
         onLogout={handleLogout}
+        onNavigate={(path) => navigate(path)}
       />
 
       {activeModule === 'sales' && (
         <Routes>
           <Route
-            path="/"
+            path="/knowledge-assist"
             element={
               <Landing
                 key={landingRefreshKey}
-                onOpenOpp={(id) => navigate('/sources/' + id)}
+                onOpenOpp={(id, _name, page) => {
+                  const parsedPage = Number(page)
+                  if (Number.isInteger(parsedPage) && parsedPage > 0) {
+                    setStoredKnowledgeAssistPage(parsedPage)
+                  }
+                  navigate(
+                    '/data-connectors/' + id,
+                    {
+                    state: Number.isInteger(parsedPage) && parsedPage > 0
+                      ? { knowledgeAssistPage: parsedPage }
+                      : undefined,
+                    },
+                  )
+                }}
                 userEmail={user?.email || ''}
                 refreshKey={landingRefreshKey}
                 onOpportunitiesRefresh={bumpDashboardRefresh}
+                onAdminPanel={() => navigate('/admin/requests')}
               />
             }
           />
-          <Route path="/sources/:oid" element={<SourcesRoute user={user} />} />
-          <Route path="/qa/:oid" element={<QARoute onReviewSaved={bumpDashboardRefresh} />} />
-          <Route path="/create" element={<CreateRoute user={user} />} />
+          <Route path="/" element={<Navigate to="/knowledge-assist" replace />} />
+          <Route path="/data-connectors/:opportunityId" element={<SourcesRoute user={user} />} />
+          <Route path="/sources/:oid" element={<LegacySourcesRedirect />} />
+          <Route path="/qa/:opportunityId" element={<QARoute onReviewSaved={bumpDashboardRefresh} />} />
+          <Route
+            path="/create"
+            element={<CreateRoute user={user} onBackToKnowledgeAssist={() => navigate('/knowledge-assist', { state: getKnowledgeAssistNavState() })} onCreated={bumpDashboardRefresh} />}
+          />
+          <Route
+            path="/admin/requests"
+            element={<AdminRequestsPage user={user} onBack={() => navigate('/')} />}
+          />
+          <Route
+            path="/admin/team-builder"
+            element={<TeamBuilderPage onBack={() => navigate('/admin/requests')} />}
+          />
           <Route path="/gmail-result" element={<GmailResultPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

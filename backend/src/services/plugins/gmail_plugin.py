@@ -305,10 +305,7 @@ def sync_gmail_source(
     opp = source.opportunity
     user = resolve_google_user_for_sync(db, opp)
     if not user:
-        logger.warning(
-            "Gmail sync: no user with active Google connection for opportunity_id={}",
-            opp.opportunity_id,
-        )
+        logger.warning("Sync skipped: User has not connected their Google account.")
         return 0
     creds = _get_credentials(db, user, client_id, client_secret)
     if not creds:
