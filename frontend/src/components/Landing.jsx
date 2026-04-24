@@ -445,6 +445,9 @@ function mapApiIdRowToOpportunity(r) {
     if (Number.isFinite(n)) out.completion = n
   }
 
+  const orgName = r.organization_name
+  if (orgName != null && String(orgName).trim() !== '') out.organizationName = String(orgName).trim()
+
   const pl = r.project_line ?? r.projectLine
   if (pl != null && String(pl).trim() !== '') out.projectLine = String(pl).trim()
 
@@ -503,6 +506,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
   const [idsLoading, setIdsLoading] = useState(true)
   const [idsError, setIdsError] = useState(null)
   const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [createOrgName, setCreateOrgName] = useState('')
   const [createName, setCreateName] = useState('')
   const [createCharErr, setCreateCharErr] = useState(null)
   const [createNameExists, setCreateNameExists] = useState(false)
@@ -554,7 +558,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
 
   useEffect(() => {
     if (!createNotice) return
-    const t = window.setTimeout(() => setCreateNotice(''), 2800)
+    const t = window.setTimeout(() => setCreateNotice(''), 4000)
     return () => window.clearTimeout(t)
   }, [createNotice])
 
@@ -645,6 +649,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
   const pageSlice  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const resetCreateModal = () => {
+    setCreateOrgName('')
     setCreateName('')
     setCreateCharErr(null)
     setCreateNameExists(false)
@@ -693,15 +698,18 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
 
   const submitCreateOpportunity = async () => {
     if (createBusy || createChecking || createCharErr || createNameExists) return
+    const orgName = String(createOrgName ?? '').trim()
     const name = String(createName ?? '').trim()
+    if (!orgName) { setCreateError('Organization Name is required.'); return }
     if (!name) { setCreateError('Opportunity Name is required.'); return }
     setCreateBusy(true)
     setCreateError('')
     try {
-      await createOpportunityRequest(name)
+      await createOpportunityRequest({ name, organization_name: orgName })
       setCreateModalOpen(false)
       resetCreateModal()
-      setCreateNotice('Request submitted for admin approval')
+      setCreateNotice('Opportunity requested successfully!')
+      loadDashboard(true)
     } catch (e) {
       setCreateError(e?.message || 'Failed to submit request.')
     } finally {
@@ -714,7 +722,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
       <style>{SK_STYLE_TAG}</style>
 
       {/* Hero */}
-      <div style={{ position: 'relative', padding: '32px 24px 0', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', padding: '32px 24px 0' }}>
         <div style={{ position: 'absolute', top: -100, left: '50%', transform: 'translateX(-50%)', width: 900, height: 450, background: `radial-gradient(ellipse at 50% 0%,rgba(var(--tint),0.15) 0%,rgba(var(--tint3),0.10) 35%,rgba(var(--tint2),0.08) 58%,transparent 75%)`, pointerEvents: 'none' }} />
         <div style={{ position: 'relative', maxWidth: 1100, margin: '0 auto' }}>
 
@@ -739,28 +747,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 0, maxWidth: 720, lineHeight: 1.55 }}>
                 Aggregated insights and real-time tracking for Relanto Forge strategic accounts. Use the filters below to drill down into specific pipeline health metrics.
               </div>
-              {createNotice ? (
-                <div
-                  role="status"
-                  aria-live="polite"
-                  style={{
-                    marginTop: 12,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: '#166534',
-                    background: '#ECFDF3',
-                    border: '1px solid #BBF7D0',
-                  }}
-                >
-                  <span aria-hidden>✓</span>
-                  {createNotice}
-                </div>
-              ) : null}
+
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
               {/* Admin Requests button removed — access via profile dropdown Admin Panel */}
@@ -1095,7 +1082,29 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               Create Opportunity
             </div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: SI_NAVY, marginBottom: 6 }}>
-              Name <span style={{ color: SI_ORANGE }}>*</span>
+              Organization Name <span style={{ color: SI_ORANGE }}>*</span>
+            </label>
+            <input
+              value={createOrgName}
+              onChange={(e) => { setCreateOrgName(e.target.value); setCreateError('') }}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitCreateOpportunity() }}
+              placeholder="e.g. Acme Corp"
+              disabled={createBusy}
+              autoComplete="off"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '10px 12px',
+                borderRadius: 8,
+                border: `1px solid var(--border)`,
+                fontSize: 13,
+                fontFamily: 'var(--font)',
+                outline: 'none',
+                marginBottom: 14,
+              }}
+            />
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: SI_NAVY, marginBottom: 6 }}>
+              Opportunity Name <span style={{ color: SI_ORANGE }}>*</span>
             </label>
             <input
               value={createName}
@@ -1146,17 +1155,17 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               <button
                 type="button"
                 onClick={submitCreateOpportunity}
-                disabled={createBusy || createChecking || !!createCharErr || createNameExists || !createName.trim()}
+                disabled={createBusy || createChecking || !!createCharErr || createNameExists || !createName.trim() || !createOrgName.trim()}
                 style={{
                   padding: '8px 14px',
                   borderRadius: 8,
                   border: 'none',
-                  background: (createBusy || createChecking || createCharErr || createNameExists || !createName.trim()) ? '#94a3b8' : SI_ORANGE,
+                  background: (createBusy || createChecking || createCharErr || createNameExists || !createName.trim() || !createOrgName.trim()) ? '#94a3b8' : SI_ORANGE,
                   color: '#fff',
                   fontSize: 12,
                   fontWeight: 700,
                   fontFamily: 'var(--font)',
-                  cursor: (createBusy || createChecking || createCharErr || createNameExists || !createName.trim()) ? 'not-allowed' : 'pointer',
+                  cursor: (createBusy || createChecking || createCharErr || createNameExists || !createName.trim() || !createOrgName.trim()) ? 'not-allowed' : 'pointer',
                 }}
               >
                 {createBusy ? 'Submitting…' : 'Submit request'}
@@ -1253,6 +1262,24 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
           </div>
         </div>
       )}
+
+      {createNotice && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)',
+            background: '#166534', color: '#fff', padding: '12px 22px', borderRadius: 10,
+            fontSize: 13, fontWeight: 700, boxShadow: '0 8px 24px rgba(15,23,42,.25)',
+            zIndex: 2100, pointerEvents: 'none', whiteSpace: 'nowrap',
+            fontFamily: 'var(--font, "Plus Jakarta Sans", sans-serif)',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}
+        >
+          <span style={{ fontSize: 15 }}>✓</span>
+          {createNotice}
+        </div>
+      )}
     </div>
   )
 }
@@ -1267,7 +1294,7 @@ function TableRow({ o, last, onOpen, isLocked, onLockClick }) {
   const humanPercent = Math.max(0, Math.min(100, Number(o.human_percentage) || 0))
   const aiBarW = Math.max(0, Math.min(totalPercent, aiPercent))
   const humanBarW = Math.max(0, Math.min(totalPercent - aiBarW, humanPercent))
-  const project = o.projectLine || 'Strategic initiative'
+  const orgDisplay = o.organizationName || o.projectLine || ''
   const formatPct = (n) => `${Number(n || 0).toFixed(2).replace(/\.?0+$/, '')}%`
 
   return (
@@ -1284,9 +1311,16 @@ function TableRow({ o, last, onOpen, isLocked, onLockClick }) {
     >
       <td style={{ padding: '16px 18px', borderBottom: last ? 'none' : '1px solid var(--border)', verticalAlign: 'top', maxWidth: 320 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ flex: 1, fontSize: 14, fontWeight: 800, color: hov && !isLocked ? SI_NAVY : 'var(--text0)', letterSpacing: '-.02em' }}>
-            {o.name}
-            <span style={{ fontWeight: 600, color: 'var(--text2)' }}> – {project}</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: hov && !isLocked ? SI_NAVY : 'var(--text0)', letterSpacing: '-.02em' }}>
+              {o.name}
+              {orgDisplay && <span style={{ fontWeight: 600, color: 'var(--text2)' }}> – {orgDisplay}</span>}
+            </div>
+            {o.id && (
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginTop: 3, letterSpacing: '.01em' }}>
+                {o.id}
+              </div>
+            )}
           </div>
           {(
             <button

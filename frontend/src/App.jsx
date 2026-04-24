@@ -182,13 +182,12 @@ function QARoute({ onReviewSaved }) {
   )
 }
 
-function CreateRoute({ user, onBackToKnowledgeAssist }) {
-  const navigate = useNavigate()
+function CreateRoute({ user, onBackToKnowledgeAssist, onCreated }) {
   return (
     <CreateOpportunityPage
       user={user}
       onBack={onBackToKnowledgeAssist}
-      onCreated={(id) => navigate('/data-connectors/' + id)}
+      onCreated={onCreated}
     />
   )
 }
@@ -395,7 +394,7 @@ export default function App() {
           <Route path="/qa/:opportunityId" element={<QARoute onReviewSaved={bumpDashboardRefresh} />} />
           <Route
             path="/create"
-            element={<CreateRoute user={user} onBackToKnowledgeAssist={() => navigate('/knowledge-assist', { state: getKnowledgeAssistNavState() })} />}
+            element={<CreateRoute user={user} onBackToKnowledgeAssist={() => navigate('/knowledge-assist', { state: getKnowledgeAssistNavState() })} onCreated={bumpDashboardRefresh} />}
           />
           <Route
             path="/admin/requests"
