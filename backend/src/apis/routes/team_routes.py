@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -40,6 +42,8 @@ class TeamOut(BaseModel):
     name: str
     is_active: bool
     created_at: datetime | None = None
+    member_count: int = 0
+    opportunity_count: int = 0
 
 
 class TeamDetailsResponse(BaseModel):
@@ -62,19 +66,28 @@ class AssignOpportunitiesBody(BaseModel):
     allow_reassignment: bool = True
 
 
+class TeamNameExistsResponse(BaseModel):
+    exists: bool
+
+
 def _validate_team_members(members: list[TeamMemberInput]) -> list[int]:
     user_ids = [int(m.user_id) for m in members]
     if len(set(user_ids)) != len(user_ids):
         raise HTTPException(status_code=400, detail="Duplicate team members are not allowed")
     lead_count = sum(1 for m in members if m.is_lead)
-    if lead_count > 2:
-        raise HTTPException(status_code=400, detail="Max 2 leads allowed")
+    if lead_count > 1:
+        raise HTTPException(status_code=400, detail="Max 1 lead allowed")
     return user_ids
 
 
 def _ensure_admin(user: User) -> None:
     if not is_admin(user):
         raise HTTPException(status_code=403, detail="Admin access required.")
+
+
+_ACTIVE_USERS_CACHE_LOCK = threading.Lock()
+_ACTIVE_USERS_CACHE: tuple[list[TeamUserOut], float] | None = None
+_ACTIVE_USERS_CACHE_TTL_S = 60.0
 
 
 def _sync_teams_id_sequence(db: Session) -> None:
@@ -185,12 +198,33 @@ def _insert_or_upsert_team_member_with_retry(
             raise
 
 
+def _is_team_name_taken(db: Session, team_name: str, *, exclude_team_id: int | None = None) -> bool:
+    params: dict[str, object] = {"name": team_name}
+    sql = """
+        SELECT 1
+        FROM teams
+        WHERE LOWER(name) = LOWER(:name)
+    """
+    if exclude_team_id is not None:
+        sql += " AND id <> :exclude_team_id"
+        params["exclude_team_id"] = int(exclude_team_id)
+    sql += " LIMIT 1"
+    row = db.execute(text(sql), params).first()
+    return bool(row)
+
+
 @router.get("/users", response_model=list[TeamUserOut])
 def list_active_users(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_existing_firebase_user)],
 ):
     _ensure_admin(user)
+    global _ACTIVE_USERS_CACHE
+    now = time.time()
+    with _ACTIVE_USERS_CACHE_LOCK:
+        if _ACTIVE_USERS_CACHE and (now - _ACTIVE_USERS_CACHE[1]) < _ACTIVE_USERS_CACHE_TTL_S:
+            return _ACTIVE_USERS_CACHE[0]
+
     rows = db.execute(
         text(
             """
@@ -201,7 +235,26 @@ def list_active_users(
             """
         )
     ).all()
-    return [TeamUserOut(id=int(r[0]), name=r[1], email=str(r[2])) for r in rows]
+    out = [TeamUserOut(id=int(r[0]), name=r[1], email=str(r[2])) for r in rows]
+    with _ACTIVE_USERS_CACHE_LOCK:
+        _ACTIVE_USERS_CACHE = (out, now)
+    return out
+
+
+@router.get("/name-exists", response_model=TeamNameExistsResponse)
+def team_name_exists(
+    name: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_existing_firebase_user)],
+    exclude_team_id: int | None = None,
+):
+    _ensure_admin(user)
+    team_name = (name or "").strip()
+    if not team_name:
+        raise HTTPException(status_code=400, detail="name is required")
+    return TeamNameExistsResponse(
+        exists=_is_team_name_taken(db, team_name, exclude_team_id=exclude_team_id)
+    )
 
 
 @router.post("", response_model=TeamOut)
@@ -214,6 +267,8 @@ def create_team(
     team_name = (body.name or "").strip()
     if not team_name:
         raise HTTPException(status_code=400, detail="Team name is required")
+    if _is_team_name_taken(db, team_name):
+        raise HTTPException(status_code=409, detail="Team name already exists")
 
     members = body.members or []
     user_ids = _validate_team_members(members)
@@ -263,6 +318,9 @@ def create_team(
         raise
     except IntegrityError as exc:
         db.rollback()
+        msg = str(exc).lower()
+        if "unique_team_name" in msg:
+            raise HTTPException(status_code=409, detail="Team name already exists") from None
         if "uq_team_members_team_user" in str(exc):
             raise HTTPException(
                 status_code=400, detail="Duplicate team members are not allowed"
@@ -274,6 +332,8 @@ def create_team(
         name=str(team_row[1]),
         is_active=bool(team_row[2]),
         created_at=team_row[3],
+        member_count=len(members),
+        opportunity_count=0,
     )
 
 
@@ -286,15 +346,40 @@ def list_teams(
     rows = db.execute(
         text(
             """
-            SELECT id, name, is_active, created_at
-            FROM teams
+            SELECT
+                t.id,
+                t.name,
+                t.is_active,
+                t.created_at,
+                COALESCE(m.member_count, 0) AS member_count,
+                COALESCE(o.opportunity_count, 0) AS opportunity_count
+            FROM teams t
+            LEFT JOIN (
+                SELECT team_id, COUNT(*)::int AS member_count
+                FROM team_members
+                WHERE is_active = TRUE
+                GROUP BY team_id
+            ) m ON m.team_id = t.id
+            LEFT JOIN (
+                SELECT team_id, COUNT(*)::int AS opportunity_count
+                FROM opportunities
+                WHERE team_id IS NOT NULL
+                GROUP BY team_id
+            ) o ON o.team_id = t.id
             WHERE is_active = TRUE
-            ORDER BY created_at DESC, id DESC
+            ORDER BY t.created_at DESC, t.id DESC
             """
         )
     ).all()
     return [
-        TeamOut(id=int(r[0]), name=str(r[1]), is_active=bool(r[2]), created_at=r[3])
+        TeamOut(
+            id=int(r[0]),
+            name=str(r[1]),
+            is_active=bool(r[2]),
+            created_at=r[3],
+            member_count=int(r[4] or 0),
+            opportunity_count=int(r[5] or 0),
+        )
         for r in rows
     ]
 
@@ -352,6 +437,8 @@ def get_team_details(
             name=str(team_row[1]),
             is_active=bool(team_row[2]),
             created_at=team_row[3],
+            member_count=len(member_rows),
+            opportunity_count=len(opportunity_rows),
         ),
         members=[
             TeamMemberOut(user_id=int(r[0]), name=r[1], is_lead=bool(r[2]))
@@ -476,10 +563,14 @@ def assign_opportunities_to_team(
             UPDATE opportunities
             SET team_id = :team_id, updated_at = NOW()
             WHERE {where_clause}
-            RETURNING id
+            RETURNING id, opportunity_id, name, owner_id, team_id, status
             """
         ),
         {"team_id": team_id, "opportunity_ids": opp_ids},
-    ).all()
+    ).mappings().all()
     db.commit()
-    return {"team_id": team_id, "updated_count": len(updated_rows)}
+    return {
+        "team_id": team_id,
+        "updated_count": len(updated_rows),
+        "updated_opportunities": [dict(r) for r in updated_rows],
+    }

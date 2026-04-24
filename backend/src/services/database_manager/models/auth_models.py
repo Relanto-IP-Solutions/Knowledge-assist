@@ -94,6 +94,7 @@ class Opportunity(Base):
             "('oid' || lpad(nextval('opportunity_oid_seq')::text, 4, '0'))"
         ),
     )  # Example: oid1023
+    organization_name = Column(String, nullable=True)
     name = Column(String, nullable=False)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
@@ -143,6 +144,7 @@ class OpportunityRequest(Base):
 
     request_id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    organization_name = Column(String(512), nullable=True)
     opportunity_title = Column(String(512), nullable=False)
     submitted_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     status = Column(String(16), nullable=False, server_default="PENDING")

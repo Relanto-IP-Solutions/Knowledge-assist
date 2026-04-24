@@ -27,3 +27,4 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
 CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON users (firebase_uid);
+CREATE INDEX IF NOT EXISTS idx_users_active_name_email ON users (is_active, name, email);

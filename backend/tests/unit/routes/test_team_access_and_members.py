@@ -66,20 +66,19 @@ def test_validate_team_members_rejects_duplicates() -> None:
         _validate_team_members(members)
 
 
-def test_validate_team_members_rejects_more_than_two_leads() -> None:
+def test_validate_team_members_rejects_more_than_one_lead() -> None:
     members = [
         TeamMemberInput(user_id=1, is_lead=True),
         TeamMemberInput(user_id=2, is_lead=True),
-        TeamMemberInput(user_id=3, is_lead=True),
     ]
     with pytest.raises(HTTPException):
         _validate_team_members(members)
 
 
-def test_validate_team_members_accepts_two_leads() -> None:
+def test_validate_team_members_accepts_one_lead() -> None:
     members = [
         TeamMemberInput(user_id=1, is_lead=True),
-        TeamMemberInput(user_id=2, is_lead=True),
+        TeamMemberInput(user_id=2, is_lead=False),
         TeamMemberInput(user_id=3, is_lead=False),
     ]
     assert _validate_team_members(members) == [1, 2, 3]

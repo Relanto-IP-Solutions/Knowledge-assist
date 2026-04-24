@@ -5,6 +5,7 @@
 CREATE TABLE IF NOT EXISTS opportunities (
     id SERIAL PRIMARY KEY,
     opportunity_id VARCHAR(64) NOT NULL UNIQUE,
+    organization_name VARCHAR(512),
     name VARCHAR(512) NOT NULL,
     owner_id INTEGER NOT NULL REFERENCES users (id),
 
@@ -24,6 +25,9 @@ CREATE TABLE IF NOT EXISTS opportunities (
 
 ALTER TABLE opportunities
     ADD COLUMN IF NOT EXISTS team_id INTEGER;
+
+ALTER TABLE opportunities
+    ADD COLUMN IF NOT EXISTS organization_name VARCHAR(512);
 
 DO $$
 BEGIN
@@ -58,8 +62,10 @@ ALTER TABLE opportunities
     ALTER COLUMN opportunity_id
     SET DEFAULT ('oid' || lpad(nextval('opportunity_oid_seq')::text, 4, '0'));
 
-CREATE UNIQUE INDEX IF NOT EXISTS unique_opportunity_name
-    ON opportunities (LOWER(name));
+DROP INDEX IF EXISTS unique_opportunity_name;
+
+CREATE UNIQUE INDEX IF NOT EXISTS unique_opportunity_org_name
+    ON opportunities (LOWER(organization_name), LOWER(name));
 
 CREATE INDEX IF NOT EXISTS idx_opportunities_owner ON opportunities (owner_id);
 CREATE INDEX IF NOT EXISTS idx_opportunities_team_id ON opportunities (team_id);
