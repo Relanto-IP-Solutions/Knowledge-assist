@@ -4,6 +4,7 @@ Sources and their handlers:
     zoom      → VTTPreprocessor           → {opp_id}/processed/zoom_transcripts/{stem}.txt
     slack     → SlackOrchestrator         → {opp_id}/processed/slack_messages/{channel_id}/summary.txt
     documents → DocumentExtractionService → {opp_id}/processed/documents/{stem}.txt
+    onedrive  → DocumentExtractionService → {opp_id}/processed/onedrive/{stem}.txt
     gmail     → GmailPreprocessor         → {opp_id}/processed/gmail_messages/{thread_id}/content.txt
 
 GCS path conventions:
@@ -74,7 +75,7 @@ MAX_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024
 
 
 class GcsPipeline:
-    """Preprocesses raw source files from GCS by type (zoom, slack, gmail, documents) and writes to processed tier."""
+    """Preprocesses raw source files from GCS by type and writes to processed tier."""
 
     def __init__(self, storage: Storage | None = None) -> None:
         self._storage = storage or Storage()
@@ -226,8 +227,15 @@ class GcsPipeline:
         logger.bind(opportunity_id=opp_id).info("Processed Slack channel")
         return txt_uri
 
-    def _process_documents(self, opp_id: str, object_name: str) -> list[str] | None:
-        """Extract text from document (PDF, image, DOCX, MD, PPTX) and write to processed/documents.
+    def _process_documents_from_source(
+        self,
+        opp_id: str,
+        object_name: str,
+        *,
+        raw_source: str,
+        processed_source: str,
+    ) -> list[str] | None:
+        """Extract text from document and write to processed/{processed_source}.
 
         Returns:
             List of GCS URIs written, or None if skipped.
@@ -247,10 +255,10 @@ class GcsPipeline:
         dest_name = raw_stem + ".txt"
 
         raw_updated_at = self._storage.blob_updated_at(
-            "raw", opp_id, "documents", object_name
+            "raw", opp_id, raw_source, object_name
         )
         processed_updated_at = self._storage.blob_updated_at(
-            "processed", opp_id, "documents", dest_name
+            "processed", opp_id, processed_source, dest_name
         )
 
         # XLSX: write one processed TXT per sheet (local-compatible naming).
@@ -264,7 +272,7 @@ class GcsPipeline:
                 from openpyxl import load_workbook
 
                 raw_bytes_probe = self._storage.read(
-                    "raw", opp_id, "documents", object_name
+                    "raw", opp_id, raw_source, object_name
                 )
                 wb = load_workbook(
                     BytesIO(raw_bytes_probe), data_only=True, read_only=True
@@ -281,7 +289,7 @@ class GcsPipeline:
                 all_current = True
                 for name in expected_names:
                     ts = self._storage.blob_updated_at(
-                        "processed", opp_id, "documents", name
+                        "processed", opp_id, processed_source, name
                     )
                     if ts is None or ts < raw_updated_at:
                         all_current = False
@@ -292,7 +300,7 @@ class GcsPipeline:
                     )
                     return None
 
-            raw_size = self._storage.blob_size("raw", opp_id, "documents", object_name)
+            raw_size = self._storage.blob_size("raw", opp_id, raw_source, object_name)
             if raw_size is not None and raw_size > MAX_DOCUMENT_SIZE_BYTES:
                 max_size_mb = int(MAX_DOCUMENT_SIZE_BYTES / (1024 * 1024))
                 logger.bind(opportunity_id=opp_id).warning(
@@ -305,7 +313,7 @@ class GcsPipeline:
             logger.bind(opportunity_id=opp_id, object_name=object_name).info(
                 "Processing spreadsheet (.xlsx)"
             )
-            raw_bytes = self._storage.read("raw", opp_id, "documents", object_name)
+            raw_bytes = self._storage.read("raw", opp_id, raw_source, object_name)
             extracted = self._spreadsheet_extractor.extract_sheets(
                 raw_bytes, object_name
             )
@@ -314,7 +322,7 @@ class GcsPipeline:
                 uri = self._storage.write(
                     tier="processed",
                     opportunity_id=opp_id,
-                    source="documents",
+                    source=processed_source,
                     object_name=sheet.processed_object_name,
                     content=sheet.text,
                     content_type="text/plain",
@@ -327,7 +335,7 @@ class GcsPipeline:
             ).info("Processed spreadsheet")
             return written
 
-        raw_size = self._storage.blob_size("raw", opp_id, "documents", object_name)
+        raw_size = self._storage.blob_size("raw", opp_id, raw_source, object_name)
         if raw_size is not None and raw_size > MAX_DOCUMENT_SIZE_BYTES:
             max_size_mb = int(MAX_DOCUMENT_SIZE_BYTES / (1024 * 1024))
             logger.bind(opportunity_id=opp_id).warning(
@@ -350,7 +358,7 @@ class GcsPipeline:
         logger.bind(opportunity_id=opp_id, object_name=object_name).info(
             "Processing document"
         )
-        raw_bytes = self._storage.read("raw", opp_id, "documents", object_name)
+        raw_bytes = self._storage.read("raw", opp_id, raw_source, object_name)
 
         try:
             extracted_text = self._document_extractor.extract(raw_bytes, object_name)
@@ -364,7 +372,7 @@ class GcsPipeline:
         uri = self._storage.write(
             tier="processed",
             opportunity_id=opp_id,
-            source="documents",
+            source=processed_source,
             object_name=dest_name,
             content=extracted_text,
             content_type="text/plain",
@@ -373,6 +381,22 @@ class GcsPipeline:
             "Processed document"
         )
         return [uri]
+
+    def _process_documents(self, opp_id: str, object_name: str) -> list[str] | None:
+        return self._process_documents_from_source(
+            opp_id,
+            object_name,
+            raw_source="documents",
+            processed_source="documents",
+        )
+
+    def _process_onedrive_documents(self, opp_id: str, object_name: str) -> list[str] | None:
+        return self._process_documents_from_source(
+            opp_id,
+            object_name,
+            raw_source="onedrive",
+            processed_source="onedrive",
+        )
 
     def _process_gmail(self, opp_id: str, object_name: str) -> str | None:
         """Preprocess a Gmail thread JSON and write to processed/gmail_messages/.
@@ -480,6 +504,7 @@ class GcsPipeline:
             "zoom": self._process_zoom,
             "slack": self._process_slack,
             "documents": self._process_documents,
+            "onedrive": self._process_onedrive_documents,
             "gmail": self._process_gmail,
         }
         return handlers.get(source)
@@ -579,7 +604,7 @@ class GcsPipeline:
         """
         deleted = self._reconcile_documents_orphans(opportunity_id)
         written: list[str] = []
-        for source in ("zoom", "slack", "documents", "gmail"):
+        for source in ("zoom", "slack", "documents", "onedrive", "gmail"):
             handler = self._get_handler(source)
             if handler is None:
                 continue

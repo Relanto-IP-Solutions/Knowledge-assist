@@ -278,7 +278,7 @@ def _drive_gcs_metrics_payload(storage: Storage, db: Session, oid: str):
         .filter(OpportunitySource.opportunity_id == opp.id, OpportunitySource.source_type == "drive")
         .first()
     )
-    names = storage.list_objects("raw", normalized_oid, "drive")
+    names = storage.list_objects("raw", normalized_oid, "documents")
     return {
         "total_files": len(names),
         "last_synced_at": (source.last_synced_at.isoformat() if source and source.last_synced_at else None),

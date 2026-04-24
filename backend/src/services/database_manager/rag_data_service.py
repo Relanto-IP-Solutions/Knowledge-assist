@@ -132,6 +132,8 @@ def _normalize_citation_source_type(raw: object) -> str:
         "slack_messages": "slack",
         # pgvector/ingestion paths
         "gdrive_doc": "docx",
+        "onedrive_doc": "docx",
+        "onedrive": "docx",
         # legacy/alternate labels
         "google_drive": "docx",
         "gdrive": "docx",

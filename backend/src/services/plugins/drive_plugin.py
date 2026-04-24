@@ -357,7 +357,7 @@ def sync_drive_source(
             storage.write(
                 tier="raw",
                 opportunity_id=gcs_opp_prefix,
-                source="drive",
+                source="documents",
                 object_name=file_name,
                 content=fh.getvalue(),
                 content_type="application/octet-stream",
@@ -365,7 +365,7 @@ def sync_drive_source(
             count += 1
             new_checkpoint[file_id] = modified_time
             logger.info(
-                "Drive→GCS uploaded db_opp_id={} gcs_prefix={} object=raw/drive/{}",
+                "Drive→GCS uploaded db_opp_id={} gcs_prefix={} object=raw/documents/{}",
                 opp.opportunity_id,
                 gcs_opp_prefix,
                 file_name,
