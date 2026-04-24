@@ -4,6 +4,7 @@ import GmailOpportunityCard from './GmailOpportunityCard'
 import DriveOpportunityCard from './DriveOpportunityCard'
 import SlackOpportunityCard from './SlackOpportunityCard'
 import ZoomOpportunityCard from './ZoomOpportunityCard'
+import OneDriveOpportunityCard from './OneDriveOpportunityCard'
 
 /* ── design tokens ─────────────────────────────────────────────── */
 const NAVY   = '#1B264F'
@@ -19,10 +20,11 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
   // Per-service active map — updated only by the card that just connected/disconnected.
   // No API calls are made here. Each card self-manages its own status.
   const [activeServices, setActiveServices] = useState({
-    drive: false,
-    gmail: false,
-    slack: false,
-    zoom:  false,
+    drive:    false,
+    gmail:    false,
+    slack:    false,
+    zoom:     false,
+    onedrive: false,
   })
 
   // Called by each card when its connection state changes.
@@ -35,7 +37,7 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
   }, [])
 
   const totalConnected = Object.values(activeServices).filter(Boolean).length
-  const totalSources   = 4 // Drive, Gmail, Slack, Zoom
+  const totalSources   = 5 // Drive, Gmail, Slack, Zoom, OneDrive
 
   return (
     <div style={{
@@ -118,7 +120,27 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
           alignItems: 'flex-start',
           gap: 8,
         }}>
-          <span aria-hidden style={{ fontSize: 13, lineHeight: 1.3 }}>i</span>
+          <span
+            aria-hidden
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: '50%',
+              border: '1px solid rgba(27,38,79,.28)',
+              background: 'rgba(27,38,79,.08)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 12,
+              fontWeight: 700,
+              lineHeight: 1,
+              color: NAVY,
+              flexShrink: 0,
+              marginTop: 1,
+            }}
+          >
+            i
+          </span>
           <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.5 }}>
             Use opportunity ID <strong>{apiOppId}</strong> for any conversation, prompts, or follow-up requests tied to this opportunity.
           </p>
@@ -179,6 +201,19 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
               onStatusChange={(active) => handleStatusChange('zoom', active)}
             />
           </div>
+
+          {/* OneDrive */}
+          <div style={{
+            background: '#fff', borderRadius: 16,
+            border: '1.5px solid rgba(27,38,79,.09)',
+            boxShadow: '0 1px 6px rgba(15,23,42,.04)',
+            overflow: 'hidden', transition: 'box-shadow .2s, border-color .2s',
+          }}>
+            <OneDriveOpportunityCard
+              opportunityId={apiOppId}
+              onStatusChange={(active) => handleStatusChange('onedrive', active)}
+            />
+          </div>
         </div>
 
         {/* Footer */}
@@ -192,16 +227,20 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
               : 'No sources connected yet. You can always connect them later.'}
           </p>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" onClick={onContinue}
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 7,
                 padding: '10px 14px', borderRadius: 9,
-                border: '1px solid rgba(27,38,79,.2)', background: 'transparent', color: 'var(--text2)',
-                fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)', transition: 'all .12s',
+                border: '1px solid rgba(27,38,79,.16)', background: '#EEF2F7', color: 'rgba(27,38,79,.45)',
+                fontSize: 13, fontWeight: 600, cursor: 'not-allowed', fontFamily: 'var(--font)',
+                opacity: 0.95,
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(27,38,79,.05)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-            >Skip for now</button>
+            >
+              Skip for now
+            </button>
             <button type="button" onClick={onContinue}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,

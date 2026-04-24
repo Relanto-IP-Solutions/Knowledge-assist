@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { MODULES } from '../App'
 
-export default function Topbar({ activeModule, onLogoClick, onSwitchModule, user, onLogout }) {
+export default function Topbar({ activeModule, onLogoClick, onSwitchModule, user, onLogout, onNavigate }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -205,6 +205,42 @@ export default function Topbar({ activeModule, onLogoClick, onSwitchModule, user
                   {label}
                 </button>
               ))}
+              {/* Admin Panel section */}
+              <div style={{ padding: '8px 14px 4px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 6 }}>Admin Panel</div>
+                {[
+                  { label: 'Opportunity Requests', path: '/admin/requests' },
+                  { label: 'Team Management', path: '/admin/team-builder' },
+                ].map((item) => (
+                  <button
+                    key={item.path}
+                    type="button"
+                    onClick={() => { setMenuOpen(false); onNavigate?.(item.path) }}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 0',
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'var(--text1)',
+                      fontSize: 12,
+                      fontFamily: 'var(--font)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    {item.label === 'Opportunity Requests' && (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                    )}
+                    {item.label === 'Team Management' && (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    )}
+                    {item.label}
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
                 onClick={() => {

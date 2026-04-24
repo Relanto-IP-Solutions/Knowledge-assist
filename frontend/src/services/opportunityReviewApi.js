@@ -1,7 +1,5 @@
 import { normalizeFeedbackTypeForWire } from '../utils/opportunityReviewMeta'
-import { api } from './apiClient'
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+import { api, API_BASE } from './apiClient'
 
 /** @param {string} responseText */
 export function formatOpportunityReviewApiErrorBody(responseText) {

@@ -985,4 +985,3 @@ def review_opportunity_request(
         db.rollback()
         logger.exception("review_opportunity_request failed")
         raise HTTPException(status_code=500, detail=str(exc)) from None
-
