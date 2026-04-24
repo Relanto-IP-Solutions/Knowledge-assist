@@ -216,15 +216,35 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
 
     if (!mountedRef.current || oidRef.current !== runOid) return
 
-    // Always fetch metrics regardless of connect result
-    try {
-      const m = await fetchOneDriveMetrics(runOid)
-      if (mountedRef.current && oidRef.current === runOid) {
-        setMetrics(m)
-        if (!folderError) setNotice({ type: 'success', msg: 'Sync started! Your files will appear shortly.' })
+    if (!folderError) setNotice({ type: 'info', msg: 'Syncing your OneDrive files…' })
+
+    // Poll metrics every 3s until status === ACTIVE (max 20 attempts = 60s)
+    const POLL_INTERVAL = 3000
+    const MAX_ATTEMPTS  = 20
+    let lastMetrics = null
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      if (!mountedRef.current || oidRef.current !== runOid) return
+      try {
+        const m = await fetchOneDriveMetrics(runOid)
+        lastMetrics = m
+        if (mountedRef.current) setMetrics(m)
+        if (String(m?.status ?? '').toUpperCase() === 'ACTIVE') break
+      } catch { /**/ }
+      if (i < MAX_ATTEMPTS - 1) await new Promise(r => setTimeout(r, POLL_INTERVAL))
+    }
+
+    if (mountedRef.current && oidRef.current === runOid) {
+      if (lastMetrics) setMetrics(lastMetrics)
+      if (!folderError) {
+        const fileCount = Number(lastMetrics?.total_files ?? 0)
+        setNotice({
+          type: fileCount > 0 ? 'success' : 'info',
+          msg: fileCount > 0
+            ? 'Sync complete! Your files are ready.'
+            : 'Connected. Files are still being indexed — check back shortly.',
+        })
       }
-    } catch { /**/ } finally {
-      if (mountedRef.current && oidRef.current === runOid) setBusy(false)
+      setBusy(false)
     }
   }, [doRedirect])
 
@@ -306,7 +326,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
   }, [oid, userEmail, doRedirect, runConnectAndMetrics])
 
   const totalFilesCount = Number(metrics?.total_files ?? 0)
-  const noticeColor = notice?.type === 'success' ? '#047857' : '#DC2626'
+  const noticeColor = notice?.type === 'success' ? '#047857' : notice?.type === 'info' ? OD_BLUE : '#DC2626'
 
   return (
     <>
