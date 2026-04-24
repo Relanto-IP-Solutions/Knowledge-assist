@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { toApiOpportunityId } from '../config/opportunityApi'
 import {
   connectSlack,
-  discoverSlackForProject,
+  fetchSlackConnectInfo,
   fetchSlackMetrics,
   getCachedSlackConnectInfo,
   getCachedSlackMetrics,
@@ -141,20 +141,28 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
     setBusy(true)
     setErr(null)
     try {
-      setIngestStep('discover')
-      const discovered = await discoverSlackForProject(runOid)
-      if (mountedRef.current && oidRef.current === runOid) setDiscoveryResult(discovered)
-
+      // Step 1: POST /integrations/slack/connect/{oid}
       setIngestStep('connect')
       const connected = await connectSlack(runOid)
       if (!mountedRef.current || oidRef.current !== runOid) return
 
-      refreshStateFromCache()
-      if (connected?.status === 'ACTIVE' || connected?.total_files != null) {
-        setActive(true)
-        onStatusChange?.(true)
-      }
+      if (connected?.discovery_result) setDiscoveryResult(connected.discovery_result)
 
+      // Step 2: GET /integrations/slack/authorize-info/{oid}
+      setIngestStep('authorize')
+      try {
+        const info = await fetchSlackConnectInfo(runOid)
+        if (mountedRef.current && oidRef.current === runOid && info?.status === 'ACTIVE') {
+          setActive(true)
+          onStatusChange?.(true)
+        }
+      } catch { /**/ }
+
+      if (!mountedRef.current || oidRef.current !== runOid) return
+      refreshStateFromCache()
+      if (connected?.status === 'ACTIVE') { setActive(true); onStatusChange?.(true) }
+
+      // Step 3: GET /integrations/slack/metrics/{oid}
       setIngestStep('metrics')
       setMetricsLoading(true)
       try {
@@ -166,9 +174,8 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
         if (mountedRef.current && oidRef.current === runOid) setMetricsLoading(false)
       }
     } catch (e) {
-      if (mountedRef.current && oidRef.current === runOid) {
+      if (mountedRef.current && oidRef.current === runOid)
         setErr(e?.response?.data?.detail ?? e?.message ?? 'Slack setup failed. Try again.')
-      }
     } finally {
       if (mountedRef.current && oidRef.current === runOid) {
         setBusy(false)
@@ -235,8 +242,8 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
   const dotState = busy ? 'syncing' : active ? 'active' : 'idle'
   let statusText = 'Not connected'
   if (active) statusText = 'Active'
-  else if (busy && ingestStep === 'discover') statusText = 'Finding project channel…'
   else if (busy && ingestStep === 'connect') statusText = 'Syncing messages (10–15s typical)…'
+  else if (busy && ingestStep === 'authorize') statusText = 'Verifying connection…'
   else if (busy && ingestStep === 'metrics') statusText = 'Loading metrics…'
   else if (busy) statusText = 'Working…'
 
@@ -246,8 +253,8 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
   const oppsCreated = discoveryResult?.opportunities_created
 
   let busyLabel = 'Working…'
-  if (ingestStep === 'discover') busyLabel = 'Discovering…'
-  else if (ingestStep === 'connect') busyLabel = 'Syncing…'
+  if (ingestStep === 'connect') busyLabel = 'Syncing…'
+  else if (ingestStep === 'authorize') busyLabel = 'Verifying…'
   else if (ingestStep === 'metrics') busyLabel = 'Metrics…'
 
   const totalFilesCount = Number(metrics?.total_files ?? 0)
@@ -279,7 +286,7 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)' }}>Workspace Channels</div>
           <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
-            Discover the channel for project <strong>{oid}</strong>, then synchronous ingest to storage. For <strong>private</strong> channels, invite the bot first (<code style={{ fontSize: 10 }}>/invite @KnowledgeAssist</code>).
+            Discover the channel for project <strong>{oid}</strong>, then synchronous ingest to storage. 
           </div>
           {channelsTotal != null && channelsMatched != null && (
             <div style={{
@@ -381,10 +388,22 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
               </span>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', padding: '12px 16px 16px' }}>
-              {metrics?.channel_name && (
+              {Array.isArray(metrics?.channels) && metrics.channels.length > 0 && (
                 <div style={{ flex: '1 1 100%', padding: '0 0 10px', borderBottom: '1px solid rgba(74,21,75,.1)', marginBottom: 10 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, marginBottom: 3 }}>Channel</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: NAVY }}>#{metrics.channel_name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>
+                    {metrics.channels.length === 1 ? 'Channel' : 'Channels'}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {metrics.channels.map(ch => (
+                      <span key={ch.id ?? ch.name} style={{
+                        fontSize: 11.5, fontWeight: 700, color: SLACK_COLOR,
+                        background: 'rgba(74,21,75,.08)', border: '1px solid rgba(74,21,75,.18)',
+                        borderRadius: 6, padding: '2px 8px',
+                      }}>
+                        #{ch.name}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
               <div style={{

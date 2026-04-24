@@ -27,6 +27,7 @@ export async function listOpportunityRequests({ status, limit = 200 } = {}) {
 export async function checkNameExists(name) {
   try {
     const { data } = await api.get('/opportunities/name-exists', { params: { name } })
+    console.log(data);
     return Boolean(data.exists)
   } catch (e) {
     throw apiError(e)
