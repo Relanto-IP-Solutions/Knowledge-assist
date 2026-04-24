@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from src.apis.deps.firebase_auth import get_existing_firebase_user
 from src.apis.deps.rbac import is_admin
 from src.services.database_manager.models.auth_models import Opportunity, User
-from src.services.database_manager.opportunity_state import STATUS_DISCOVERED
+from src.services.database_manager.opportunity_state import STATUS_CREATED
 from src.services.database_manager.orm import get_db
 from src.utils.logger import get_logger
 
@@ -263,11 +263,72 @@ def _sync_opportunity_oid_sequence(db: Session) -> None:
     db.commit()
 
 
-def _is_name_reserved(db: Session, title: str) -> bool:
-    """True when name already exists or is pending approval."""
+def _is_opportunity_name_conflict(msg: str) -> bool:
+    msg_l = (msg or "").lower()
+    return any(
+        token in msg_l
+        for token in (
+            "unique_opportunity_org_name",
+            "unique_opportunity_name",
+            "opportunities_name_key",
+            "key (organization_name, name)=",
+            "key (lower((organization_name)::text), lower((name)::text))=",
+        )
+    )
+
+
+def _is_name_reserved(db: Session, organization_name: str, title: str) -> bool:
+    """True when org+name already exists or is pending approval."""
     existing_opportunity = db.execute(
-        text("SELECT 1 FROM opportunities WHERE LOWER(name) = LOWER(:name) LIMIT 1"),
-        {"name": title},
+        text(
+            """
+            SELECT 1
+            FROM opportunities
+            WHERE LOWER(organization_name) = LOWER(:organization_name)
+              AND LOWER(name) = LOWER(:name)
+            LIMIT 1
+            """
+        ),
+        {"organization_name": organization_name, "name": title},
+    ).first()
+    if existing_opportunity:
+        return True
+
+    pending_request = db.execute(
+        text(
+            """
+            SELECT 1
+            FROM opportunity_requests
+            WHERE LOWER(organization_name) = LOWER(:organization_name)
+              AND LOWER(opportunity_title) = LOWER(:name)
+              AND status = 'PENDING'
+            LIMIT 1
+            """
+        ),
+        {"organization_name": organization_name, "name": title},
+    ).first()
+    return bool(pending_request)
+
+
+def _is_name_reserved_excluding_request(
+    db: Session,
+    *,
+    request_id: str,
+    organization_name: str,
+    title: str,
+) -> bool:
+    """True when org+name exists in opportunities or another pending request."""
+    existing_opportunity = db.execute(
+        text(
+            """
+            SELECT 1
+            FROM opportunities
+            WHERE LOWER(organization_name) = LOWER(:organization_name)
+              AND LOWER(name) = LOWER(:name)
+            LIMIT 1
+            """
+        ),
+        {"organization_name": organization_name, "name": title},
     ).first()
     if existing_opportunity:
         return True
@@ -278,31 +339,125 @@ def _is_name_reserved(db: Session, title: str) -> bool:
             SELECT 1
             FROM opportunity_requests
             WHERE LOWER(opportunity_title) = LOWER(:name)
+              AND LOWER(organization_name) = LOWER(:organization_name)
               AND status = 'PENDING'
+              AND request_id <> :request_id
             LIMIT 1
             """
         ),
-        {"name": title},
+        {
+            "organization_name": organization_name,
+            "name": title,
+            "request_id": request_id,
+        },
     ).first()
     return bool(pending_request)
 
 
+def _create_opportunity_with_retry(
+    db: Session,
+    *,
+    owner_id: int,
+    organization_name: str,
+    title: str,
+    max_id_retries: int = 20,
+) -> tuple[int, str]:
+    for attempt in range(max_id_retries):
+        try:
+            next_n_row = db.execute(text("SELECT nextval('opportunity_oid_seq')")).first()
+            generated_oid = f"oid{int(next_n_row[0]):04d}"
+            opp_row = db.execute(
+                text(
+                    """
+                    INSERT INTO opportunities (
+                        opportunity_id,
+                        organization_name,
+                        name,
+                        owner_id,
+                        status,
+                        total_documents,
+                        processed_documents
+                    )
+                    VALUES (
+                        :opportunity_id,
+                        :organization_name,
+                        :name,
+                        :owner_id,
+                        :status_created,
+                        0,
+                        0
+                    )
+                    RETURNING id, opportunity_id
+                    """
+                ),
+                {
+                    "opportunity_id": generated_oid,
+                    "organization_name": organization_name,
+                    "name": title,
+                    "owner_id": owner_id,
+                    "status_created": STATUS_CREATED,
+                },
+            ).first()
+            return int(opp_row[0]), str(opp_row[1])
+        except IntegrityError as exc:
+            db.rollback()
+            msg = str(exc).lower()
+            if _is_opportunity_name_conflict(msg):
+                raise HTTPException(status_code=409, detail="Opportunity name already exists") from None
+            if "opportunity_id" in msg:
+                _sync_opportunity_oid_sequence(db)
+                if attempt < (max_id_retries - 1):
+                    continue
+                raise HTTPException(
+                    status_code=503,
+                    detail="Could not allocate a unique opportunity_id right now. Please retry.",
+                ) from None
+            if ("23505" not in msg) and ("duplicate key" not in msg):
+                raise
+            raise
+        except DatabaseError as exc:
+            db.rollback()
+            msg = str(exc).lower()
+            if _is_opportunity_name_conflict(msg):
+                raise HTTPException(status_code=409, detail="Opportunity name already exists") from None
+            if "opportunity_id" in msg:
+                _sync_opportunity_oid_sequence(db)
+                if attempt < (max_id_retries - 1):
+                    continue
+                raise HTTPException(
+                    status_code=503,
+                    detail="Could not allocate a unique opportunity_id right now. Please retry.",
+                ) from None
+            raise
+
+    raise HTTPException(
+        status_code=503,
+        detail="Could not allocate a unique opportunity_id right now. Please retry.",
+    )
+
+
 class CreateOpportunityBody(BaseModel):
+    organization_name: str = Field(..., min_length=1, description="Organization name.")
     name: str = Field(..., min_length=1, description="Human-readable opportunity name.")
 
 
 class CreateOpportunityResponse(BaseModel):
     request_id: uuid.UUID
     user_id: int
+    organization_name: str
     opportunity_title: str
     submitted_at: datetime
     status: str
+    created_opportunity_id: int
+    opportunity_id: str
+    message: str | None = None
 
 
 class OpportunityRequestOut(BaseModel):
     request_id: uuid.UUID
     user_id: int
     user_name: str | None = None
+    organization_name: str | None = None
     opportunity_title: str
     submitted_at: datetime
     status: str
@@ -405,6 +560,15 @@ def create_opportunity_request(
     user: Annotated[User, Depends(get_existing_firebase_user)],
 ):
     """Submit an opportunity creation request for admin approval."""
+    organization_name = (body.organization_name or "").strip()
+    if not organization_name:
+        raise HTTPException(status_code=400, detail="organization_name is required.")
+    if not re.match(r"^[A-Za-z0-9\- ]+$", organization_name):
+        raise HTTPException(
+            status_code=400,
+            detail="Only uppercase, lowercase, hyphen, and space are allowed in organization_name.",
+        )
+
     title = (body.name or "").strip()
     if not title:
         raise HTTPException(status_code=400, detail="name is required.")
@@ -412,22 +576,40 @@ def create_opportunity_request(
         raise HTTPException(
             status_code=400, detail="Only uppercase, lowercase, hyphen, and space are allowed."
         )
-    if _is_name_reserved(db, title):
+    if _is_name_reserved(db, organization_name, title):
         raise HTTPException(
             status_code=409,
             detail="Opportunity name already exists or is already requested.",
         )
 
     t0 = time.perf_counter()
+    created_opportunity_id, created_opportunity_oid = _create_opportunity_with_retry(
+        db,
+        owner_id=int(user.id),
+        organization_name=organization_name,
+        title=title,
+    )
+
     row = db.execute(
         text(
             """
-            INSERT INTO opportunity_requests (user_id, opportunity_title, status)
-            VALUES (:user_id, :title, 'PENDING')
-            RETURNING request_id, submitted_at, status
+            INSERT INTO opportunity_requests (
+                user_id,
+                organization_name,
+                opportunity_title,
+                status,
+                created_opportunity_id
+            )
+            VALUES (:user_id, :organization_name, :title, 'PENDING', :created_opportunity_id)
+            RETURNING request_id, submitted_at, status, created_opportunity_id
             """
         ),
-        {"user_id": int(user.id), "title": title},
+        {
+            "user_id": int(user.id),
+            "organization_name": organization_name,
+            "title": title,
+            "created_opportunity_id": created_opportunity_id,
+        },
     ).first()
     db.commit()
 
@@ -441,15 +623,20 @@ def create_opportunity_request(
     return CreateOpportunityResponse(
         request_id=row[0],
         user_id=int(user.id),
+        organization_name=organization_name,
         opportunity_title=title,
         submitted_at=row[1],
         status=str(row[2]),
+        created_opportunity_id=int(row[3]),
+        opportunity_id=created_opportunity_oid,
+        message="Opportunity created and sent to admin request queue.",
     )
 
 
 @router.get("/name-exists", response_model=OpportunityNameExistsResponse)
 def opportunity_name_exists(
     name: str,
+    organization_name: str,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_existing_firebase_user)],
 ):
@@ -462,8 +649,16 @@ def opportunity_name_exists(
         raise HTTPException(
             status_code=400, detail="Only uppercase, lowercase, hyphen, and space are allowed."
         )
+    org_name = (organization_name or "").strip()
+    if not org_name:
+        raise HTTPException(status_code=400, detail="organization_name is required.")
+    if not re.match(r"^[A-Za-z0-9\- ]+$", org_name):
+        raise HTTPException(
+            status_code=400,
+            detail="Only uppercase, lowercase, hyphen, and space are allowed in organization_name.",
+        )
 
-    return OpportunityNameExistsResponse(exists=_is_name_reserved(db, title))
+    return OpportunityNameExistsResponse(exists=_is_name_reserved(db, org_name, title))
 
 
 @router.get("/requests", response_model=OpportunityRequestsListResponse)
@@ -488,6 +683,7 @@ def list_opportunity_requests(
                 r.request_id,
                 r.user_id,
                 u.name AS user_name,
+                r.organization_name,
                 r.opportunity_title,
                 r.submitted_at,
                 r.status,
@@ -519,13 +715,14 @@ def list_opportunity_requests(
                 request_id=r[0],
                 user_id=int(r[1]),
                 user_name=r[2],
-                opportunity_title=str(r[3]),
-                submitted_at=r[4],
-                status=str(r[5]),
-                admin_remarks=r[6],
-                reviewed_at=r[7],
-                reviewed_by=int(r[8]) if r[8] is not None else None,
-                created_opportunity_id=int(r[9]) if r[9] is not None else None,
+                organization_name=r[3],
+                opportunity_title=str(r[4]),
+                submitted_at=r[5],
+                status=str(r[6]),
+                admin_remarks=r[7],
+                reviewed_at=r[8],
+                reviewed_by=int(r[9]) if r[9] is not None else None,
+                created_opportunity_id=int(r[10]) if r[10] is not None else None,
             )
             for r in rows
         ]
@@ -560,10 +757,17 @@ def review_opportunity_request(
             max_id_retries = 20
             for attempt in range(max_id_retries):
                 try:
+                    precreated_at_request_time = False
                     req = db.execute(
                         text(
                             """
-                            SELECT request_id, user_id, opportunity_title, status
+                            SELECT
+                                request_id,
+                                user_id,
+                                organization_name,
+                                opportunity_title,
+                                status,
+                                created_opportunity_id
                             FROM opportunity_requests
                             WHERE request_id = :request_id
                             FOR UPDATE
@@ -573,10 +777,11 @@ def review_opportunity_request(
                     ).first()
                     if not req:
                         raise HTTPException(status_code=404, detail="Request not found.")
-                    if str(req[3]).upper() != "PENDING":
+                    if str(req[4]).upper() != "PENDING":
                         raise HTTPException(status_code=409, detail="Request already reviewed.")
 
-                    title = (str(req[2]) if req[2] is not None else "").strip()
+                    request_org_name = (str(req[2]) if req[2] is not None else "").strip()
+                    title = (str(req[3]) if req[3] is not None else "").strip()
                     if not title:
                         raise HTTPException(status_code=400, detail="name is required.")
                     if not re.match(r"^[A-Za-z0-9\- ]+$", title):
@@ -584,48 +789,56 @@ def review_opportunity_request(
                             status_code=400, detail="Invalid characters in name"
                         )
 
-                    exists = db.execute(
-                        text("SELECT 1 FROM opportunities WHERE LOWER(name) = LOWER(:name)"),
-                        {"name": title},
-                    ).first()
-                    if exists:
-                        raise HTTPException(
-                            status_code=409, detail="Opportunity name already exists"
+                    if req[5] is not None:
+                        existing_opp_row = db.execute(
+                            text(
+                                """
+                                SELECT id, opportunity_id
+                                FROM opportunities
+                                WHERE id = :created_opportunity_id
+                                """
+                            ),
+                            {"created_opportunity_id": int(req[5])},
+                        ).first()
+                        if existing_opp_row is not None:
+                            opp_row = existing_opp_row
+                            precreated_at_request_time = True
+                        else:
+                            exists = _is_name_reserved_excluding_request(
+                                db,
+                                request_id=str(req[0]),
+                                organization_name=request_org_name,
+                                title=title,
+                            )
+                            if exists:
+                                raise HTTPException(
+                                    status_code=409, detail="Opportunity name already exists"
+                                )
+                            new_opp_id, new_opp_oid = _create_opportunity_with_retry(
+                                db,
+                                owner_id=int(req[1]),
+                                organization_name=request_org_name,
+                                title=title,
+                            )
+                            opp_row = (new_opp_id, new_opp_oid)
+                    else:
+                        exists = _is_name_reserved_excluding_request(
+                            db,
+                            request_id=str(req[0]),
+                            organization_name=request_org_name,
+                            title=title,
                         )
-
-                    next_n_row = db.execute(
-                        text("SELECT nextval('opportunity_oid_seq')")
-                    ).first()
-                    generated_oid = f"oid{int(next_n_row[0]):04d}"
-                    opp_row = db.execute(
-                        text(
-                            """
-                            INSERT INTO opportunities (
-                                opportunity_id,
-                                name,
-                                owner_id,
-                                status,
-                                total_documents,
-                                processed_documents
+                        if exists:
+                            raise HTTPException(
+                                status_code=409, detail="Opportunity name already exists"
                             )
-                            VALUES (
-                                :opportunity_id,
-                                :name,
-                                :owner_id,
-                                :status_discovered,
-                                0,
-                                0
-                            )
-                            RETURNING id, opportunity_id
-                            """
-                        ),
-                        {
-                            "opportunity_id": generated_oid,
-                            "name": title,
-                            "owner_id": int(req[1]),
-                            "status_discovered": STATUS_DISCOVERED,
-                        },
-                    ).first()
+                        new_opp_id, new_opp_oid = _create_opportunity_with_retry(
+                            db,
+                            owner_id=int(req[1]),
+                            organization_name=request_org_name,
+                            title=title,
+                        )
+                        opp_row = (new_opp_id, new_opp_oid)
 
                     row = db.execute(
                         text(
@@ -658,7 +871,7 @@ def review_opportunity_request(
                 except IntegrityError as exc:
                     db.rollback()
                     msg = str(exc).lower()
-                    if ("name" in msg) or ("unique_opportunity_name" in msg):
+                    if _is_opportunity_name_conflict(msg):
                         raise HTTPException(
                             status_code=409, detail="Opportunity name already exists"
                         ) from None
@@ -683,7 +896,7 @@ def review_opportunity_request(
                 except DatabaseError as exc:
                     db.rollback()
                     msg = str(exc).lower()
-                    if ("name" in msg) or ("unique_opportunity_name" in msg):
+                    if _is_opportunity_name_conflict(msg):
                         raise HTTPException(
                             status_code=409, detail="Opportunity name already exists"
                         ) from None
@@ -717,6 +930,11 @@ def review_opportunity_request(
                 "status": "APPROVED",
                 "created_opportunity_id": int(opp_row[0]),
                 "opportunity_id": str(opp_row[1]),
+                        "message": (
+                            "Opportunity already created at request time."
+                            if precreated_at_request_time
+                            else "Opportunity approved and created."
+                        ),
             }
 
         # REJECTED
