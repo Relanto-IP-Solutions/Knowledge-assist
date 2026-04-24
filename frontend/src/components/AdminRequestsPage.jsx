@@ -471,9 +471,39 @@ export default function AdminRequestsPage({ onBack }) {
 
         {/* Table */}
         {loading && (
-          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(27,38,79,.08)', padding: 40, textAlign: 'center' }}>
-            <div style={{ fontSize: 14, color: '#94a3b8', fontWeight: 600 }}>Loading requests…</div>
-            <style>{`@keyframes skPulse{0%,100%{opacity:1}50%{opacity:.45}}`}</style>
+          <div style={{
+            background: '#fff', borderRadius: 14,
+            border: '1px solid rgba(27,38,79,.08)',
+            boxShadow: '0 1px 4px rgba(15,23,42,.04)',
+            overflow: 'hidden',
+          }}>
+            <style>{`@keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}`}</style>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+              <thead>
+                <tr style={{ background: '#FAFBFD' }}>
+                  {['Opportunity', 'Requested By', 'Requested On', 'Status', 'Admin Remarks', 'Action'].map((label, i) => (
+                    <th key={i} style={{ ...thStyle, ...(i === 5 ? { textAlign: 'center' } : {}) }}>{label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...Array(5)].map((_, idx) => (
+                  <tr key={idx}>
+                    {[150, 120, 90, 70, 100, 80].map((w, ci) => (
+                      <td key={ci} style={{ ...tdStyle, ...(ci === 5 ? { textAlign: 'center' } : {}) }}>
+                        <div style={{
+                          height: 14, borderRadius: 6, width: w,
+                          background: 'linear-gradient(90deg, #edf2f7 25%, #f8fafc 50%, #edf2f7 75%)',
+                          backgroundSize: '800px 100%',
+                          animation: 'shimmer 1.5s infinite linear',
+                          ...(ci === 5 ? { margin: '0 auto' } : {}),
+                        }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 
@@ -594,14 +624,14 @@ export default function AdminRequestsPage({ onBack }) {
                         )}
                         {isRejected && (
                           <button
-                            onClick={() => openReview(r, 'reconsider')}
+                            onClick={() => setViewing(r)}
                             style={{
                               ...actionBtnBase,
-                              border: 'none',
-                              background: SI_ORANGE, color: '#fff',
+                              border: '1.5px solid rgba(27,38,79,.18)',
+                              background: '#fff', color: SI_NAVY,
                             }}
                           >
-                            Reconsider
+                            View
                           </button>
                         )}
                       </td>

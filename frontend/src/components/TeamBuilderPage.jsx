@@ -8,26 +8,6 @@ const PRIMARY = '#0B3C5D'
 const ACCENT = '#E8532E'
 const GRADIENT = '#E8532E'
 
-function StatusBadge({ active }) {
-  const isActive = Boolean(active)
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-      background: isActive ? 'rgba(11,60,93,.08)' : 'rgba(148,163,184,.08)',
-      color: isActive ? PRIMARY : '#64748b',
-      letterSpacing: '.04em', textTransform: 'uppercase', whiteSpace: 'nowrap',
-    }}>
-      <span style={{
-        width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-        background: isActive ? PRIMARY : '#94a3b8',
-        boxShadow: isActive ? '0 0 6px rgba(11,60,93,.35)' : 'none',
-      }} />
-      {isActive ? 'Active' : 'Inactive'}
-    </span>
-  )
-}
-
 function formatDate(raw) {
   if (!raw) return '—'
   const d = new Date(raw)
@@ -75,7 +55,7 @@ export default function TeamBuilderPage({ onBack }) {
           {[
             { label: 'Sales Intelligence', to: '/knowledge-assist' },
             { label: 'Admin Panel', to: '/admin/requests' },
-            { label: 'Team Builder', to: null },
+            { label: 'Team Management', to: null },
           ].map((crumb, index, arr) => {
             const isLast = index === arr.length - 1
             return (
@@ -108,7 +88,7 @@ export default function TeamBuilderPage({ onBack }) {
       }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: PRIMARY, letterSpacing: '-.02em' }}>
-            Team Builder
+            Team Management
           </h1>
           <p style={{ margin: '6px 0 0', fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>
             Create and manage your sales teams
@@ -135,15 +115,47 @@ export default function TeamBuilderPage({ onBack }) {
 
       {/* Content */}
       {loading ? (
-        <div style={{ padding: 56, textAlign: 'center' }}>
-          <div style={{
-            display: 'inline-block', width: 28, height: 28,
-            border: `3px solid rgba(232,83,46,.15)`,
-            borderTopColor: ACCENT, borderRadius: '50%',
-            animation: 'spin .8s linear infinite',
-          }} />
-          <p style={{ marginTop: 14, fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>Loading teams…</p>
-          <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        <div style={{
+          borderRadius: 14, overflow: 'hidden',
+          boxShadow: '0 2px 12px rgba(15,23,42,.06), 0 0 0 1px rgba(11,60,93,.06)',
+          background: '#fff',
+        }}>
+          <div style={{ height: 2, background: PRIMARY }} />
+          <style>{`@keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}`}</style>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+            <thead>
+              <tr style={{ background: 'rgba(11,60,93,.02)' }}>
+                {['Team Name', 'Members', 'Opportunities Assigned', 'Created On', ''].map((label, i) => (
+                  <th key={i} style={{
+                    padding: '14px 20px', fontSize: 10, fontWeight: 700,
+                    color: '#94a3b8', textAlign: i === 1 || i === 2 ? 'center' : 'left',
+                    textTransform: 'uppercase', letterSpacing: '.08em',
+                    borderBottom: '1px solid #edf2f7',
+                    ...(i === 4 ? { width: 140 } : {}),
+                  }}>
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...Array(5)].map((_, idx) => (
+                <tr key={idx} style={{ borderBottom: idx < 4 ? '1px solid #f1f5f9' : 'none' }}>
+                  {[160, 60, 100, 90, 80].map((w, ci) => (
+                    <td key={ci} style={{ padding: '16px 20px', textAlign: ci === 1 || ci === 2 ? 'center' : 'left' }}>
+                      <div style={{
+                        height: 14, borderRadius: 6, width: w,
+                        background: 'linear-gradient(90deg, #edf2f7 25%, #f8fafc 50%, #edf2f7 75%)',
+                        backgroundSize: '800px 100%',
+                        animation: 'shimmer 1.5s infinite linear',
+                        ...(ci === 1 || ci === 2 ? { margin: '0 auto' } : {}),
+                      }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : error ? (
         <div style={{
@@ -211,7 +223,8 @@ export default function TeamBuilderPage({ onBack }) {
               <tr style={{ background: 'rgba(11,60,93,.02)' }}>
                 {[
                   { label: 'Team Name', align: 'left' },
-                  { label: 'Status', align: 'left' },
+                  { label: 'Members', align: 'center' },
+                  { label: 'Opportunities Assigned', align: 'center' },
                   { label: 'Created On', align: 'left' },
                   { label: '', align: 'right', width: 140 },
                 ].map((col, i) => (
@@ -247,8 +260,11 @@ export default function TeamBuilderPage({ onBack }) {
                         {team.name}
                       </span>
                     </td>
-                    <td style={{ padding: '16px 20px' }}>
-                      <StatusBadge active={team.is_active} />
+                    <td style={{ padding: '16px 20px', textAlign: 'center', fontSize: 13, fontWeight: 700, color: PRIMARY }}>
+                      {team.member_count ?? 0}
+                    </td>
+                    <td style={{ padding: '16px 20px', textAlign: 'center', fontSize: 13, fontWeight: 700, color: PRIMARY }}>
+                      {team.opportunity_count ?? 0}
                     </td>
                     <td style={{ padding: '16px 20px', fontSize: 12, color: '#64748b', fontWeight: 500 }}>
                       {formatDate(team.created_at)}
