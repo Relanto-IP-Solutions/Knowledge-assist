@@ -3,8 +3,11 @@
  * Reference: GET /auth/google/url, GET /auth/slack/url (+ user_email); Zoom often auto-linked — optional /auth/zoom/url.
  */
 
-import { api } from './apiClient'
+import { api, API_BASE } from './apiClient'
 import { traced } from './connectorTrace'
+
+/** Full backend URL for OAuth redirect URIs (always needs real host, not proxy). */
+const BACKEND_BASE = String(import.meta.env.VITE_API_BASE || 'http://localhost:8000').replace(/\/$/, '')
 
 /** Set before redirecting to provider; App reads this to reopen the create-opportunity screen (no query on redirect_uri). */
 export const OAUTH_RETURN_CREATE_OPP_KEY = 'pzf_after_oauth_page'
@@ -43,8 +46,7 @@ export function getGmailBackendRedirectUri() {
   if (explicit != null && String(explicit).trim() !== '') {
     return String(explicit).trim()
   }
-  const apiBase = String(import.meta.env.VITE_API_BASE || 'http://localhost:8000').replace(/\/$/, '')
-  return `${apiBase}/integrations/gmail/callback`
+  return `${BACKEND_BASE}/integrations/gmail/callback`
 }
 
 /**
@@ -56,8 +58,7 @@ export function getDriveOAuthRedirectUri() {
   if (explicit != null && String(explicit).trim() !== '') {
     return String(explicit).trim()
   }
-  const apiBase = String(import.meta.env.VITE_API_BASE || 'http://localhost:8000').replace(/\/$/, '')
-  return `${apiBase}/auth/google/callback`
+  return `${BACKEND_BASE}/auth/google/callback`
 }
 
 /**
@@ -929,8 +930,7 @@ export async function exchangeSlackOAuthCallback(code, redirectUri, userEmail) {
 export function getOneDriveOAuthRedirectUri() {
   const explicit = import.meta.env.VITE_ONEDRIVE_REDIRECT_URI
   if (explicit != null && String(explicit).trim() !== '') return String(explicit).trim()
-  const apiBase = String(import.meta.env.VITE_API_BASE || 'http://localhost:8000').replace(/\/$/, '')
-  return `${apiBase}/oauth/microsoft/callback`
+  return `${BACKEND_BASE}/oauth/microsoft/callback`
 }
 
 const _oneDriveMetricsCache = new Map()

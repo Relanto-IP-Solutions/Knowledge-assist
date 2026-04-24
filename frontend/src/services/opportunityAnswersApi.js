@@ -1,9 +1,7 @@
 import { inferSourceTypeFromCitationFields } from '../utils/citationSourceInference'
 import { enrichAnswerRowAfterNormalize } from '../utils/enrichAnswerIds'
 import { serializeAssistMultiValue } from '../utils/opportunityAnswerRowToReviewQuestion'
-import { api } from './apiClient'
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+import { api, API_BASE } from './apiClient'
 
 /** String or array (e.g. multi-select) → stable string for UI + conflict matching */
 export function normalizeAnswerValueField(v) {
