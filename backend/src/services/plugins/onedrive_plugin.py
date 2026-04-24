@@ -1,4 +1,4 @@
-"""OneDrive plugin: find project folders and sync files to GCS raw/documents."""
+"""OneDrive plugin: find project folders and sync files to GCS raw/onedrive."""
 
 from __future__ import annotations
 
@@ -147,7 +147,7 @@ async def _list_files_recursive(
 
 
 async def sync_onedrive_source(db: Session, source: OpportunitySource) -> int:
-    """Sync files from pinned OneDrive folder to GCS raw/documents."""
+    """Sync files from pinned OneDrive folder to GCS raw/onedrive."""
     opp = source.opportunity
     user = _resolve_onedrive_user(db, source)
     if not user:

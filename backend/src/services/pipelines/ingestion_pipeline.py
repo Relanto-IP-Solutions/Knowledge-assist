@@ -109,6 +109,7 @@ class IngestionPipeline:
         # Normalize source_type to match our chunkers
         if source_type not in (
             "documents",
+            "onedrive",
             "slack_messages",
             "zoom_transcripts",
             "gmail_messages",
@@ -140,9 +141,11 @@ class IngestionPipeline:
                 "processed", opportunity_id, source, object_name
             )
 
-            # Document-level skip: if doc unchanged, skip chunking/embed/upsert (documents only)
-            if source_type == "documents":
-                registry_document_id = f"{opportunity_id}:documents:{object_name}"
+            is_document_like = source_type in {"documents", "onedrive"}
+
+            # Document-level skip: if doc unchanged, skip chunking/embed/upsert.
+            if is_document_like:
+                registry_document_id = f"{opportunity_id}:{source_type}:{object_name}"
                 doc_hash = _sha256_hex(content)
                 existing = self._registry.get_document(registry_document_id)
                 if existing and (existing.get("doc_hash") or "").strip() == doc_hash:
@@ -152,7 +155,7 @@ class IngestionPipeline:
                     )
                     return f"{source_type}:0"
 
-            if source_type == "documents":
+            if is_document_like:
                 chunk_texts = self._documents_chunker.extract_and_chunk(
                     content, object_name, opportunity_id
                 )
@@ -168,6 +171,7 @@ class IngestionPipeline:
                     source_id,
                     document_id,
                     object_name,
+                    source_type=source_type,
                     safe_string=_safe_string,
                 )
             elif source_type == "slack_messages":
@@ -233,8 +237,8 @@ class IngestionPipeline:
                 for idx, dp in enumerate(datapoints)
             ]
 
-            if source_type == "documents":
-                registry_document_id = f"{opportunity_id}:documents:{object_name}"
+            if is_document_like:
+                registry_document_id = f"{opportunity_id}:{source_type}:{object_name}"
                 gcs_path = f"{opportunity_id}/processed/{source}/{object_name}"
                 doc_hash = _sha256_hex(content)
                 existing_chunks = self._registry.get_chunks(registry_document_id)
@@ -279,6 +283,7 @@ class IngestionPipeline:
                     doc_hash=doc_hash,
                     total_chunks=len(datapoints),
                     chunks=new_registry_chunks,
+                    source_type=source_type,
                 )
                 chunks_upserted = len(to_upsert)
             else:
@@ -326,7 +331,7 @@ class IngestionPipeline:
             logger.bind(opportunity_id=opportunity_id).info(
                 "Document %s ingested successfully",
                 object_name
-                if source_type == "documents"
+                if source_type in {"documents", "onedrive"}
                 else (source_id or object_name),
             )
 
