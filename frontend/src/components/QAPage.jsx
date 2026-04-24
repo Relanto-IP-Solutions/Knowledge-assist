@@ -2896,7 +2896,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
           <div style={{ ...qaContentMax, paddingBottom: 12 }}>
             {apiFeatureOn && apiLoading && (
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: SI_NAVY, marginBottom: 8 }}>Loading answers and questions…</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: SI_NAVY, marginBottom: 8 }}>Loading questions and answers…</div>
                 <OpportunityAnswersSkeleton count={4} />
               </div>
             )}
@@ -2910,7 +2910,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
                 color: 'var(--text2)',
                 fontSize: 14,
               }}>
-                No answers returned for this opportunity.
+                We're generating answers for this opportunity. They'll be ready shortly—please check back in around 15 minutes.
               </div>
             )}
 
