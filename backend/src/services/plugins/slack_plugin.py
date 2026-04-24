@@ -210,6 +210,36 @@ def _load_existing_channel_export(
     return []
 
 
+def _merge_slack_metadata_file(
+    storage: Storage,
+    gcs_oid: str,
+    new_channel_entries: list[dict],
+) -> dict:
+    """Merge this sync's channel entries into any existing ``slack_metadata.json`` (by channel id)."""
+    existing: list[dict] = []
+    for oid in gcs_path_prefix_candidates(gcs_oid):
+        try:
+            raw = storage.read("raw", oid, "slack", "slack_metadata.json")
+            doc = json.loads(raw.decode("utf-8"))
+            ch = doc.get("channels")
+            if isinstance(ch, list):
+                existing = [
+                    c for c in ch if isinstance(c, dict) and c.get("id")
+                ]
+                break
+        except (FileNotFoundError, OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+    by_id: dict[str, dict] = {}
+    for c in existing:
+        cid = str(c.get("id") or "")
+        if cid:
+            by_id[cid] = c
+    for c in new_channel_entries:
+        if isinstance(c, dict) and c.get("id"):
+            by_id[str(c["id"])] = c
+    return {"channels": list(by_id.values())}
+
+
 async def sync_slack_source(db: Session, source: OpportunitySource) -> int:
     """Sync Slack → GCS raw/slack in GcsPipeline-compatible layout."""
     opp = source.opportunity
@@ -354,7 +384,7 @@ async def sync_slack_source(db: Session, source: OpportunitySource) -> int:
             if not source.channel_id:
                 source.channel_id = ch_id
 
-        meta_doc = {"channels": meta_channels}
+        meta_doc = _merge_slack_metadata_file(storage, gcs_oid, meta_channels)
         storage.write(
             tier="raw",
             opportunity_id=gcs_oid,
