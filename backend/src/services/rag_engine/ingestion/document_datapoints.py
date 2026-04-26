@@ -23,11 +23,12 @@ def build_document_datapoints_for_upsert(
     source_id: str,
     document_id: str,
     object_name: str,
+    source_type: str = "documents",
     safe_string: callable | None = None,
 ) -> list[dict]:
     """Build datapoint dicts for documents (Vertex: text, datapoint_id, restricts, embedding_metadata)."""
     safe = safe_string or safe_string_for_datapoint_id
-    effective_doc_id = document_id or f"{opportunity_id}:documents:{object_name}"
+    effective_doc_id = document_id or f"{opportunity_id}:{source_type}:{object_name}"
     safe_doc_id = safe(effective_doc_id)
     safe_id = safe(source_id)
     datapoints = []
@@ -42,11 +43,13 @@ def build_document_datapoints_for_upsert(
                 {"namespace": "channel", "allow_list": [channel]},
                 {"namespace": "source_id", "allow_list": [source_id]},
                 {"namespace": "document_id", "allow_list": [effective_doc_id]},
+                {"namespace": "source_type", "allow_list": [source_type]},
             ],
             "embedding_metadata": {
                 "text": text,
                 "chunk_index": idx,
                 "opportunity_id": opportunity_id,
+                "source_type": source_type,
             },
         })
     return datapoints

@@ -6,10 +6,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { toApiOpportunityId } from '../config/opportunityApi'
 import {
   connectSlack,
-  discoverSlackForProject,
+  fetchSlackConnectInfo,
   fetchSlackMetrics,
   getCachedSlackConnectInfo,
   getCachedSlackMetrics,
+  orchestrateSlack,
 } from '../services/integrationsAuthApi'
 import { SlackIcon } from './SourceIcons'
 
@@ -75,6 +76,13 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
   const [discoveryResult, setDiscoveryResult] = useState(null)
   const [err, setErr] = useState(null)
 
+  const [showCreateChannel, setShowCreateChannel] = useState(false)
+  const [channelName, setChannelName] = useState('')
+  const [teamEmailsInput, setTeamEmailsInput] = useState('')
+  const [orchestrateBusy, setOrchestrateBusy] = useState(false)
+  const [orchestrateResult, setOrchestrateResult] = useState(null)
+  const [orchestrateErr, setOrchestrateErr] = useState(null)
+
   const mountedRef = useRef(true)
   /** Tracks the opportunity currently shown; connect/resync started for `runOid` may finish after navigation — still persist via API cache. */
   const oidRef = useRef(oid)
@@ -133,20 +141,28 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
     setBusy(true)
     setErr(null)
     try {
-      setIngestStep('discover')
-      const discovered = await discoverSlackForProject(runOid)
-      if (mountedRef.current && oidRef.current === runOid) setDiscoveryResult(discovered)
-
+      // Step 1: POST /integrations/slack/connect/{oid}
       setIngestStep('connect')
       const connected = await connectSlack(runOid)
       if (!mountedRef.current || oidRef.current !== runOid) return
 
-      refreshStateFromCache()
-      if (connected?.status === 'ACTIVE' || connected?.total_files != null) {
-        setActive(true)
-        onStatusChange?.(true)
-      }
+      if (connected?.discovery_result) setDiscoveryResult(connected.discovery_result)
 
+      // Step 2: GET /integrations/slack/authorize-info/{oid}
+      setIngestStep('authorize')
+      try {
+        const info = await fetchSlackConnectInfo(runOid)
+        if (mountedRef.current && oidRef.current === runOid && info?.status === 'ACTIVE') {
+          setActive(true)
+          onStatusChange?.(true)
+        }
+      } catch { /**/ }
+
+      if (!mountedRef.current || oidRef.current !== runOid) return
+      refreshStateFromCache()
+      if (connected?.status === 'ACTIVE') { setActive(true); onStatusChange?.(true) }
+
+      // Step 3: GET /integrations/slack/metrics/{oid}
       setIngestStep('metrics')
       setMetricsLoading(true)
       try {
@@ -158,9 +174,8 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
         if (mountedRef.current && oidRef.current === runOid) setMetricsLoading(false)
       }
     } catch (e) {
-      if (mountedRef.current && oidRef.current === runOid) {
+      if (mountedRef.current && oidRef.current === runOid)
         setErr(e?.response?.data?.detail ?? e?.message ?? 'Slack setup failed. Try again.')
-      }
     } finally {
       if (mountedRef.current && oidRef.current === runOid) {
         setBusy(false)
@@ -168,6 +183,27 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
       }
     }
   }, [oid, onStatusChange, refreshStateFromCache])
+
+  const handleCreateChannel = useCallback(async () => {
+    const runOid = oid
+    const name = channelName.trim() || oid
+    const emails = teamEmailsInput
+      .split(/[\n,]+/)
+      .map(e => e.trim())
+      .filter(Boolean)
+    setOrchestrateBusy(true)
+    setOrchestrateErr(null)
+    setOrchestrateResult(null)
+    try {
+      const result = await orchestrateSlack(runOid, name, emails)
+      if (mountedRef.current) setOrchestrateResult(result)
+    } catch (e) {
+      if (mountedRef.current)
+        setOrchestrateErr(e?.response?.data?.detail ?? e?.message ?? 'Channel creation failed. Try again.')
+    } finally {
+      if (mountedRef.current) setOrchestrateBusy(false)
+    }
+  }, [oid, channelName, teamEmailsInput])
 
   const handleResync = useCallback(async () => {
     const runOid = oid
@@ -206,8 +242,8 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
   const dotState = busy ? 'syncing' : active ? 'active' : 'idle'
   let statusText = 'Not connected'
   if (active) statusText = 'Active'
-  else if (busy && ingestStep === 'discover') statusText = 'Finding project channel…'
   else if (busy && ingestStep === 'connect') statusText = 'Syncing messages (10–15s typical)…'
+  else if (busy && ingestStep === 'authorize') statusText = 'Verifying connection…'
   else if (busy && ingestStep === 'metrics') statusText = 'Loading metrics…'
   else if (busy) statusText = 'Working…'
 
@@ -217,8 +253,8 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
   const oppsCreated = discoveryResult?.opportunities_created
 
   let busyLabel = 'Working…'
-  if (ingestStep === 'discover') busyLabel = 'Discovering…'
-  else if (ingestStep === 'connect') busyLabel = 'Syncing…'
+  if (ingestStep === 'connect') busyLabel = 'Syncing…'
+  else if (ingestStep === 'authorize') busyLabel = 'Verifying…'
   else if (ingestStep === 'metrics') busyLabel = 'Metrics…'
 
   const totalFilesCount = Number(metrics?.total_files ?? 0)
@@ -250,7 +286,7 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)' }}>Workspace Channels</div>
           <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
-            Discover the channel for project <strong>{oid}</strong>, then synchronous ingest to storage. For <strong>private</strong> channels, invite the bot first (<code style={{ fontSize: 10 }}>/invite @KnowledgeAssist</code>).
+            Discover the channel for project <strong>{oid}</strong>, then synchronous ingest to storage. 
           </div>
           {channelsTotal != null && channelsMatched != null && (
             <div style={{
@@ -352,6 +388,24 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
               </span>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', padding: '12px 16px 16px' }}>
+              {Array.isArray(metrics?.channels) && metrics.channels.length > 0 && (
+                <div style={{ flex: '1 1 100%', padding: '0 0 10px', borderBottom: '1px solid rgba(74,21,75,.1)', marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, marginBottom: 6 }}>
+                    {metrics.channels.length === 1 ? 'Channel' : 'Channels'}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {metrics.channels.map(ch => (
+                      <span key={ch.id ?? ch.name} style={{
+                        fontSize: 11.5, fontWeight: 700, color: SLACK_COLOR,
+                        background: 'rgba(74,21,75,.08)', border: '1px solid rgba(74,21,75,.18)',
+                        borderRadius: 6, padding: '2px 8px',
+                      }}>
+                        #{ch.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div style={{
                 flex: '1 1 120px',
                 padding: '4px 14px 4px 0',
@@ -392,6 +446,106 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
           <span style={{ fontSize: 12, color: '#DC2626' }}>{err}</span>
         </div>
       )}
+
+      <div style={{ padding: '0 22px 16px 80px' }}>
+        {!showCreateChannel ? (
+          <button
+            type="button"
+            onClick={() => { setShowCreateChannel(true); setChannelName(oid); setOrchestrateResult(null); setOrchestrateErr(null) }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+              cursor: 'pointer', border: '1.5px solid rgba(74,21,75,.35)',
+              background: 'transparent', color: SLACK_COLOR, fontFamily: 'var(--font)',
+              transition: 'opacity .12s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = '0.7' }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+          >
+            + Create Channel
+          </button>
+        ) : (
+          <div style={{
+            borderRadius: 12, border: '1px solid rgba(74,21,75,.18)',
+            background: 'rgba(74,21,75,.03)', padding: '12px 14px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: SLACK_COLOR }}>
+                Create Channel
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowCreateChannel(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#94A3B8', lineHeight: 1 }}
+              >×</button>
+            </div>
+
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: '#64748B', marginBottom: 3 }}>
+                Channel name
+              </label>
+              <input
+                type="text"
+                value={channelName}
+                onChange={e => setChannelName(e.target.value)}
+                placeholder={oid}
+                style={{
+                  width: '100%', boxSizing: 'border-box',
+                  padding: '6px 10px', borderRadius: 8, fontSize: 12,
+                  border: '1.5px solid rgba(74,21,75,.2)', outline: 'none',
+                  fontFamily: 'var(--font)', color: NAVY, background: '#fff',
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: '#64748B', marginBottom: 3 }}>
+                Team emails (comma-separated)
+              </label>
+              <textarea
+                value={teamEmailsInput}
+                onChange={e => setTeamEmailsInput(e.target.value)}
+                placeholder="user@example.com, user2@example.com"
+                rows={2}
+                style={{
+                  width: '100%', boxSizing: 'border-box',
+                  padding: '6px 10px', borderRadius: 8, fontSize: 12,
+                  border: '1.5px solid rgba(74,21,75,.2)', outline: 'none',
+                  fontFamily: 'var(--font)', color: NAVY, background: '#fff',
+                  resize: 'vertical',
+                }}
+              />
+            </div>
+
+            <button
+              type="button"
+              disabled={orchestrateBusy}
+              onClick={() => void handleCreateChannel()}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '7px 16px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                cursor: orchestrateBusy ? 'not-allowed' : 'pointer',
+                border: `1.5px solid ${SLACK_COLOR}`,
+                background: SLACK_COLOR, color: '#fff',
+                fontFamily: 'var(--font)', opacity: orchestrateBusy ? 0.55 : 1,
+                transition: 'opacity .12s',
+              }}
+            >
+              {orchestrateBusy && <SpinIcon size={11} />}
+              {orchestrateBusy ? 'Creating…' : 'Create'}
+            </button>
+
+            {orchestrateResult && (
+              <div style={{ marginTop: 8, fontSize: 11, color: '#0F766E', fontWeight: 600 }}>
+                {orchestrateResult.message ?? 'Channel created successfully!'}
+              </div>
+            )}
+            {orchestrateErr && (
+              <div style={{ marginTop: 8, fontSize: 11, color: '#DC2626' }}>{orchestrateErr}</div>
+            )}
+          </div>
+        )}
+      </div>
     </>
   )
 }

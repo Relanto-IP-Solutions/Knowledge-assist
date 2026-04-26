@@ -8,6 +8,18 @@ const RAW_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
  */
 const baseURL = import.meta.env.DEV ? '' : String(RAW_BASE).replace(/\/$/, '')
 
+/**
+ * Full backend base URL (with scheme + host). Use for:
+ * - EventSource / SSE streams that need absolute URLs
+ * - OAuth redirect_uri construction
+ * - Dev console logging
+ * In dev, resolves to window.location.origin (same-origin via Vite proxy).
+ * In production, resolves to VITE_API_BASE.
+ */
+export const API_BASE = import.meta.env.DEV
+  ? window.location.origin
+  : String(RAW_BASE).replace(/\/$/, '')
+
 export const api = axios.create({
   baseURL,
   headers: {

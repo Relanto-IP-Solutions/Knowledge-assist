@@ -5,7 +5,8 @@ const SI_NAVY = 'var(--si-navy, #1B264F)'
 const SI_ORANGE = 'var(--si-orange, #E8532E)'
 const NAME_VALID_RE = /^[A-Za-z0-9 -]*$/ // allows empty while typing
 
-export default function CreateOpportunityPage({ onBack }) {
+export default function CreateOpportunityPage({ onBack, onCreated }) {
+  const [orgName, setOrgName] = useState('')
   const [name, setName] = useState('')
   const [charError, setCharError] = useState(null)
   const [nameExists, setNameExists] = useState(false)
@@ -52,15 +53,17 @@ export default function CreateOpportunityPage({ onBack }) {
   useEffect(() => () => clearTimeout(debounceRef.current), [])
 
   const trimmed = name.trim()
-  const isDisabled = busy || checking || !trimmed || !!charError || nameExists
+  const trimmedOrg = orgName.trim()
+  const isDisabled = busy || checking || !trimmed || !trimmedOrg || !!charError || nameExists
 
   const handleSubmit = async () => {
     if (isDisabled) return
     setBusy(true)
     setSubmitError(null)
     try {
-      await createOpportunityRequest(trimmed)
+      await createOpportunityRequest({ name: trimmed, organization_name: trimmedOrg })
       setSubmitted(true)
+      onCreated?.()
     } catch (e) {
       setSubmitError(e.message || 'Failed to submit request.')
     } finally {
@@ -173,11 +176,38 @@ export default function CreateOpportunityPage({ onBack }) {
           }}>
             DETAILS
           </h2>
+          <label htmlFor="create-opp-org" style={{
+            display: 'block', fontSize: 13, fontWeight: 600,
+            color: SI_NAVY, marginBottom: 6,
+          }}>
+            Organization Name <span style={{ color: SI_ORANGE }}>*</span>
+          </label>
+          <input
+            id="create-opp-org"
+            value={orgName}
+            onChange={(e) => { setOrgName(e.target.value); setSubmitError(null) }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !isDisabled) handleSubmit() }}
+            placeholder="e.g. Acme Corp"
+            autoComplete="off"
+            disabled={busy}
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              padding: '12px 14px',
+              borderRadius: 10, fontSize: 15, fontFamily: 'var(--font)',
+              border: '1px solid var(--border)',
+              background: 'var(--bg2, #fff)',
+              outline: 'none',
+              transition: 'border-color .15s',
+              marginBottom: 18,
+            }}
+            onFocus={e => { e.target.style.borderColor = SI_ORANGE; e.target.style.boxShadow = `0 0 0 2px ${SI_ORANGE}30` }}
+            onBlur={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.boxShadow = '' }}
+          />
           <label htmlFor="create-opp-name" style={{
             display: 'block', fontSize: 13, fontWeight: 600,
             color: SI_NAVY, marginBottom: 6,
           }}>
-            Name <span style={{ color: SI_ORANGE }}>*</span>
+            Opportunity Name <span style={{ color: SI_ORANGE }}>*</span>
           </label>
           <div style={{ position: 'relative' }}>
             <input

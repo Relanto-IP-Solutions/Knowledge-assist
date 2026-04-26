@@ -3,6 +3,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+import ast
 from src.services.database_manager.answers_legacy_unique import (
     drop_legacy_unique_one_row_per_question_on_answers,
 )
@@ -34,7 +35,23 @@ def _pg_is_unique_violation(exc: BaseException) -> bool:
 def _normalize_answer_text_for_compare(raw: object) -> str:
     if raw is None:
         return ""
-    return str(raw).strip().lower()
+    s = str(raw).strip()
+    if not s:
+        return ""
+
+    # Multi-select / picklist answers may be stored as a stringified Python list.
+    # Canonicalize to avoid artificial conflicts from ordering/casing differences.
+    if s.startswith("[") and s.endswith("]"):
+        try:
+            parsed = ast.literal_eval(s)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, list):
+            toks = [str(x).strip().casefold() for x in parsed if str(x).strip()]
+            toks.sort()
+            return ",".join(toks)
+
+    return s.casefold()
 
 
 def _normalize_feedback_type_for_db(raw: Any) -> int:
@@ -132,6 +149,8 @@ def _normalize_citation_source_type(raw: object) -> str:
         "slack_messages": "slack",
         # pgvector/ingestion paths
         "gdrive_doc": "docx",
+        "onedrive_doc": "docx",
+        "onedrive": "docx",
         # legacy/alternate labels
         "google_drive": "docx",
         "gdrive": "docx",

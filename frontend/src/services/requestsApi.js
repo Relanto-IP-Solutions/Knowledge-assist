@@ -1,4 +1,4 @@
-import { api } from './apiClient'
+import { api, API_BASE } from './apiClient'
 
 const NAME_VALID_RE = /^[A-Za-z0-9 -]+$/
 
@@ -27,6 +27,7 @@ export async function listOpportunityRequests({ status, limit = 200 } = {}) {
 export async function checkNameExists(name) {
   try {
     const { data } = await api.get('/opportunities/name-exists', { params: { name } })
+    console.log(data);
     return Boolean(data.exists)
   } catch (e) {
     throw apiError(e)
@@ -38,9 +39,11 @@ export async function checkNameExists(name) {
  * POST /opportunities/create
  * Returns { request_id, user_id, opportunity_title, submitted_at, status }
  */
-export async function createOpportunityRequest(name) {
+export async function createOpportunityRequest({ name, organization_name } = {}) {
   const trimmed = String(name ?? '').trim()
-  if (!trimmed) throw Object.assign(new Error('name is required.'), { status: 400 })
+  const trimmedOrg = String(organization_name ?? '').trim()
+  if (!trimmed) throw Object.assign(new Error('Opportunity name is required.'), { status: 400 })
+  if (!trimmedOrg) throw Object.assign(new Error('Organization name is required.'), { status: 400 })
   if (!NAME_VALID_RE.test(trimmed)) {
     throw Object.assign(
       new Error('Only uppercase, lowercase, hyphen, and space are allowed.'),
@@ -48,7 +51,7 @@ export async function createOpportunityRequest(name) {
     )
   }
   try {
-    const { data } = await api.post('/opportunities/create', { name: trimmed })
+    const { data } = await api.post('/opportunities/create', { organization_name: trimmedOrg, name: trimmed })
     return data
   } catch (e) {
     throw apiError(e)
@@ -88,8 +91,7 @@ export async function getMyRequests() {
  * Returns an EventSource instance — caller must call .close() on cleanup.
  */
 export function openNotificationStream(token, { onMessage, onError } = {}) {
-  const RAW_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
-  const base = import.meta.env.DEV ? window.location.origin : String(RAW_BASE).replace(/\/$/, '')
+  const base = API_BASE
   const url = `${base}/opportunities/stream?token=${encodeURIComponent(token)}`
   const es = new EventSource(url)
   if (onMessage) {

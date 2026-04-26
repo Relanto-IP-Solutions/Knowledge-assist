@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS opportunity_requests (
     request_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
+    organization_name VARCHAR(512),
     opportunity_title VARCHAR(512) NOT NULL,
     submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     status VARCHAR(16) NOT NULL DEFAULT 'PENDING',
@@ -29,6 +30,9 @@ CREATE TABLE IF NOT EXISTS opportunity_requests (
             OR created_opportunity_id IS NOT NULL
         )
 );
+
+ALTER TABLE opportunity_requests
+    ADD COLUMN IF NOT EXISTS organization_name VARCHAR(512);
 
 CREATE INDEX IF NOT EXISTS idx_opportunity_requests_status_submitted
     ON opportunity_requests (status, submitted_at DESC);

@@ -492,7 +492,7 @@ export function LoginPage({ onLogin, theme }) {
                     border: "2px solid rgba(255,255,255,.3)", borderTopColor: "white",
                     animation: "spin 1s linear infinite",
                   }} />
-                  {isSignUp ? "Creating account…" : "Signing in…"}
+                  {isSignUp ? "Creating account…" : "Loading…"}
                 </>
               ) : isSignUp ? "Create account" : "Sign in"}
             </button>

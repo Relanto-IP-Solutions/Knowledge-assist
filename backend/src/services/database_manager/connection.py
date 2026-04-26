@@ -92,10 +92,7 @@ class DatabaseManager:
 
         if instance_conn_name:
             pool = _get_cloudsql_pool(s, instance_conn_name)
-            try:
-                raw = pool.get_nowait()
-            except Exception:
-                raw = _cloudsql_connect_new(s, instance_conn_name)
+            raw = _borrow_healthy_cloudsql_connection(pool, s, instance_conn_name)
             conn = _PooledCloudSQLConnection(raw, pool)
         elif pg_host:
             conn = _get_pool().getconn()
@@ -185,6 +182,54 @@ class _PooledCloudSQLConnection:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._conn, name)
+
+
+def _is_pg8000_connection_alive(conn: Any) -> bool:
+    """Return True if a pg8000 connection is usable.
+
+    Cloud SQL closes idle server-side sockets (default ~10 min). A pooled connection
+    whose TCP socket was closed by the server will raise ``InterfaceError: network error``
+    on the very next ``execute``. Ping with a trivial query and roll back any implicit
+    transaction so the connection is returned to a clean state.
+    """
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.fetchone()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return True
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return False
+
+
+def _borrow_healthy_cloudsql_connection(
+    pool: "queue.Queue[Any]",
+    s: DatabaseSettings,
+    instance_conn_name: str,
+) -> Any:
+    """Pop a live connection from the pool (pre-ping); create a new one if none are alive.
+
+    Protects against ``pg8000.exceptions.InterfaceError: network error`` caused by
+    Cloud SQL killing idle connections. Caps per-request retries to avoid unbounded
+    loops if the DB is truly unreachable.
+    """
+    max_pings = max(pool.maxsize, 1) + 1
+    for _ in range(max_pings):
+        try:
+            candidate = pool.get_nowait()
+        except Exception:
+            return _cloudsql_connect_new(s, instance_conn_name)
+        if _is_pg8000_connection_alive(candidate):
+            return candidate
+        logger.debug("Discarded dead Cloud SQL connection during pre-ping")
+    return _cloudsql_connect_new(s, instance_conn_name)
 
 
 def _cloudsql_connect_new(s: DatabaseSettings, instance_conn_name: str) -> Any:

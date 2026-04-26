@@ -20,7 +20,11 @@ def get_active_connection(
         .filter(
             UserConnection.user_id == user_id,
             UserConnection.provider == provider,
-            or_(UserConnection.expires_at.is_(None), UserConnection.expires_at > now),
+            or_(
+                UserConnection.expires_at.is_(None),
+                UserConnection.expires_at > now,
+                UserConnection.refresh_token.is_not(None),
+            ),
         )
         .order_by(UserConnection.id.desc())
         .first()

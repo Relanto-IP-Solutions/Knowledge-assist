@@ -13,6 +13,7 @@ from sqlalchemy.exc import DatabaseError, IntegrityError
 from sqlalchemy.orm import Session
 
 from src.apis.deps.firebase_auth import get_existing_firebase_user, get_firebase_user
+from src.apis.deps.opportunity_access import can_user_access_opportunity
 from src.apis.deps.rbac import get_user_roles, has_role, is_admin
 from src.services.database_manager.connection import get_db_connection
 from src.services.database_manager.models.auth_models import (
@@ -89,6 +90,7 @@ def _get_total_sase_questions_count_cached(
 
 class OpportunitySummaryOut(BaseModel):
     opportunity_id: str
+    organization_name: str | None = None
     name: str
     owner_id: int
     status: str = ""
@@ -104,6 +106,122 @@ class OpportunityListResponse(BaseModel):
     """List opportunity details from the opportunities table."""
 
     opportunities: list[OpportunitySummaryOut]
+
+
+class LockOpportunityResponse(BaseModel):
+    opportunity_id: str
+    is_active: bool
+class MyOpportunityOut(BaseModel):
+    id: int
+    opportunity_id: str
+    organization_name: str | None = None
+    name: str
+    owner_id: int
+    team_id: int | None = None
+    status: str | None = None
+    can_edit: bool = False
+    can_assign: bool = False
+
+
+class MyOpportunitiesResponse(BaseModel):
+    opportunities: list[MyOpportunityOut]
+
+
+@router.get("/unassigned")
+def list_unassigned_opportunities(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_existing_firebase_user)],
+    limit: int = 200,
+):
+    if not is_admin(user):
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    limit = min(max(int(limit), 1), 2000)
+    rows = db.execute(
+        text(
+            """
+            SELECT id, opportunity_id, organization_name, name, owner_id, status
+            FROM opportunities
+            WHERE team_id IS NULL
+            ORDER BY created_at DESC, id DESC
+            LIMIT :limit
+            """
+        ),
+        {"limit": limit},
+    ).mappings().all()
+    return {"opportunities": [dict(r) for r in rows]}
+
+
+@router.get("/my-opportunities", response_model=MyOpportunitiesResponse)
+def get_my_opportunities(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_existing_firebase_user)],
+    limit: int = 500,
+):
+    user_id = int(getattr(user, "id"))
+    limit = min(max(int(limit), 1), 2000)
+    rows = db.execute(
+        text(
+            """
+            SELECT DISTINCT
+                o.id,
+                o.opportunity_id,
+                o.organization_name,
+                o.name,
+                o.owner_id,
+                o.team_id,
+                o.status,
+                EXISTS (
+                    SELECT 1
+                    FROM team_members tm2
+                    WHERE tm2.team_id = o.team_id
+                      AND tm2.user_id = :user_id
+                      AND tm2.is_active = TRUE
+                ) AS user_is_team_member,
+                EXISTS (
+                    SELECT 1
+                    FROM team_members tm3
+                    WHERE tm3.team_id = o.team_id
+                      AND tm3.user_id = :user_id
+                      AND tm3.is_active = TRUE
+                      AND tm3.is_lead = TRUE
+                ) AS user_is_team_lead
+            FROM opportunities o
+            LEFT JOIN team_members tm
+              ON tm.team_id = o.team_id
+             AND tm.is_active = TRUE
+            WHERE o.owner_id = :user_id
+               OR tm.user_id = :user_id
+            ORDER BY o.id DESC
+            LIMIT :limit
+            """
+        ),
+        {"user_id": user_id, "limit": limit},
+    ).mappings().all()
+
+    opportunities: list[MyOpportunityOut] = []
+    for row in rows:
+        access = can_user_access_opportunity(user, row)
+        if not access.can_view:
+            continue
+        opportunities.append(
+            MyOpportunityOut(
+                id=int(row["id"]),
+                opportunity_id=str(row["opportunity_id"]),
+                organization_name=(
+                    str(row["organization_name"])
+                    if row["organization_name"] is not None
+                    else None
+                ),
+                name=str(row["name"] or ""),
+                owner_id=int(row["owner_id"]),
+                team_id=int(row["team_id"]) if row["team_id"] is not None else None,
+                status=str(row["status"]) if row["status"] is not None else None,
+                can_edit=access.can_edit,
+                can_assign=access.can_assign,
+            )
+        )
+
+    return MyOpportunitiesResponse(opportunities=opportunities)
 
 
 @router.get("/ids", response_model=OpportunityListResponse)
@@ -131,33 +249,21 @@ def list_opportunity_ids(
     user_id = int(getattr(user, "id"))
     if is_admin(user):
         scope_where = "TRUE"
-    elif has_role(user, "TEAM_LEAD"):
-        scope_where = """
-            (
-                o.owner_id = :user_id
-                OR EXISTS (
-                    SELECT 1
-                    FROM team_members tm
-                    WHERE tm.team_id = o.team_id
-                      AND tm.user_id = :user_id
-                      AND tm.is_lead = true
-                )
-            )
-        """
-    elif has_role(user, "TEAM_MEMBER"):
-        scope_where = """
-            (
-                o.owner_id = :user_id
-                OR EXISTS (
-                    SELECT 1
-                    FROM team_members tm
-                    WHERE tm.team_id = o.team_id
-                      AND tm.user_id = :user_id
-                )
-            )
-        """
     else:
-        scope_where = "(o.owner_id = :user_id)"
+        # User-level view: own opportunities + opportunities assigned to teams
+        # where the user is an active member.
+        scope_where = """
+            (
+                o.owner_id = :user_id
+                OR EXISTS (
+                    SELECT 1
+                    FROM team_members tm
+                    WHERE tm.team_id = o.team_id
+                      AND tm.user_id = :user_id
+                      AND tm.is_active = true
+                )
+            )
+        """
 
     t_list0 = time.perf_counter()
     total_questions = _get_total_sase_questions_count_cached(db)
@@ -170,6 +276,7 @@ def list_opportunity_ids(
             WITH recent_o AS (
                 SELECT
                     o.opportunity_id,
+                    o.organization_name,
                     o.name,
                     o.owner_id,
                     o.status,
@@ -193,6 +300,7 @@ def list_opportunity_ids(
             )
             SELECT
                 ro.opportunity_id,
+                ro.organization_name,
                 ro.name,
                 ro.owner_id,
                 ro.status,
@@ -245,20 +353,51 @@ def list_opportunity_ids(
         opportunities=[
             OpportunitySummaryOut(
                 opportunity_id=str(r[0]),
-                name=str(r[1] or ""),
-                owner_id=int(r[2]),
-                status=str(r[3] or ""),
-                human_count=int(r[4] or 0),
-                ai_count=int(r[5] or 0),
-                total_questions=int(r[6] or 0),
-                percentage=float(r[7] or 0.0),
-                human_percentage=float(r[8] or 0.0),
-                ai_percentage=float(r[9] or 0.0),
+                organization_name=str(r[1]) if r[1] is not None else None,
+                name=str(r[2] or ""),
+                owner_id=int(r[3]),
+                status=str(r[4] or ""),
+                human_count=int(r[5] or 0),
+                ai_count=int(r[6] or 0),
+                total_questions=int(r[7] or 0),
+                percentage=float(r[8] or 0.0),
+                human_percentage=float(r[9] or 0.0),
+                ai_percentage=float(r[10] or 0.0),
             )
             for r in rows
             if r[0] is not None
         ]
     )
+
+
+@router.post("/{opportunity_id}/lock", response_model=LockOpportunityResponse)
+def lock_opportunity(
+    opportunity_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_firebase_user)],
+):
+    """Lock an opportunity (set `opportunities.is_active=false`).
+
+    Only ADMIN or the opportunity owner (opportunities.owner_id) may lock.
+    """
+    oid = (opportunity_id or "").strip()
+    if not oid:
+        raise HTTPException(status_code=400, detail="opportunity_id is required")
+
+    opp = db.query(Opportunity).filter(Opportunity.opportunity_id == oid).first()
+    if not opp:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    if not is_admin(user) and int(getattr(opp, "owner_id")) != int(getattr(user, "id")):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not bool(getattr(opp, "is_active", True)):
+        return LockOpportunityResponse(opportunity_id=oid, is_active=False)
+
+    opp.is_active = False
+    db.add(opp)
+    db.commit()
+    return LockOpportunityResponse(opportunity_id=oid, is_active=False)
 
 
 @public_router.get("/questions")
@@ -326,6 +465,7 @@ async def answer_generation(request: Request):
     from src.services.pipelines.agent_pipeline import (
         AnswerGenerationAlreadyRunningError,
         AnswerGenerationPipeline,
+        OpportunityLockedError,
     )
 
     extras: dict = {}
@@ -342,6 +482,9 @@ async def answer_generation(request: Request):
         return result
     except AnswerGenerationAlreadyRunningError as exc:
         logger.bind(**extras).warning("Answer generation rejected (already running): {}", exc)
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except OpportunityLockedError as exc:
+        logger.bind(**extras).warning("Answer generation rejected (opportunity locked): {}", exc)
         raise HTTPException(status_code=409, detail=str(exc)) from None
     except ValueError as exc:
         logger.bind(**extras).warning("Answer generation invalid request: {}", exc)
@@ -1356,6 +1499,21 @@ def save_or_resolve_answers(
     # - TEAM_LEAD can post for opportunities in teams they lead (team_members.is_lead)
     def _assert_can_post_answers(cur, user_id: int, user_obj: User) -> None:
         if is_admin(user_obj):
+            # Admin can post anywhere, but still cannot post to a locked opportunity.
+            cur.execute(
+                """
+                SELECT is_active
+                FROM opportunities
+                WHERE opportunity_id = %s
+                LIMIT 1
+                """,
+                (str(opportunity_id),),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Opportunity not found")
+            if not bool(row[0]):
+                raise HTTPException(status_code=409, detail="Opportunity is locked")
             return
 
         # One round-trip: opportunity row + whether this user leads the opp's team (if any).
@@ -1364,6 +1522,7 @@ def save_or_resolve_answers(
             SELECT
                 o.owner_id,
                 o.team_id,
+                o.is_active,
                 EXISTS (
                     SELECT 1
                     FROM team_members tm
@@ -1382,7 +1541,11 @@ def save_or_resolve_answers(
             raise HTTPException(status_code=404, detail="Opportunity not found")
         opp_owner_id = opp_row[0]
         opp_team_id = opp_row[1]
-        user_leads_team = bool(opp_row[2])
+        opp_is_active = bool(opp_row[2])
+        user_leads_team = bool(opp_row[3])
+
+        if not opp_is_active:
+            raise HTTPException(status_code=409, detail="Opportunity is locked")
 
         # Owner can always post for their own opportunity.
         if opp_owner_id is not None and int(opp_owner_id) == user_id:

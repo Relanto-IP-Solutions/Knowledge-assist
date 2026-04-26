@@ -22,7 +22,11 @@ from configs.settings import get_settings
 from src.services.database_manager.models.auth_models import OpportunitySource
 from src.services.storage.service import Storage
 from src.utils.logger import get_logger
-from src.utils.opportunity_id import gcs_opportunity_prefix, gcs_path_prefix_candidates
+from src.utils.opportunity_id import (
+    gcs_opportunity_prefix,
+    gcs_path_prefix_candidates,
+    normalize_opportunity_oid,
+)
 
 
 logger = get_logger(__name__)
@@ -41,7 +45,10 @@ def _get_headers() -> dict | None:
 
 def _oid_to_slack_channel_prefix(oid: str) -> str:
     """Format OID to a safe slack channel prefix (e.g. OID/1023 -> oid1023)."""
-    return "".join(c for c in str(oid) if c.isalnum()).lower()
+    try:
+        return normalize_opportunity_oid(oid)
+    except ValueError:
+        return "".join(c for c in str(oid) if c.isalnum()).lower()
 
 
 def _utc_fetched_at() -> str:
@@ -169,6 +176,24 @@ async def _fetch_channel_history(
     return pages
 
 
+async def _get_channel_info(
+    client: httpx.AsyncClient,
+    headers: dict,
+    channel_id: str,
+) -> dict | None:
+    r = await client.get(
+        f"{SLACK_API_BASE}/conversations.info",
+        headers=headers,
+        params={"channel": channel_id},
+    )
+    if r.status_code != 200:
+        return None
+    data = r.json()
+    if not data.get("ok"):
+        return None
+    return data.get("channel")
+
+
 def _load_existing_channel_export(
     storage: Storage,
     db_opportunity_id: str,
@@ -185,6 +210,36 @@ def _load_existing_channel_export(
     return []
 
 
+def _merge_slack_metadata_file(
+    storage: Storage,
+    gcs_oid: str,
+    new_channel_entries: list[dict],
+) -> dict:
+    """Merge this sync's channel entries into any existing ``slack_metadata.json`` (by channel id)."""
+    existing: list[dict] = []
+    for oid in gcs_path_prefix_candidates(gcs_oid):
+        try:
+            raw = storage.read("raw", oid, "slack", "slack_metadata.json")
+            doc = json.loads(raw.decode("utf-8"))
+            ch = doc.get("channels")
+            if isinstance(ch, list):
+                existing = [
+                    c for c in ch if isinstance(c, dict) and c.get("id")
+                ]
+                break
+        except (FileNotFoundError, OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue
+    by_id: dict[str, dict] = {}
+    for c in existing:
+        cid = str(c.get("id") or "")
+        if cid:
+            by_id[cid] = c
+    for c in new_channel_entries:
+        if isinstance(c, dict) and c.get("id"):
+            by_id[str(c["id"])] = c
+    return {"channels": list(by_id.values())}
+
+
 async def sync_slack_source(db: Session, source: OpportunitySource) -> int:
     """Sync Slack → GCS raw/slack in GcsPipeline-compatible layout."""
     opp = source.opportunity
@@ -196,6 +251,7 @@ async def sync_slack_source(db: Session, source: OpportunitySource) -> int:
     prefix = _oid_to_slack_channel_prefix(opp.opportunity_id)
     if not prefix:
         return 0
+    preferred_channel_id = (source.channel_id or "").strip()
 
     # GCS object names are case-sensitive; always use canonical prefix (e.g. oid1023) so we
     # never duplicate raw/slack under OID1023 vs oid1023 when DB casing varies.
@@ -229,9 +285,22 @@ async def sync_slack_source(db: Session, source: OpportunitySource) -> int:
             if not cursor:
                 break
 
-        matching = [
-            c for c in channels if prefix in (c.get("name") or "").lower()
-        ]
+        matching: list[dict] = []
+        if preferred_channel_id:
+            preferred = next((c for c in channels if (c.get("id") or "") == preferred_channel_id), None)
+            if not preferred:
+                preferred = await _get_channel_info(client, headers, preferred_channel_id)
+            if preferred:
+                matching = [preferred]
+            else:
+                logger.warning(
+                    "Stored Slack channel_id {} not found for opportunity {}; falling back to prefix match.",
+                    preferred_channel_id,
+                    opp.opportunity_id,
+                )
+
+        if not matching:
+            matching = [c for c in channels if prefix in (c.get("name") or "").lower()]
         if not matching:
             logger.info(
                 "No Slack channels match prefix {} for opportunity {}",
@@ -312,7 +381,10 @@ async def sync_slack_source(db: Session, source: OpportunitySource) -> int:
                 len(existing_ts),
             )
 
-        meta_doc = {"channels": meta_channels}
+            if not source.channel_id:
+                source.channel_id = ch_id
+
+        meta_doc = _merge_slack_metadata_file(storage, gcs_oid, meta_channels)
         storage.write(
             tier="raw",
             opportunity_id=gcs_oid,
