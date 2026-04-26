@@ -362,14 +362,18 @@ export async function fetchDriveConnectInfo(oid, options = {}) {
  * Falls back to GET /metrics/drive/{oid}.
  * @param {string} oid
  * @param {string} [userEmail]
+ * @param {{ signal?: AbortSignal }} [options] — pass an AbortSignal to cancel slow/hanging requests.
  */
-export async function fetchDriveMetrics(oid, userEmail) {
+export async function fetchDriveMetrics(oid, userEmail, options = {}) {
   return traced('fetchDriveMetrics', async () => {
     const params = {}
     if (userEmail && String(userEmail).trim()) {
       params.user_email = String(userEmail).trim()
     }
-    const opts = { params: Object.keys(params).length ? params : undefined }
+    const opts = {
+      params: Object.keys(params).length ? params : undefined,
+      ...(options.signal ? { signal: options.signal } : {}),
+    }
     let data
     try {
       ;({ data } = await api.get(`/integrations/drive/metrics/${encodeURIComponent(oid)}`, opts))
@@ -937,11 +941,31 @@ const _oneDriveMetricsCache = new Map()
 
 function _oneDriveSsKey(oid) { return `pzf_onedrive_metrics_${oid}` }
 
+function _getOneDriveStorage() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) return window.localStorage
+  } catch { /**/ }
+  return null
+}
+
+/** Dual-write so the previous "Active" status survives hard reloads (localStorage) while still
+ * working in private windows where localStorage may be limited (sessionStorage). */
 function _writeOneDriveStorage(oid, data) {
+  const storage = _getOneDriveStorage()
+  if (storage) {
+    try { storage.setItem(_oneDriveSsKey(oid), JSON.stringify(data)) } catch { /**/ }
+  }
   try { sessionStorage.setItem(_oneDriveSsKey(oid), JSON.stringify(data)) } catch { /**/ }
 }
 
 function _readOneDriveStorage(oid) {
+  const storage = _getOneDriveStorage()
+  if (storage) {
+    try {
+      const raw = storage.getItem(_oneDriveSsKey(oid))
+      if (raw) return JSON.parse(raw)
+    } catch { /**/ }
+  }
   try {
     const raw = sessionStorage.getItem(_oneDriveSsKey(oid))
     return raw ? JSON.parse(raw) : null
@@ -979,7 +1003,18 @@ export async function connectOneDrive(oid, userEmail) {
     {},
     { params: { user_email: userEmail } },
   )
-  if (data && typeof data === 'object') {
+  // Only cache when the response carries the metrics shape (total_files /
+  // last_synced_at). The OneDrive connect endpoint returns a thin status
+  // payload ({status, folder_id, sync_started}) — caching that would
+  // overwrite the real metrics cache with 0-file stubs and force users to
+  // hit Resync to recover. The follow-up fetchOneDriveMetrics call inside
+  // runConnectAndMetrics will populate the cache with real values.
+  if (
+    data
+    && typeof data === 'object'
+    && (Object.prototype.hasOwnProperty.call(data, 'total_files')
+      || Object.prototype.hasOwnProperty.call(data, 'last_synced_at'))
+  ) {
     _oneDriveMetricsCache.set(oidStr, data)
     _writeOneDriveStorage(oidStr, data)
   }
@@ -1000,9 +1035,12 @@ export async function getOneDriveAuthorizeInfo(oid, userEmail) {
 /**
  * GET /integrations/onedrive/metrics/{oid}
  * Returns OneDrive ingestion metrics for one opportunity.
+ * @param {string} oid
+ * @param {{ signal?: AbortSignal }} [options] — pass an AbortSignal to cancel slow/hanging requests.
  */
-export async function fetchOneDriveMetrics(oid) {
-  const { data } = await api.get(`/integrations/onedrive/metrics/${encodeURIComponent(oid)}`)
+export async function fetchOneDriveMetrics(oid, options = {}) {
+  const opts = options.signal ? { signal: options.signal } : undefined
+  const { data } = await api.get(`/integrations/onedrive/metrics/${encodeURIComponent(oid)}`, opts)
   _oneDriveMetricsCache.set(oid, data)
   _writeOneDriveStorage(oid, data)
   return data
