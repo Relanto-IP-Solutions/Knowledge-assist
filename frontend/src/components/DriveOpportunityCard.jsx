@@ -4,6 +4,7 @@ import { toApiOpportunityId } from '../config/opportunityApi'
 import {
   connectDrive,
   fetchDriveMetrics,
+  getCachedDriveMetrics,
   getDriveAuthUrl,
   getDriveOAuthRedirectUri,
 } from '../services/integrationsAuthApi'
@@ -124,8 +125,10 @@ function EmailModal({ oid, onSubmit, onCancel }) {
 export default function DriveOpportunityCard({ opportunityId, onStatusChange }) {
   const oid = useMemo(() => toApiOpportunityId(opportunityId), [opportunityId])
 
-  const [metrics, setMetrics]               = useState(null)
-  const [metricsLoading, setMetricsLoading] = useState(true)
+  const [metrics, setMetrics]               = useState(() => getCachedDriveMetrics(oid))
+  /** Only used to render a small in-card spinner inside the metrics block on first ever load. The
+   * header status is now derived deterministically from the cached/last-known status. */
+  const [metricsLoading, setMetricsLoading] = useState(() => getCachedDriveMetrics(oid) === null)
   const [busy, setBusy]                     = useState(false)
   const [syncStatus, setSyncStatus]         = useState(null) // 'connecting' | 'success' | null
   const [showModal, setShowModal]           = useState(false)
@@ -145,16 +148,30 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
 
   useEffect(() => { onStatusChange?.(isActive) }, [isActive, onStatusChange])
 
-  // ── Step 1: Load metrics on mount to determine initial button state
+  // ── Step 1: Background-refresh metrics on mount. Header status is derived from the cached
+  // value (seeded above); this fetch only updates state once the backend responds. An 8s soft
+  // timeout prevents a slow/hanging GCS list call from pinning the UI in a loading state.
   useEffect(() => {
     let alive = true
-    setMetricsLoading(true)
+    const ac = new AbortController()
+    const timeoutId = setTimeout(() => ac.abort(), 8000)
+
     setErr(null)
-    fetchDriveMetrics(oid)
+    if (getCachedDriveMetrics(oid) === null) setMetricsLoading(true)
+
+    fetchDriveMetrics(oid, undefined, { signal: ac.signal })
       .then(m => { if (alive) setMetrics(m) })
-      .catch(() => { if (alive) setMetrics(null) })
-      .finally(() => { if (alive) setMetricsLoading(false) })
-    return () => { alive = false }
+      .catch(() => { /** silent: keep cached value (or null), header falls back to "Not connected". */ })
+      .finally(() => {
+        clearTimeout(timeoutId)
+        if (alive) setMetricsLoading(false)
+      })
+
+    return () => {
+      alive = false
+      clearTimeout(timeoutId)
+      ac.abort()
+    }
   }, [oid])
 
   // ── Auto-sync after returning from Google OAuth ───────────────────
@@ -276,7 +293,7 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
             <span style={{ fontSize: 13, fontWeight: 800, color: NAVY }}>Google Drive</span>
             <Dot active={isActive} />
             <span style={{ fontSize: 11, color: isActive ? GREEN : '#94A3B8', fontWeight: 600 }}>
-              {metricsLoading ? 'Checking…' : isActive ? 'Active' : 'Not connected'}
+              {isActive ? 'Active' : 'Not connected'}
             </span>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)' }}>Documents &amp; Files</div>
@@ -289,7 +306,7 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
         </div>
 
         {/* Connect button — status != ACTIVE */}
-        {!metricsLoading && !isActive && (
+        {!isActive && (
           <button type="button" disabled={busy} onClick={handleConnect}
             style={{
               flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -307,7 +324,7 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
         )}
 
         {/* Resync button — status == ACTIVE */}
-        {!metricsLoading && isActive && (
+        {isActive && (
           <button type="button" disabled={busy} onClick={handleResync}
             style={{
               flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -357,6 +374,12 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
               <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: DRIVE_BLUE }}>
                 Sync metadata
               </span>
+              {metricsLoading && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6, color: DRIVE_BLUE, opacity: .8 }}>
+                  <SpinIcon size={9} />
+                  <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase' }}>Refreshing</span>
+                </span>
+              )}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', padding: '12px 16px 16px' }}>
               <div style={{
