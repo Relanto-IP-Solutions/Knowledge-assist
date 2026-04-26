@@ -52,6 +52,73 @@ function Dot({ active }) {
   )
 }
 
+// Phase stepper rendered while a connect/sync operation is in flight. Maps
+// the current `phase` to one of three steps: Connect → Sync → Ready.
+function PhaseStepper({ phase }) {
+  const steps = [
+    { key: 'connect', label: 'Connect', activePhases: ['authorizing', 'connecting'] },
+    { key: 'sync',    label: 'Sync',    activePhases: ['indexing'] },
+    { key: 'ready',   label: 'Ready',   activePhases: [] },
+  ]
+  const order = { authorizing: 0, connecting: 0, indexing: 1, idle: 2 }
+  const currentIdx = order[phase] ?? 0
+
+  const subtitle = (() => {
+    if (phase === 'authorizing') return 'Authorizing with Microsoft…'
+    if (phase === 'connecting')  return 'Locating your OneDrive folder…'
+    if (phase === 'indexing')    return 'Indexing your files in the background…'
+    return ''
+  })()
+
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 8,
+      padding: '10px 12px', borderRadius: 10,
+      border: '1px solid rgba(0,120,212,.18)',
+      background: 'rgba(0,120,212,.04)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {steps.map((step, i) => {
+          const isActiveStep   = i === currentIdx
+          const isCompleteStep = i < currentIdx
+          const nodeColor = isCompleteStep ? OD_BLUE : isActiveStep ? OD_BLUE : '#CBD5E1'
+          const nodeBg    = isCompleteStep || isActiveStep ? OD_BLUE : 'transparent'
+          const textColor = isActiveStep ? OD_BLUE : isCompleteStep ? NAVY : '#94A3B8'
+          return (
+            <div key={step.key} style={{ display: 'flex', alignItems: 'center', flex: i === steps.length - 1 ? '0 0 auto' : 1, gap: 6 }}>
+              <div style={{
+                width: 18, height: 18, borderRadius: '50%',
+                border: `1.5px solid ${nodeColor}`, background: nodeBg,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', flexShrink: 0,
+              }}>
+                {isCompleteStep ? (
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                ) : isActiveStep ? (
+                  <SpinIcon size={9} />
+                ) : null}
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 700, color: textColor, letterSpacing: '.02em' }}>{step.label}</span>
+              {i < steps.length - 1 && (
+                <div style={{
+                  flex: 1, height: 2, marginLeft: 4, marginRight: 2,
+                  background: i < currentIdx ? OD_BLUE : '#E2E8F0',
+                  borderRadius: 2,
+                }} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {subtitle && (
+        <span style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 500 }}>{subtitle}</span>
+      )}
+    </div>
+  )
+}
+
 function EmailModal({ oid, onSubmit, onCancel }) {
   const [value, setValue] = useState('')
   const [localErr, setLocalErr] = useState('')
@@ -134,6 +201,14 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
   const [showModal, setShowModal]           = useState(false)
   const [userEmail, setUserEmail]           = useState(() => ssGet(SS_EMAIL(oid)) ?? '')
   const [notice, setNotice]                 = useState(null) // { type: 'success'|'error', msg }
+  // Phase machine for the Connect → Sync → Ready progression.
+  // 'idle'        -> nothing in flight; metrics block is allowed to render
+  // 'authorizing' -> getMicrosoftOAuthUrl / waiting on Microsoft consent
+  // 'connecting'  -> POST /onedrive/connect (folder lookup, source upsert)
+  // 'indexing'    -> connect returned ACTIVE; backend BackgroundTask is
+  //                  ingesting files. We poll metrics silently and watch
+  //                  for source.last_synced_at to flip from null.
+  const [phase, setPhase]                   = useState('idle')
 
   const mountedRef = useRef(true)
   const oidRef     = useRef(oid)
@@ -175,13 +250,17 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
     window.location.href = String(authUrl).trim()
   }, [])
 
-  // Core: POST connect (always) → GET metrics (always)
+  // Core: POST connect → wait for backend ingestion → fetch real metrics.
+  //
+  // The backend BackgroundTask runs after /connect returns, so we poll
+  // /metrics silently (without writing to UI state) and watch for
+  // last_synced_at to become non-null. Only when sync is verifiably
+  // complete do we fetch the metrics one final time and reveal them.
   const runConnectAndMetrics = useCallback(async (runOid, email) => {
     if (!mountedRef.current) return
     setBusy(true)
     setNotice(null)
-
-    let folderError = null
+    setPhase('connecting')
 
     try {
       await connectOneDrive(runOid, email)
@@ -191,13 +270,15 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       const detail = e?.response?.data?.detail ?? ''
 
       if (status === 401 || status === 400) {
-        // Token expired/missing — redirect to OAuth
+        // Token expired/missing — redirect to OAuth.
+        setPhase('authorizing')
         try {
           const auth = await getMicrosoftOAuthUrl(getOneDriveOAuthRedirectUri(), email, runOid)
           if (auth?.auth_url) { doRedirect(runOid, email, auth.auth_url); return }
         } catch { /**/ }
         if (mountedRef.current) {
           setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
+          setPhase('idle')
           setBusy(false)
         }
         return
@@ -205,47 +286,69 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
 
       if (status === 403) {
         setNotice({ type: 'error', msg: 'Only @relanto.ai accounts are permitted.' })
+        setPhase('idle')
         setBusy(false)
         return
       }
 
-      // 404 folder-not-found — surface message but still fetch metrics
-      folderError = detail || 'Folder not found for this OID. Create it in OneDrive and click Resync.'
+      // 404 folder-not-found — short-circuit, no point polling for sync
+      // because the background task won't have anything to ingest.
+      const folderError = detail || 'Folder not found for this OID. Create it in OneDrive and click Resync.'
       setNotice({ type: 'error', msg: folderError })
+      setPhase('idle')
+      setBusy(false)
+      return
     }
 
     if (!mountedRef.current || oidRef.current !== runOid) return
 
-    if (!folderError) setNotice({ type: 'info', msg: 'Syncing your OneDrive files…' })
+    setPhase('indexing')
 
-    // Poll metrics every 3s until status === ACTIVE (max 20 attempts = 60s)
+    // Silently poll until source.last_synced_at flips from null. We do not
+    // call setMetrics here so the UI does not surface a stale or 0-file
+    // snapshot mid-sync. 60s budget (20 × 3s).
     const POLL_INTERVAL = 3000
     const MAX_ATTEMPTS  = 20
-    let lastMetrics = null
+    let synced = false
     for (let i = 0; i < MAX_ATTEMPTS; i++) {
       if (!mountedRef.current || oidRef.current !== runOid) return
       try {
         const m = await fetchOneDriveMetrics(runOid)
-        lastMetrics = m
-        if (mountedRef.current) setMetrics(m)
-        if (String(m?.status ?? '').toUpperCase() === 'ACTIVE') break
+        if (Boolean(m?.last_synced_at)) { synced = true; break }
       } catch { /**/ }
       if (i < MAX_ATTEMPTS - 1) await new Promise(r => setTimeout(r, POLL_INTERVAL))
     }
 
-    if (mountedRef.current && oidRef.current === runOid) {
-      if (lastMetrics) setMetrics(lastMetrics)
-      if (!folderError) {
-        const fileCount = Number(lastMetrics?.total_files ?? 0)
-        setNotice({
-          type: fileCount > 0 ? 'success' : 'info',
-          msg: fileCount > 0
-            ? 'Sync complete! Your files are ready.'
-            : 'Connected. Files are still being indexed — check back shortly.',
-        })
-      }
-      setBusy(false)
+    if (!mountedRef.current || oidRef.current !== runOid) return
+
+    // One authoritative metrics fetch, now that sync is (likely) done. This
+    // is what the user sees in the metrics block.
+    let finalMetrics = null
+    try { finalMetrics = await fetchOneDriveMetrics(runOid) } catch { /**/ }
+
+    if (!mountedRef.current || oidRef.current !== runOid) return
+
+    if (finalMetrics) setMetrics(finalMetrics)
+
+    const fileCount = Number(finalMetrics?.total_files ?? 0)
+    if (synced) {
+      setNotice({
+        type: fileCount > 0 ? 'success' : 'info',
+        msg: fileCount > 0
+          ? `Sync complete! ${fileCount} ${fileCount === 1 ? 'file' : 'files'} ready.`
+          : 'Sync complete. Folder is empty — drop files into it and click Resync.',
+      })
+    } else {
+      // Soft timeout: ingestion exceeded our 60s budget. Surface what we
+      // have without locking the UI in 'indexing' forever.
+      setNotice({
+        type: 'info',
+        msg: 'Connected. Files are still being indexed — check back shortly.',
+      })
     }
+
+    setPhase('idle')
+    setBusy(false)
   }, [doRedirect])
 
   // ── Connect flow ─────────────────────────────────────────────────
@@ -255,6 +358,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
     ssSet(SS_EMAIL(oid), email)
     setBusy(true)
     setNotice(null)
+    setPhase('authorizing')
 
     let auth = null
     try {
@@ -264,6 +368,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       const status = e?.response?.status
       if (status === 403) {
         setNotice({ type: 'error', msg: 'Only @relanto.ai accounts are permitted.' })
+        setPhase('idle')
         setBusy(false)
         return
       }
@@ -271,6 +376,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       const authUrl = e?.response?.data?.auth_url
       if (authUrl) { doRedirect(oid, email, authUrl); return }
       setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
+      setPhase('idle')
       setBusy(false)
       return
     }
@@ -278,11 +384,13 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
     if (!mountedRef.current) return
 
     if (auth?.already_connected === true) {
+      // runConnectAndMetrics will move phase from 'authorizing' -> 'connecting'.
       await runConnectAndMetrics(oid, email)
     } else if (auth?.auth_url) {
       doRedirect(oid, email, auth.auth_url)
     } else {
       setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
+      setPhase('idle')
       setBusy(false)
     }
   }, [oid, doRedirect, runConnectAndMetrics])
@@ -301,6 +409,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
 
     setBusy(true)
     setNotice(null)
+    setPhase('authorizing') // brief: confirming the connection still holds
 
     // Step 1: check authorize-info to confirm connection exists
     let authorizeInfo = null
@@ -317,6 +426,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
         if (auth?.auth_url) { doRedirect(oid, email, auth.auth_url); return }
       } catch { /**/ }
       setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
+      setPhase('idle')
       setBusy(false)
       return
     }
@@ -327,6 +437,13 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
 
   const totalFilesCount = Number(metrics?.total_files ?? 0)
   const noticeColor = notice?.type === 'success' ? '#047857' : notice?.type === 'info' ? OD_BLUE : '#DC2626'
+  const inFlight = phase !== 'idle'
+  // Metrics block only renders for a fully-synced source. last_synced_at is
+  // the only signal that the backend BackgroundTask actually completed, so
+  // we never reveal the metrics block before that — preventing the
+  // misleading "0 files" snapshot the user reported.
+  const showMetricsBlock = !inFlight && isActive && Boolean(metrics?.last_synced_at)
+  const hasContentBelow = inFlight || Boolean(notice) || showMetricsBlock
 
   return (
     <>
@@ -340,7 +457,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 14,
-        padding: '18px 22px', borderBottom: isActive ? '1px solid var(--border)' : 'none',
+        padding: '18px 22px', borderBottom: hasContentBelow ? '1px solid var(--border)' : 'none',
       }}>
         <div style={{
           width: 44, height: 44, borderRadius: 12, flexShrink: 0,
@@ -367,8 +484,9 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
           )}
         </div>
 
-        {/* Connect — not active */}
-        {!metricsLoading && !isActive && (
+        {/* Connect — not active. Label stays constant; the stepper below
+            is the single source of phase detail (Connect → Sync → Ready). */}
+        {!isActive && (
           <button type="button" disabled={busy} onClick={handleConnect}
             style={{
               flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -381,7 +499,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
             onMouseLeave={e => { e.currentTarget.style.opacity = busy ? '0.55' : '1' }}
           >
             {busy && <SpinIcon size={11} />}
-            {busy ? 'Connecting…' : 'Connect OneDrive'}
+            Connect OneDrive
           </button>
         )}
 
@@ -399,20 +517,27 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
             onMouseLeave={e => { e.currentTarget.style.opacity = busy ? '0.55' : '1' }}
           >
             {busy && <SpinIcon size={11} />}
-            {busy ? 'Syncing…' : 'Resync Items'}
+            Resync Items
           </button>
         )}
       </div>
 
-      {/* Notice */}
-      {notice && (
+      {/* Phase stepper — shown only while a connect/sync is in flight */}
+      {inFlight && (
+        <div style={{ padding: '12px 22px 14px 80px' }}>
+          <PhaseStepper phase={phase} />
+        </div>
+      )}
+
+      {/* Notice — only when idle, so the stepper is the sole indicator during work */}
+      {notice && !inFlight && (
         <div style={{ padding: '0 22px 14px 80px' }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: noticeColor }}>{notice.msg}</span>
         </div>
       )}
 
-      {/* Metrics */}
-      {isActive && metrics && (
+      {/* Metrics — gated on phase === 'idle' AND a real last_synced_at */}
+      {showMetricsBlock && (
         <div style={{ padding: '12px 22px 18px 80px' }}>
           <div style={{
             borderRadius: 12, border: '1px solid rgba(0,120,212,.15)',
