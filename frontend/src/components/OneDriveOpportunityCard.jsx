@@ -17,9 +17,14 @@ const GREEN      = '#10B981'
 const RELANTO_RE = /@relanto\.ai$/i
 const EMAIL_RE   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-const SS_EMAIL         = (oid) => `pzf_onedrive_email_${oid}`
-const SS_PENDING_OID   = 'pzf_onedrive_pending_oid'
-const SS_PENDING_EMAIL = 'pzf_onedrive_pending_email'
+const SS_EMAIL          = (oid) => `pzf_onedrive_email_${oid}`
+const SS_PENDING_OID    = 'pzf_onedrive_pending_oid'
+const SS_PENDING_EMAIL  = 'pzf_onedrive_pending_email'
+// Persists the "no OneDrive folder for this OID" signal across reloads.
+// Backend returns a 404 on connect when the folder is missing; once the user
+// navigates away and back the 404 isn't re-issued, so without this flag the
+// hint would silently disappear.
+const SS_FOLDER_MISSING = (oid) => `pzf_onedrive_folder_missing_${oid}`
 
 function ssGet(k) { try { return sessionStorage.getItem(k) } catch { return null } }
 function ssSet(k, v) { try { sessionStorage.setItem(k, v) } catch { /**/ } }
@@ -213,6 +218,8 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
   // Connect. The stepper is reserved for first-time connects — during
   // a Resync the button's disabled+spinner state is sufficient feedback.
   const [isResync, setIsResync]             = useState(false)
+  const [folderMissing, setFolderMissing]   = useState(() => ssGet(SS_FOLDER_MISSING(oid)) === '1')
+  const [copiedOid, setCopiedOid]           = useState(false)
 
   const mountedRef = useRef(true)
   const oidRef     = useRef(oid)
@@ -268,6 +275,11 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
 
     try {
       await connectOneDrive(runOid, email)
+      // Reached only on 2xx — backend confirmed the folder exists and queued
+      // the background sync. Clear any persisted "missing folder" hint so a
+      // user who just created the folder and re-synced sees the success path.
+      setFolderMissing(false)
+      ssSet(SS_FOLDER_MISSING(runOid), '0')
     } catch (e) {
       if (!mountedRef.current || oidRef.current !== runOid) return
       const status = e?.response?.status
@@ -298,9 +310,17 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       }
 
       // 404 folder-not-found — short-circuit, no point polling for sync
-      // because the background task won't have anything to ingest.
-      const folderError = detail || 'Folder not found for this OID. Create it in OneDrive and click Resync.'
-      setNotice({ type: 'error', msg: folderError })
+      // because the background task won't have anything to ingest. Persist
+      // the signal so the hint sticks across page reloads (the /metrics
+      // endpoint can't tell us the folder is missing).
+      if (status === 404) {
+        setFolderMissing(true)
+        ssSet(SS_FOLDER_MISSING(runOid), '1')
+        setNotice(null)
+      } else {
+        const fallback = detail || 'OneDrive sync failed. Try again.'
+        setNotice({ type: 'error', msg: fallback })
+      }
       setPhase('idle')
       setIsResync(false)
       setBusy(false)
@@ -399,6 +419,14 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
     void handleConnectWithEmail(email)
   }, [oid, userEmail, handleConnectWithEmail])
 
+  const handleCopyOid = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(oid)
+      setCopiedOid(true)
+      setTimeout(() => setCopiedOid(false), 1800)
+    } catch { /* clipboard unavailable */ }
+  }, [oid])
+
   // ── Resync flow ──────────────────────────────────────────────────
   const handleResync = useCallback(async () => {
     const email = userEmail || ssGet(SS_EMAIL(oid)) || ''
@@ -406,6 +434,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
 
     setBusy(true)
     setNotice(null)
+    setCopiedOid(false)
     setIsResync(true) // suppresses the stepper for already-active sources
     setPhase('authorizing') // brief: confirming the connection still holds
 
@@ -446,9 +475,13 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
   // the only signal that the backend BackgroundTask actually completed, so
   // we never reveal the metrics block before that — preventing the
   // misleading "0 files" snapshot the user reported. During a resync we
-  // keep showing the previous metrics until the fresh fetch lands.
-  const showMetricsBlock = (!inFlight || isResync) && isActive && Boolean(metrics?.last_synced_at)
-  const hasContentBelow = showStepper || Boolean(notice) || showMetricsBlock
+  // keep showing the previous metrics until the fresh fetch lands. We also
+  // suppress it whenever we know the project folder is missing, since
+  // "0 files" without context is just confusing — the missing-folder
+  // banner below tells the user exactly what to do.
+  const showMetricsBlock = (!inFlight || isResync) && isActive && Boolean(metrics?.last_synced_at) && !folderMissing
+  const showFolderMissingBanner = folderMissing && !inFlight
+  const hasContentBelow = showStepper || Boolean(notice) || showMetricsBlock || showFolderMissingBanner
 
   return (
     <>
@@ -542,6 +575,45 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       {notice && !inFlight && (
         <div style={{ padding: '0 22px 14px 80px' }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: noticeColor }}>{notice.msg}</span>
+        </div>
+      )}
+
+      {/* Missing-folder hint — backend returned 404 from /onedrive/connect
+          because no folder containing this OID exists in the user's
+          OneDrive. Tells them what to name the folder and offers a
+          one-click copy of the project id. */}
+      {showFolderMissingBanner && (
+        <div style={{ padding: '10px 22px 14px 80px' }}>
+          <div style={{
+            display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 10,
+            background: 'rgba(234,179,8,.08)', border: '1px solid rgba(234,179,8,.35)',
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 2 }}>
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#92400E', marginBottom: 4 }}>
+                No project folder found in OneDrive
+              </div>
+              <div style={{ fontSize: 11.5, color: '#92400E', lineHeight: 1.55, marginBottom: 8 }}>
+                Create a folder in your OneDrive whose name includes this project id, drop your files in it, then click <strong>Resync Items</strong>. Acceptable names: <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{oid}</code>, <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`OID ${oid.replace(/^oid/i, '')}`}</code>, or <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`Project ${oid}`}</code>.
+              </div>
+              <button type="button" onClick={handleCopyOid}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '5px 11px', borderRadius: 6,
+                  border: '1px solid rgba(146,64,14,.35)', background: '#fff',
+                  color: '#92400E', fontSize: 11, fontWeight: 700,
+                  cursor: 'pointer', fontFamily: 'var(--font)',
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                {copiedOid ? 'Copied!' : `Copy ${oid}`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
