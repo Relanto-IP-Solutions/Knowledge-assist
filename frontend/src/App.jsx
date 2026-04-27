@@ -70,6 +70,24 @@ function clearPostLoginSessionCache() {
   }
 }
 
+function clearKnowledgeAssistQaLocalCache() {
+  try {
+    const qaProgressPrefix = 'knowledgeAssist:qaProgress:v1:'
+    const acceptedPrefix = 'accepted_'
+    const keysToRemove = []
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i)
+      if (!key) continue
+      if (key.startsWith(qaProgressPrefix) || key.startsWith(acceptedPrefix)) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key))
+  } catch {
+    /* noop */
+  }
+}
+
 function parsePositivePage(value) {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
@@ -271,6 +289,7 @@ export default function App() {
       const isFreshLogin = hasHandledInitialAuthRef.current && !previousAuthUidRef.current && !!nextUid
       if (isFreshLogin) {
         clearPostLoginSessionCache()
+        clearKnowledgeAssistQaLocalCache()
         setStoredKnowledgeAssistPage(1)
         markKnowledgeAssistFreshLoginReset()
         navigate(
@@ -366,6 +385,7 @@ export default function App() {
     if (module) setActiveModule(module)
     // Fresh sign-in should always start the dashboard table at page 1.
     clearPostLoginSessionCache()
+    clearKnowledgeAssistQaLocalCache()
     setStoredKnowledgeAssistPage(1)
     markKnowledgeAssistFreshLoginReset()
     navigate(
@@ -378,6 +398,7 @@ export default function App() {
     await signOutUser()
     setUser(null)
     // Reset landing pagination context on sign-out so next sign-in starts fresh.
+    clearKnowledgeAssistQaLocalCache()
     setStoredKnowledgeAssistPage(1)
     navigate(
       { pathname: '/homepage' },
