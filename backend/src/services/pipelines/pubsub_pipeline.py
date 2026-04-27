@@ -21,11 +21,13 @@ logger = get_logger(__name__)
 # GCS source directory name → pubsub source_type value.
 # Bucket layout:
 #   {opp_id}/processed/documents/                     → all files dispatched → rag-ingestion-queue
+#   {opp_id}/processed/onedrive/                      → all files dispatched → rag-ingestion-queue
 #   {opp_id}/processed/zoom_transcripts/              → .txt files only      → rag-ingestion-queue
 #   {opp_id}/processed/slack_messages/{channel_id}/   → .txt files only      → rag-ingestion-queue
 #   {opp_id}/processed/gmail_messages/{thread_id}/    → .txt files only      → rag-ingestion-queue
 _SOURCE_TYPE_MAP: dict[str, str] = {
     "documents": "documents",
+    "onedrive": "onedrive",
     "zoom_transcripts": "zoom_transcripts",
     "slack_messages": "slack_messages",
     "gmail_messages": "gmail_messages",

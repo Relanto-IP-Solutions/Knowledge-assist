@@ -12,6 +12,23 @@ export function isWorkspacePolicyError(error) {
   return status === 403 && (detail.includes('workspace') || detail.includes('domain policy'))
 }
 
+/**
+ * Detects the "refresh token expired/revoked" condition the backend
+ * surfaces as `HTTPException(400, "Failed to refresh Gmail credentials: ...invalid_grant...")`.
+ * When this is true the Gmail card should re-trigger the OAuth popup
+ * instead of just rendering the error.
+ */
+export function isInvalidGrantError(error) {
+  const status = error?.response?.status
+  const detail = String(error?.response?.data?.detail ?? error?.response?.data?.message ?? error?.message ?? '').toLowerCase()
+  if (status !== 400 && status !== 401) return false
+  return (
+    detail.includes('invalid_grant')
+    || detail.includes('expired or revoked')
+    || detail.includes('failed to refresh')
+  )
+}
+
 export function mapGmailError(error) {
   const status    = error?.response?.status
   const detail    = error?.response?.data?.detail ?? error?.response?.data?.message ?? error?.message ?? ''

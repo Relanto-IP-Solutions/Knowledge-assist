@@ -7,6 +7,7 @@ at import time, so values in configs/.env and configs/secrets/.env are visible h
 from __future__ import annotations
 
 import base64
+import os
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote_plus
 
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from configs.settings import get_settings
 from src.services.database_manager.models.auth_models import User, UserConnection
+from src.utils.logger import get_logger
 from src.utils.opportunity_id import normalize_opportunity_oid
 
 
@@ -31,6 +33,11 @@ GOOGLE_SCOPES = {
 
 # Base OIDC + profile; provider-specific scope appended when ``provider`` is set.
 _GOOGLE_BASE_SCOPES = "openid email profile"
+MICROSOFT_SCOPES = "offline_access openid profile Files.Read"
+_MICROSOFT_PROMPT_DEFAULT = "select_account"
+_MICROSOFT_PROMPT_ALLOWED = {"select_account", "consent", "login", "none"}
+
+logger = get_logger(__name__)
 
 
 def _oauth():
@@ -238,6 +245,48 @@ async def get_slack_auth_url(redirect_uri: str, state: str | None = None) -> str
     return url
 
 
+async def get_microsoft_auth_url(redirect_uri: str, state: str | None = None) -> str:
+    """Build Microsoft authorize URL with OneDrive read-only scopes."""
+    ms = get_settings().onedrive
+    client_id = (ms.client_id or "").strip()
+    tenant_id = (ms.tenant_id or "common").strip() or "common"
+    if not client_id:
+        raise ValueError(
+            "MICROSOFT_CLIENT_ID is empty. Set MICROSOFT_CLIENT_ID (and "
+            "MICROSOFT_CLIENT_SECRET) in configs/.env or configs/secrets/.env, "
+            "then restart the API."
+        )
+    prompt_raw = (os.getenv("MICROSOFT_OAUTH_PROMPT") or "").strip().lower()
+    force_consent = (
+        os.getenv("MICROSOFT_OAUTH_FORCE_CONSENT", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    if force_consent:
+        prompt = "consent"
+    elif prompt_raw in _MICROSOFT_PROMPT_ALLOWED:
+        prompt = prompt_raw
+    else:
+        prompt = _MICROSOFT_PROMPT_DEFAULT
+    logger.info(
+        "Microsoft OAuth prompt mode: {} (force_consent={})",
+        prompt,
+        force_consent,
+    )
+
+    encoded_redirect_uri = quote_plus(redirect_uri)
+    url = (
+        f"https://login.microsoftonline.com/{quote_plus(tenant_id)}/oauth2/v2.0/authorize?"
+        f"client_id={quote_plus(client_id)}&"
+        f"redirect_uri={encoded_redirect_uri}&"
+        f"response_type=code&"
+        f"scope={quote_plus(MICROSOFT_SCOPES)}&"
+        f"prompt={quote_plus(prompt)}"
+    )
+    if state:
+        url += f"&state={quote_plus(state)}"
+    return url
+
+
 async def exchange_slack_code(
     code: str, redirect_uri: str, db: Session, user_email: str
 ) -> dict:
@@ -301,6 +350,88 @@ async def exchange_slack_code(
     db.commit()
     return {
         "message": "Slack workspace connected securely.",
+        "email": user.email,
+        "granted_scopes": granted_scopes or [],
+    }
+
+
+async def exchange_microsoft_code(
+    code: str, redirect_uri: str, db: Session, user_email: str
+) -> dict:
+    """Exchange Microsoft code for tokens and upsert ``provider='onedrive'`` connection."""
+    ms = get_settings().onedrive
+    tenant_id = (ms.tenant_id or "common").strip() or "common"
+    token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            token_url,
+            data={
+                "client_id": ms.client_id,
+                "client_secret": ms.client_secret,
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
+                "scope": MICROSOFT_SCOPES,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+    if resp.status_code != 200:
+        raise ValueError(f"Microsoft Token Exchange failed: {resp.text}")
+
+    token_data = resp.json()
+    access_token = (token_data.get("access_token") or "").strip()
+    refresh_token = (token_data.get("refresh_token") or "").strip()
+    if not access_token:
+        raise ValueError("Microsoft OAuth did not return an access token.")
+    if not refresh_token:
+        raise ValueError("Microsoft OAuth did not return a refresh token.")
+
+    user = db.query(User).filter(User.email == (user_email or "").strip().lower()).first()
+    if not user:
+        raise ValueError(f"User {user_email} not found to attach Microsoft token to.")
+
+    expires_in = int(token_data.get("expires_in") or 0)
+    expires_at = (
+        datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=expires_in)
+        if expires_in > 0
+        else None
+    )
+    scope_raw = (token_data.get("scope") or "").strip()
+    granted_scopes = [s for s in scope_raw.split() if s] if scope_raw else None
+
+    existing = (
+        db.query(UserConnection)
+        .filter(
+            UserConnection.user_id == user.id,
+            UserConnection.provider == "onedrive",
+        )
+        .order_by(UserConnection.id.desc())
+        .first()
+    )
+    if existing:
+        existing.access_token = access_token
+        existing.refresh_token = refresh_token
+        existing.granted_scopes = granted_scopes
+        existing.status = "active"
+        existing.expires_at = expires_at
+    else:
+        db.add(
+            UserConnection(
+                user_id=user.id,
+                provider="onedrive",
+                access_token=access_token,
+                refresh_token=refresh_token,
+                granted_scopes=granted_scopes,
+                status="active",
+                expires_at=expires_at,
+            )
+        )
+
+    db.commit()
+    return {
+        "message": "Microsoft OneDrive connected securely.",
         "email": user.email,
         "granted_scopes": granted_scopes or [],
     }

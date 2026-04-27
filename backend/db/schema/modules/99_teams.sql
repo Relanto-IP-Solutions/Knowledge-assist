@@ -9,7 +9,15 @@ CREATE TABLE IF NOT EXISTS teams (
     updated_at TIMESTAMPTZ
 );
 
+DROP INDEX IF EXISTS unique_team_name;
+CREATE UNIQUE INDEX IF NOT EXISTS unique_team_name
+ON teams (LOWER(name))
+WHERE is_active = TRUE;
+
 -- Add FK after teams exists (opportunities is created in earlier module).
+ALTER TABLE opportunities
+    ADD COLUMN IF NOT EXISTS team_id INTEGER;
+
 DO $$
 BEGIN
     IF NOT EXISTS (

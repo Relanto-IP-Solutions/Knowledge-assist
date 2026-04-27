@@ -73,7 +73,6 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
   const [busy, setBusy] = useState(false)
   /** 'discover' | 'connect' | 'metrics' — which API phase is running */
   const [ingestStep, setIngestStep] = useState(null)
-  const [discoveryResult, setDiscoveryResult] = useState(null)
   const [err, setErr] = useState(null)
 
   const [showCreateChannel, setShowCreateChannel] = useState(false)
@@ -99,7 +98,6 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
     setActive(info?.status === 'ACTIVE')
     setMetrics(cachedM ?? null)
     setMetricsLoading(info?.status === 'ACTIVE' && !cachedM)
-    setDiscoveryResult(null)
     setErr(null)
     setBusy(false)
     setIngestStep(null)
@@ -143,10 +141,8 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
     try {
       // Step 1: POST /integrations/slack/connect/{oid}
       setIngestStep('connect')
-      const connected = await connectSlack(runOid)
+      await connectSlack(runOid)
       if (!mountedRef.current || oidRef.current !== runOid) return
-
-      if (connected?.discovery_result) setDiscoveryResult(connected.discovery_result)
 
       // Step 2: GET /integrations/slack/authorize-info/{oid}
       setIngestStep('authorize')
@@ -248,9 +244,6 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
   else if (busy) statusText = 'Working…'
 
   const statusColor = active ? GREEN : busy ? BLUE : '#94A3B8'
-  const channelsTotal = discoveryResult?.channels_total
-  const channelsMatched = discoveryResult?.channels_matched
-  const oppsCreated = discoveryResult?.opportunities_created
 
   let busyLabel = 'Working…'
   if (ingestStep === 'connect') busyLabel = 'Syncing…'
@@ -288,16 +281,6 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
           <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
             Discover the channel for project <strong>{oid}</strong>, then synchronous ingest to storage. 
           </div>
-          {channelsTotal != null && channelsMatched != null && (
-            <div style={{
-              marginTop: 8, fontSize: 10.5, fontWeight: 600, color: '#0F766E',
-              padding: '6px 10px', borderRadius: 8,
-              background: 'rgba(16,185,129,.08)', border: '1px solid rgba(16,185,129,.22)',
-            }}>
-              Last discover: {channelsTotal} channels in workspace · {channelsMatched} match this project
-              {oppsCreated != null && oppsCreated > 0 && ` · ${oppsCreated} opportunities updated`}
-            </div>
-          )}
         </div>
 
         {!active && (
