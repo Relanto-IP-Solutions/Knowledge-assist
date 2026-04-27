@@ -32,6 +32,33 @@ const GMAIL_RED = '#EA4335'
 const NAVY = '#1B264F'
 const GREEN = '#10B981'
 
+// Persists the "no Gmail threads matched this OID" signal across reloads.
+// The /metrics endpoint returns total_threads but doesn't expose how many
+// threads actually contained the OID token, so without this we'd lose the
+// distinction between "synced 0 threads because none exist" and "haven't
+// synced yet" the moment the user navigates away.
+const SS_NO_THREADS = (oid) => `pzf_gmail_no_threads_${oid}`
+const ssGet = (k) => { try { return sessionStorage.getItem(k) } catch { return null } }
+const ssSet = (k, v) => { try { sessionStorage.setItem(k, v) } catch { /**/ } }
+
+/** Pulls discovery counts out of the Gmail connect response. The backend
+ *  shape is `{ discovery_result: { threads_with_oid, threads_scanned, ... } }`
+ *  but we tolerate a few fallbacks (top-level fields, snake/camel) so a
+ *  small backend drift won't silently disable the hint.
+ */
+function readDiscoveryCounts(connectResult) {
+  if (!connectResult || typeof connectResult !== 'object') return null
+  const d = connectResult.discovery_result ?? connectResult.discoveryResult ?? connectResult
+  if (!d || typeof d !== 'object') return null
+  const matched = d.threads_with_oid ?? d.threadsWithOid ?? d.matched_threads ?? d.matchedThreads
+  const scanned = d.threads_scanned ?? d.threadsScanned
+  if (matched === undefined && scanned === undefined) return null
+  return {
+    matched: typeof matched === 'number' ? matched : Number(matched ?? 0),
+    scanned: typeof scanned === 'number' ? scanned : Number(scanned ?? 0),
+  }
+}
+
 function timeAgo(iso) {
   if (!iso) return null
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
@@ -218,6 +245,8 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
   const [err,             setErr]           = useState(null)
   const [awaitingOAuth, setAwaitingOAuth] = useState(false)
   const awaitingOAuthRef = useRef(false)
+  const [noThreadsFound, setNoThreadsFound] = useState(() => ssGet(SS_NO_THREADS(oid)) === '1')
+  const [copiedOid, setCopiedOid]           = useState(false)
 
   const oauthPopupRef = useRef(null)
   const mountedRef = useRef(true)
@@ -238,6 +267,9 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
     setConnectModal(false)
     awaitingOAuthRef.current = false
     setAwaitingOAuth(false)
+    setCopiedOid(false)
+    // Re-read the per-oid no-threads flag (sessionStorage is keyed per OID).
+    setNoThreadsFound(ssGet(SS_NO_THREADS(oid)) === '1')
     const ci = getCachedGmailConnectInfo(oid)
     if (ci?.status !== 'ACTIVE') {
       setMetrics(null)
@@ -429,6 +461,17 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
           }))
           onStatusChange?.(true)
         }
+        // Detect "no threads matched the OID" from the discovery payload.
+        // threads_with_oid is the count after subject/body filter; if it's 0
+        // we surface an actionable banner instead of silently rendering
+        // "Total threads: 0" in the metrics block. Persisted per-oid so the
+        // hint survives reloads (the /metrics endpoint can't reproduce it).
+        const counts = readDiscoveryCounts(connectResult) ?? readDiscoveryCounts(out.discoverResult)
+        if (counts && mountedRef.current && oidRef.current === runOid) {
+          const empty = counts.matched <= 0
+          setNoThreadsFound(empty)
+          ssSet(SS_NO_THREADS(runOid), empty ? '1' : '0')
+        }
         const inline = metricsFromConnectPayload(connectResult)
         if (inline && mountedRef.current && oidRef.current === runOid) setMetrics(inline)
         if (mountedRef.current && oidRef.current === runOid) setMetricsLoading(true)
@@ -539,6 +582,16 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
           requires_oauth: false,
         }))
       }
+      // Mirror the no-threads detection from runConnectPipeline so a Resync
+      // also clears or sets the hint. Resync re-runs discover behind the
+      // scenes — if the user just sent emails containing the OID, this
+      // flips back to false and the metrics block re-appears.
+      const resyncCounts = readDiscoveryCounts(result)
+      if (resyncCounts && mountedRef.current && oidRef.current === runOid) {
+        const empty = resyncCounts.matched <= 0
+        setNoThreadsFound(empty)
+        ssSet(SS_NO_THREADS(runOid), empty ? '1' : '0')
+      }
       const inline = metricsFromConnectPayload(result)
       if (inline && mountedRef.current && oidRef.current === runOid) setMetrics(inline)
       if (mountedRef.current && oidRef.current === runOid) setMetricsLoading(true)
@@ -574,12 +627,29 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
     }
   }, [onStatusChange, oid, resolveMailboxForResync, triggerGmailReauth])
 
+  const handleCopyOid = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(oid)
+      setCopiedOid(true)
+      setTimeout(() => setCopiedOid(false), 1800)
+    } catch { /* clipboard unavailable */ }
+  }, [oid])
+
   const statusText  = resolving ? 'Loading…' : isActive ? 'Active' : 'Not connected'
   const statusColor = isActive ? GREEN : '#94A3B8'
   /** API sends `total_files`; UI labels it "threads" for Gmail. */
   const gmailThreadCount = Number(
     metrics?.total_files ?? metrics?.total_threads ?? metrics?.thread_count ?? 0,
   )
+  // The metrics block is the "Total threads / Last synced" panel. We hide
+  // it when we know discovery returned 0 OID-matching threads, since the
+  // banner below explains why and rendering "0 threads" alongside would
+  // just create noise.
+  const showMetricsBlock = isActive && !metricsLoading && metrics && !noThreadsFound
+  const showNoThreadsBanner = isActive && noThreadsFound && !busy && !awaitingOAuth
+  // The "Connected — metrics not available yet." fallback only makes sense
+  // when neither the metrics block nor the no-threads banner is showing.
+  const showMetricsUnavailable = isActive && !metricsLoading && !metrics && !resolving && !noThreadsFound
 
   return (
     <>
@@ -701,7 +771,46 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
         </div>
       )}
 
-      {isActive && !metricsLoading && metrics && (
+      {/* Missing-threads hint — Gmail is connected but the discover step
+          returned 0 threads matching this project's OID. Tells the user
+          exactly which token to put in their email subjects/bodies and
+          offers a one-click copy of the project id. */}
+      {showNoThreadsBanner && (
+        <div style={{ padding: '10px 22px 14px 80px' }}>
+          <div style={{
+            display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 10,
+            background: 'rgba(234,179,8,.08)', border: '1px solid rgba(234,179,8,.35)',
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 2 }}>
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#92400E', marginBottom: 4 }}>
+                No emails found for this project
+              </div>
+              <div style={{ fontSize: 11.5, color: '#92400E', lineHeight: 1.55, marginBottom: 8 }}>
+                We searched <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`subject:${oid} OR body:${oid}`}</code> in your mailbox and got no matches. Send or receive emails that include <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{oid}</code> in the subject or body, then click <strong>Resync</strong>.
+              </div>
+              <button type="button" onClick={handleCopyOid}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '5px 11px', borderRadius: 6,
+                  border: '1px solid rgba(146,64,14,.35)', background: '#fff',
+                  color: '#92400E', fontSize: 11, fontWeight: 700,
+                  cursor: 'pointer', fontFamily: 'var(--font)',
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                {copiedOid ? 'Copied!' : `Copy ${oid}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showMetricsBlock && (
         <div style={{ padding: '12px 22px 18px 80px' }}>
           <div style={{
             borderRadius: 12, border: '1px solid rgba(234,67,53,.15)',
@@ -746,7 +855,7 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
         </div>
       )}
 
-      {isActive && !metricsLoading && !metrics && !resolving && (
+      {showMetricsUnavailable && (
         <div style={{ padding: '10px 22px 14px 80px' }}>
           <span style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 600 }}>
             Connected — metrics not available yet.
