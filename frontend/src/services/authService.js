@@ -61,6 +61,22 @@ export function toSessionUserFromFirebase(fbUser) {
   }
 }
 
+function toSessionUserWithClaims(fbUser, backendUser) {
+  const baseUser = toSessionUserFromFirebase(fbUser)
+  if (!backendUser || typeof backendUser !== 'object') return baseUser
+  const rawRoles = Array.isArray(backendUser.roles_assigned) ? backendUser.roles_assigned : []
+  const normalizedRoles = rawRoles
+    .map((role) => String(role || '').trim().toUpperCase())
+    .filter(Boolean)
+  return {
+    ...baseUser,
+    id: backendUser.id ?? baseUser.id,
+    name: backendUser.name || baseUser.name,
+    role: backendUser.display_role || baseUser.role,
+    roles_assigned: normalizedRoles,
+  }
+}
+
 export function clearLocalSession() {
   try {
     localStorage.removeItem(SESSION_KEY)
@@ -99,8 +115,6 @@ async function ensureBackendUserRegistered(firebaseUser, name) {
   if (!uid) return
 
   const nameToSend = name == null ? null : String(name)
-  const cached = _readRegisteredDbCache()
-  if (cached?.uid === uid && cached?.name === nameToSend) return
 
   // Force-refresh so backend gets a fresh, valid token on first register.
   const idToken = await firebaseUser.getIdToken(true)
@@ -120,6 +134,11 @@ async function ensureBackendUserRegistered(firebaseUser, name) {
     _writeRegisteredDbCache({ uid, name: nameToSend, at: Date.now() })
   }
   return data
+}
+
+export async function forceRegisterCurrentUser() {
+  if (!auth?.currentUser) return null
+  return ensureBackendUserRegistered(auth.currentUser, auth.currentUser?.displayName ?? null)
 }
 
 /** Map Firebase Auth error codes to readable messages. */
@@ -148,9 +167,9 @@ export async function signInWithEmailPassword(email, password) {
   assertRelantoEmail(email)
   const cred = await signInWithEmailAndPassword(auth, normalizeEmail(email), String(password))
   await persistUserIdToken(cred.user)
-  await ensureBackendUserRegistered(cred.user, cred.user?.displayName ?? null)
+  const backendResponse = await ensureBackendUserRegistered(cred.user, cred.user?.displayName ?? null)
   clearLocalSession()
-  return toSessionUserFromFirebase(cred.user)
+  return toSessionUserWithClaims(cred.user, backendResponse?.user)
 }
 
 export async function signUpWithEmailPassword({ name, email, password }) {
@@ -168,9 +187,9 @@ export async function signUpWithEmailPassword({ name, email, password }) {
 
     await persistUserIdToken(cred.user)
     // Ensure user exists in DB; send the exact string typed in the UI (rawName).
-    await ensureBackendUserRegistered(cred.user, rawName)
+    const backendResponse = await ensureBackendUserRegistered(cred.user, rawName)
     clearLocalSession()
-    return toSessionUserFromFirebase(cred.user)
+    return toSessionUserWithClaims(cred.user, backendResponse?.user)
   } catch (err) {
     // If Firebase user exists but backend registration failed, rollback Firebase user
     // so user can retry sign-up cleanly.
@@ -206,9 +225,9 @@ async function signInWithPopupProvider(provider, providerLabel, attemptedKind) {
     const token = await persistUserIdToken(cred.user)
     if (!token) throw new Error('Could not obtain Firebase ID token.')
 
-    await ensureBackendUserRegistered(cred.user, cred.user?.displayName ?? null)
+    const backendResponse = await ensureBackendUserRegistered(cred.user, cred.user?.displayName ?? null)
     clearLocalSession()
-    return toSessionUserFromFirebase(cred.user)
+    return toSessionUserWithClaims(cred.user, backendResponse?.user)
   } catch (err) {
     if (err?.code === 'auth/account-exists-with-different-credential' && auth) {
       const pendingCredential =
@@ -249,8 +268,9 @@ export async function linkPendingCredential(pendingCredential) {
   if (!pendingCredential) throw new Error('Nothing to link.')
   const linked = await linkWithCredential(u, pendingCredential)
   await persistUserIdToken(linked.user)
+  const backendResponse = await ensureBackendUserRegistered(linked.user, linked.user?.displayName ?? null)
   clearLocalSession()
-  return toSessionUserFromFirebase(linked.user)
+  return toSessionUserWithClaims(linked.user, backendResponse?.user)
 }
 
 export async function signInWithGoogle() {
@@ -282,7 +302,7 @@ export function subscribeAuth(callback) {
     return () => {}
   }
 
-  return onAuthStateChanged(auth, (fbUser) => {
+  return onAuthStateChanged(auth, async (fbUser) => {
     if (!fbUser) {
       clearAuthTokenCookie()
       callback(null)
@@ -297,7 +317,12 @@ export function subscribeAuth(callback) {
     }
     persistUserIdToken(fbUser).catch(() => {})
     clearLocalSession()
-    callback(toSessionUserFromFirebase(fbUser))
+    try {
+      const backendResponse = await ensureBackendUserRegistered(fbUser, fbUser?.displayName ?? null)
+      callback(toSessionUserWithClaims(fbUser, backendResponse?.user))
+    } catch {
+      callback(toSessionUserFromFirebase(fbUser))
+    }
   })
 }
 
