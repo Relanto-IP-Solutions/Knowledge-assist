@@ -416,7 +416,7 @@ export default function AdminRequestsPage({ onBack }) {
             fontSize: 11, fontWeight: 600, flexWrap: 'wrap',
           }}>
             {[
-              { label: 'Sales Assist', to: '/knowledge-assist' },
+              { label: 'Sales Intelligence', to: '/knowledge-assist' },
               { label: 'Admin', to: null },
               { label: 'Opportunity Requests', to: null },
             ].map((crumb, index, arr) => {

@@ -532,14 +532,6 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-<<<<<<< feature/frontend_changes
-=======
-          <Route path="/" element={<Navigate to="/knowledge-assist" replace />} />
-          <Route path="/data-connectors/:opportunityId" element={<SourcesRoute user={user} />} />
-          <Route path="/sources/:oid" element={<LegacySourcesRedirect />} />
-          <Route path="/projects/:oid" element={<PostOAuthProjectRedirect />} />
-          <Route path="/qa/:opportunityId" element={<QARoute onReviewSaved={bumpDashboardRefresh} />} />
->>>>>>> develop
           <Route
             path="/create"
             element={
