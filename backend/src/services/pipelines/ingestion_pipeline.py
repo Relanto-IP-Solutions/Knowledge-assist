@@ -257,8 +257,9 @@ class IngestionPipeline:
                     if i >= len(datapoints)
                 ]
 
-                # Note: stale chunks are automatically deleted by write_registry()
-                # which does DELETE + INSERT for all chunks in pgvector
+                # write_registry() upserts only chunks that carry chunk_text/embedding
+                # and removes any stale tail rows with chunk_index >= total_chunks.
+                # Unchanged chunks (chunk_text omitted) are preserved as-is.
                 if to_delete_ids:
                     logger.bind(opportunity_id=opportunity_id).info(
                         "Re-ingestion: %d stale chunk(s) will be removed — document_id=%s",
@@ -269,7 +270,6 @@ class IngestionPipeline:
                     datapoints_subset = [datapoints[i] for i in to_upsert]
                     texts_subset = [dp["text"] for dp in datapoints_subset]
                     embeddings_subset = embed_texts(texts_subset)
-                    # Attach text + embedding directly into each chunk dict for registry write
                     for idx, dp_idx in enumerate(to_upsert):
                         new_registry_chunks[dp_idx]["chunk_text"] = texts_subset[idx]
                         new_registry_chunks[dp_idx]["embedding"] = embeddings_subset[
@@ -306,20 +306,7 @@ class IngestionPipeline:
                     doc_hash=doc_hash,
                     total_chunks=len(datapoints),
                     chunks=new_registry_chunks,
-                )
-
-                registry_document_id = (
-                    f"{opportunity_id}:{source_type}:{source_id or document_id}"
-                )
-                gcs_path = f"{opportunity_id}/{source}/{source_id or document_id}"
-                doc_hash = _sha256_hex(content)
-                self._registry.write_registry(
-                    document_id=registry_document_id,
-                    opportunity_id=opportunity_id,
-                    gcs_path=gcs_path,
-                    doc_hash=doc_hash,
-                    total_chunks=len(datapoints),
-                    chunks=new_registry_chunks,
+                    source_type=source_type,
                 )
 
             logger.bind(opportunity_id=opportunity_id).info(
