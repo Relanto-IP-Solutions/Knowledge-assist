@@ -453,6 +453,7 @@ function AssistSourceChip({ s, minimal }) {
 export function QuestionCard({
   q,
   oppId,
+  readOnly = false,
   qState,
   onAccept,
   onUndo,
@@ -515,6 +516,7 @@ export function QuestionCard({
   const prevStatusRef = useRef(st)
   const isSubmittedLocked =
     qState?.serverLocked === true || String(q?.status ?? '').trim().toLowerCase() === 'active'
+  const isReadOnly = Boolean(readOnly || isSubmittedLocked)
   const acceptedCommittedValue = String(qState?.acceptedAnswerValue ?? '').trim()
   const payloadAnswerForDisplay = q.answer_value ?? q.answer
   const displayAnswer = (() => {
@@ -725,7 +727,7 @@ export function QuestionCard({
 
   const assistControlsDisabled =
     !assistAnswerStructured ||
-    isSubmittedLocked ||
+    isReadOnly ||
     assistAnswerStructured?.hasUnresolvedConflict === true ||
     // Allow edits after conflictResolved even when accepted/overridden.
     (!qState?.conflictResolved && st !== 'pending')
@@ -761,7 +763,7 @@ export function QuestionCard({
   ])
 
   useEffect(() => {
-    if (!assist || !onDraftAnswerChange || !assistAnswerStructured || isSubmittedLocked) return
+    if (!assist || !onDraftAnswerChange || !assistAnswerStructured || isReadOnly) return
     // Conflict cards already sync via explicit selection handlers and modal confirm;
     // auto draft-sync here can bounce value identity (id/label) and cause UI flicker.
     if ((q.conflicts?.length ?? 0) >= 2) return
@@ -805,14 +807,14 @@ export function QuestionCard({
     assistMultiSel,
     assistPickSel,
     onDraftAnswerChange,
-    isSubmittedLocked,
+    isReadOnly,
     q.conflicts?.length,
   ])
 
   useEffect(() => {
-    if (!assist || !assistTextEditing || !onDraftAnswerChange || isSubmittedLocked) return
+    if (!assist || !assistTextEditing || !onDraftAnswerChange || isReadOnly) return
     onDraftAnswerChange(q.id, editText)
-  }, [assist, assistTextEditing, editText, q.id, onDraftAnswerChange, isSubmittedLocked])
+  }, [assist, assistTextEditing, editText, q.id, onDraftAnswerChange, isReadOnly])
 
   const assistStructuredSelectionMissing = useMemo(() => {
     if (!assistAnswerStructured) return false
@@ -1297,7 +1299,7 @@ export function QuestionCard({
 
   const hasFeedbackValue = qState.feedback != null && qState.feedback !== ''
   const hasFeedback = hasFeedbackValue
-  const feedbackLocked = isSubmittedLocked || hasFeedbackValue
+  const feedbackLocked = isReadOnly || hasFeedbackValue
   const hasEdit = (qState.editedAnswer || '').trim().length > 0
   const acceptedResponseHeading = getAcceptedHeading(q, qState)
 
@@ -1618,7 +1620,7 @@ export function QuestionCard({
                       </span>
                     )}
                   </div>
-                  {!assistAnswerStructured && st === 'pending' && (q.conflicts?.length ?? 0) < 2 && !assistTextEditing && !isSubmittedLocked ? (
+                  {!assistAnswerStructured && st === 'pending' && (q.conflicts?.length ?? 0) < 2 && !assistTextEditing && !isReadOnly ? (
                     <button
                       type="button"
                       onClick={() => setAssistTextEditing(true)}
@@ -1679,12 +1681,12 @@ export function QuestionCard({
                       }}
                       onFocus={focusRing}
                       onBlur={blurRing}
-                      disabled={isSubmittedLocked}
+                      disabled={isReadOnly}
                     />
                     <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                       <Btn
                         primary
-                        disabled={isSubmittedLocked}
+                        disabled={isReadOnly}
                         onClick={() => {
                           onSaveEdit?.(q.id, editText)
                           setAssistTextEditing(false)
@@ -1755,7 +1757,7 @@ export function QuestionCard({
             )}
 
             {/* Conflict: clarify beside accept (count in button label) */}
-            {q.conflicts?.length >= 2 && !qState.conflictResolved && !isSubmittedLocked && (
+            {q.conflicts?.length >= 2 && !qState.conflictResolved && !isReadOnly && (
               <div style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8, marginTop: assist ? 8 : 10,
               }}>
@@ -1805,7 +1807,7 @@ export function QuestionCard({
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
                   Conflict resolved — selected response applied
                 </span>
-                {!isSubmittedLocked ? (
+                {!isReadOnly ? (
                   <button
                     type="button"
                     onClick={() => setConflictOpen(true)}
@@ -1827,7 +1829,7 @@ export function QuestionCard({
               </div>
             )}
 
-            {assist && st === 'pending' && !isSubmittedLocked && (
+            {assist && st === 'pending' && !isReadOnly && (
               <div style={{ marginTop: 8 }}>
                 <Btn
                   {...(assist ? { orangeOutline: true } : { green: true })}
@@ -1885,12 +1887,12 @@ export function QuestionCard({
                 placeholder="Edit the answer text..."
                 style={{ ...txStyle, minHeight: 100 }}
                 onFocus={focusRing} onBlur={blurRing}
-                disabled={isSubmittedLocked}
+                disabled={isReadOnly}
               />
             </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <Btn primary disabled={isSubmittedLocked} onClick={() => { onSaveEdit(q.id, editText); }}>Save Changes</Btn>
-              <Btn ghost disabled={isSubmittedLocked} onClick={() => setEditText(formatAnswerForDisplay(q.answer))}>Reset to Original</Btn>
+              <Btn primary disabled={isReadOnly} onClick={() => { onSaveEdit(q.id, editText); }}>Save Changes</Btn>
+              <Btn ghost disabled={isReadOnly} onClick={() => setEditText(formatAnswerForDisplay(q.answer))}>Reset to Original</Btn>
               {hasEdit && <span style={{ fontSize: 10, color: 'var(--emerald)', fontWeight: 600, marginLeft: 4 }}>✓ Edited</span>}
             </div>
           </>
@@ -2010,14 +2012,14 @@ export function QuestionCard({
         background: assist ? '#FAFBFC' : 'var(--bg3)',
       }}>
         {visualStatus === 'accepted' ? (
-          <Btn ghost disabled={isSubmittedLocked} onClick={() => onUndo(q.id)}>
-            {isSubmittedLocked ? 'Already Submitted' : 'Undo Accept'}
+          <Btn ghost disabled={isReadOnly} onClick={() => onUndo(q.id)}>
+            {isReadOnly ? 'Already Submitted' : 'Undo Accept'}
           </Btn>
         ) : visualStatus === 'overridden' ? (
           <>
             <Btn
               ghost
-              disabled={isSubmittedLocked}
+              disabled={isReadOnly}
               onClick={() => {
                 onEditOverride?.(q.id)
                 if (assist) {
@@ -2031,8 +2033,8 @@ export function QuestionCard({
             >
               Save Override
             </Btn>
-            <Btn ghost disabled={isSubmittedLocked} onClick={() => onUndo(q.id)}>
-              {isSubmittedLocked ? 'Already Submitted' : 'Undo'}
+            <Btn ghost disabled={isReadOnly} onClick={() => onUndo(q.id)}>
+              {isReadOnly ? 'Already Submitted' : 'Undo'}
             </Btn>
           </>
         ) : null}

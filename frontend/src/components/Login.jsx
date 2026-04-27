@@ -48,7 +48,6 @@ export function LoginPage({ onLogin, theme }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
-  const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [resetSent, setResetSent] = useState(false);
@@ -74,7 +73,6 @@ export function LoginPage({ onLogin, theme }) {
     setPassword("");
     setConfirmPassword("");
     setShowPass(false);
-    setRemember(false);
     setError("");
     setResetSent(false);
     setLoading(false);
@@ -455,11 +453,7 @@ export function LoginPage({ onLogin, theme }) {
             )}
 
             {!isSignUp && (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: sub, cursor: "pointer" }}>
-                  <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} style={{ accentColor: "var(--accent)" }} />
-                  Remember me
-                </label>
+              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 20 }}>
                 <button
                   type="button"
                   onClick={handleForgotPassword}
@@ -585,9 +579,6 @@ export function LoginPage({ onLogin, theme }) {
             </button>
           </div>
 
-          <div style={{ textAlign: "center", marginTop: 20, fontSize: 11, color: sub, lineHeight: 1.5 }}>
-            <strong>Firebase Auth</strong> — email/password, Google, and Microsoft. Enable Email/Password in the Firebase console. Only @{ORG_DOMAIN} accounts are accepted.
-          </div>
         </div>
       </div>
 

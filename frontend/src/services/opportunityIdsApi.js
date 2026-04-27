@@ -30,6 +30,8 @@ export async function fetchOpportunityIds(options = {}) {
             ? json.ids
             : []
       const passthroughKeys = [
+        'owner_id',
+        'is_active',
         'status',
         'completion',
         'total_questions',

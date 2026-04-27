@@ -21,6 +21,8 @@ export default function TeamBuilderPage({ onBack }) {
   const [error, setError] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [selectedTeamId, setSelectedTeamId] = useState(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 10
 
   const fetchTeams = useCallback(() => {
     let cancelled = false
@@ -37,8 +39,13 @@ export default function TeamBuilderPage({ onBack }) {
 
   const handleCreated = () => {
     setShowModal(false)
+    setCurrentPage(1)
     fetchTeams()
   }
+
+  const totalPages = Math.ceil(teams.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const paginatedTeams = teams.slice(startIndex, startIndex + itemsPerPage)
 
   return (
     <div style={{
@@ -241,7 +248,7 @@ export default function TeamBuilderPage({ onBack }) {
               </tr>
             </thead>
             <tbody>
-              {teams.map((team, idx) => {
+              {paginatedTeams.map((team, idx) => {
                 const id = team.id ?? team.team_id
                 return (
                   <tr
@@ -249,7 +256,7 @@ export default function TeamBuilderPage({ onBack }) {
                     style={{
                       cursor: 'pointer',
                       transition: 'background .15s',
-                      borderBottom: idx < teams.length - 1 ? '1px solid #f1f5f9' : 'none',
+                      borderBottom: idx < paginatedTeams.length - 1 ? '1px solid #f1f5f9' : 'none',
                     }}
                     onClick={() => setSelectedTeamId(id)}
                     onMouseEnter={e => { e.currentTarget.style.background = 'rgba(232,83,46,.03)' }}
@@ -290,8 +297,76 @@ export default function TeamBuilderPage({ onBack }) {
               })}
             </tbody>
           </table>
-
-
+          
+          {/* Pagination */}
+          <div style={{
+            padding: '16px 20px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: 'rgba(11,60,93,.01)',
+            borderTop: '1px solid #f1f5f9',
+            fontSize: 13,
+            color: '#64748b',
+          }}>
+            <span style={{ fontWeight: 500 }}>
+              Showing {startIndex + 1}–{Math.min(startIndex + itemsPerPage, teams.length)} of {teams.length} teams
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                style={{
+                  padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                  border: `1px solid ${currentPage === 1 ? '#e2e8f0' : '#cbd5e1'}`,
+                  background: '#fff', color: currentPage === 1 ? '#cbd5e1' : PRIMARY,
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                  transition: 'all .2s',
+                }}
+                onMouseEnter={e => { if (currentPage > 1) { e.currentTarget.style.background = 'rgba(11,60,93,.05)'; e.currentTarget.style.borderColor = PRIMARY } }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = currentPage === 1 ? '#e2e8f0' : '#cbd5e1' }}
+              >
+                ← Previous
+              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 8px' }}>
+                {Array.from({ length: totalPages }, (_, i) => {
+                  const pageNum = i + 1
+                  const isActive = pageNum === currentPage
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      style={{
+                        width: 32, height: 32, borderRadius: 6, fontSize: 12, fontWeight: 700,
+                        border: isActive ? `2px solid ${PRIMARY}` : '1px solid #e2e8f0',
+                        background: isActive ? PRIMARY : '#fff',
+                        color: isActive ? '#fff' : PRIMARY,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                        transition: 'all .2s',
+                      }}
+                      onMouseEnter={e => { if (!isActive) { e.currentTarget.style.borderColor = PRIMARY; e.currentTarget.style.color = PRIMARY } }}
+                      onMouseLeave={e => { if (!isActive) { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.color = PRIMARY } }}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                })}
+              </div>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                style={{
+                  padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                  border: `1px solid ${currentPage === totalPages ? '#e2e8f0' : '#cbd5e1'}`,
+                  background: '#fff', color: currentPage === totalPages ? '#cbd5e1' : PRIMARY,
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                  transition: 'all .2s',
+                }}
+                onMouseEnter={e => { if (currentPage < totalPages) { e.currentTarget.style.background = 'rgba(11,60,93,.05)'; e.currentTarget.style.borderColor = PRIMARY } }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = currentPage === totalPages ? '#e2e8f0' : '#cbd5e1' }}
+              >
+                Next →
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
