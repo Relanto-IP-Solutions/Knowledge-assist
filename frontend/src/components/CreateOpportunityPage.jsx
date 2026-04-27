@@ -10,25 +10,40 @@ export default function CreateOpportunityPage({ onBack, onCreated }) {
   const [name, setName] = useState('')
   const [charError, setCharError] = useState(null)
   const [nameExists, setNameExists] = useState(false)
+  const [checkError, setCheckError] = useState(null)
+  const [nameCheckedValue, setNameCheckedValue] = useState('')
+  const [orgCheckedValue, setOrgCheckedValue] = useState('')
   const [checking, setChecking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [submitError, setSubmitError] = useState(null)
   const [submitted, setSubmitted] = useState(false)
   const debounceRef = useRef(null)
 
-  const runNameCheck = useCallback(async (value) => {
+  const runNameCheck = useCallback(async (value, orgValue) => {
     const trimmed = value.trim()
-    if (!trimmed || !NAME_VALID_RE.test(value)) {
+    const trimmedOrg = orgValue.trim()
+    if (!trimmed || !trimmedOrg || !NAME_VALID_RE.test(value)) {
       setNameExists(false)
+      setNameCheckedValue('')
+      setOrgCheckedValue('')
+      setCheckError(null)
       setChecking(false)
-      return
+      return null
     }
     setChecking(true)
+    setCheckError(null)
     try {
-      const exists = await checkNameExists(trimmed)
+      const exists = await checkNameExists({ name: trimmed, organization_name: trimmedOrg })
       setNameExists(exists)
+      setNameCheckedValue(trimmed)
+      setOrgCheckedValue(trimmedOrg)
+      return exists
     } catch {
       setNameExists(false)
+      setNameCheckedValue('')
+      setOrgCheckedValue('')
+      setCheckError('Unable to verify name availability. Please try again.')
+      return null
     } finally {
       setChecking(false)
     }
@@ -38,6 +53,10 @@ export default function CreateOpportunityPage({ onBack, onCreated }) {
     const val = e.target.value
     setName(val)
     setSubmitError(null)
+    setCheckError(null)
+    setNameExists(false)
+    setNameCheckedValue('')
+    setOrgCheckedValue('')
 
     if (!NAME_VALID_RE.test(val)) {
       setCharError('Only letters, numbers, hyphens, and spaces are allowed.')
@@ -47,7 +66,19 @@ export default function CreateOpportunityPage({ onBack, onCreated }) {
 
     // Debounce the availability check (400ms)
     clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => runNameCheck(val), 400)
+    debounceRef.current = setTimeout(() => runNameCheck(val, orgName), 400)
+  }
+
+  const handleOrgNameChange = (e) => {
+    const val = e.target.value
+    setOrgName(val)
+    setSubmitError(null)
+    setCheckError(null)
+    setNameExists(false)
+    setNameCheckedValue('')
+    setOrgCheckedValue('')
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => runNameCheck(name, val), 400)
   }
 
   useEffect(() => () => clearTimeout(debounceRef.current), [])
@@ -58,6 +89,17 @@ export default function CreateOpportunityPage({ onBack, onCreated }) {
 
   const handleSubmit = async () => {
     if (isDisabled) return
+    const nameExistsForCurrentCombination = (nameCheckedValue === trimmed && orgCheckedValue === trimmedOrg)
+      ? nameExists
+      : await runNameCheck(trimmed, trimmedOrg)
+    if (nameExistsForCurrentCombination === null) {
+      setSubmitError('Unable to verify name availability. Please try again.')
+      return
+    }
+    if (nameExistsForCurrentCombination) {
+      setSubmitError('Name is not available.')
+      return
+    }
     setBusy(true)
     setSubmitError(null)
     try {
@@ -185,7 +227,7 @@ export default function CreateOpportunityPage({ onBack, onCreated }) {
           <input
             id="create-opp-org"
             value={orgName}
-            onChange={(e) => { setOrgName(e.target.value); setSubmitError(null) }}
+            onChange={handleOrgNameChange}
             onKeyDown={(e) => { if (e.key === 'Enter' && !isDisabled) handleSubmit() }}
             placeholder="e.g. Acme Corp"
             autoComplete="off"
@@ -252,12 +294,17 @@ export default function CreateOpportunityPage({ onBack, onCreated }) {
           )}
           {!charError && nameExists && (
             <p style={{ margin: '6px 0 0', fontSize: 12, color: '#b91c1c', fontWeight: 500 }}>
-              This opportunity name already exists or has a pending request.
+              Name is not available.
             </p>
           )}
-          {!charError && !nameExists && trimmed && !checking && (
+          {!charError && !nameExists && !checkError && trimmed && trimmedOrg && !checking && (
             <p style={{ margin: '6px 0 0', fontSize: 12, color: '#059669', fontWeight: 500 }}>
               Name is available.
+            </p>
+          )}
+          {!charError && !nameExists && checkError && (
+            <p style={{ margin: '6px 0 0', fontSize: 12, color: '#b91c1c', fontWeight: 500 }}>
+              {checkError}
             </p>
           )}
 
