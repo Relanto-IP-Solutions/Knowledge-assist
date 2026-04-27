@@ -720,7 +720,7 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
             onMouseLeave={e => { e.currentTarget.style.opacity = busy ? '0.55' : '1' }}
           >
             {busy && <SpinIcon size={11} />}
-            {awaitingOAuth ? 'Waiting for authorisation…' : busy ? 'Syncing project data…' : 'Connect Gmail'}
+            {awaitingOAuth ? 'Waiting for authorisation…' : busy ? 'Syncing project data…' : 'Connect'}
           </button>
         )}
         {isActive && (
