@@ -21,13 +21,20 @@ export async function listOpportunityRequests({ status, limit = 200 } = {}) {
 }
 
 /**
- * Check if an opportunity name is already taken.
- * GET /opportunities/name-exists?name=<value>
+ * Check if an opportunity already exists (or is pending) for a given
+ * organization + opportunity name combination.
+ * GET /opportunities/name-exists?name=<value>&organization_name=<value>
  */
-export async function checkNameExists(name) {
+export async function checkNameExists(nameOrPayload, maybeOrgName) {
+  const payload = typeof nameOrPayload === 'object' && nameOrPayload !== null
+    ? nameOrPayload
+    : { name: nameOrPayload, organization_name: maybeOrgName }
+  const trimmedName = String(payload.name ?? '').trim()
+  const trimmedOrg = String(payload.organization_name ?? '').trim()
   try {
-    const { data } = await api.get('/opportunities/name-exists', { params: { name } })
-    console.log(data);
+    const params = { name: trimmedName }
+    if (trimmedOrg) params.organization_name = trimmedOrg
+    const { data } = await api.get('/opportunities/name-exists', { params })
     return Boolean(data.exists)
   } catch (e) {
     throw apiError(e)
