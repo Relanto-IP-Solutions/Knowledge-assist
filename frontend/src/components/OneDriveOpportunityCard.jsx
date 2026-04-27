@@ -165,7 +165,7 @@ function EmailModal({ oid, onSubmit, onCancel }) {
             type="email" autoComplete="email" value={value}
             onChange={e => { setValue(e.target.value); setLocalErr('') }}
             onKeyDown={e => { if (e.key === 'Enter') submit() }}
-            placeholder="you@relanto.ai"
+            placeholder="example@company.com"
             style={{
               width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10,
               border: `1.5px solid ${localErr ? '#DC2626' : 'rgba(27,38,79,.15)'}`,
@@ -209,6 +209,10 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
   //                  ingesting files. We poll metrics silently and watch
   //                  for source.last_synced_at to flip from null.
   const [phase, setPhase]                   = useState('idle')
+  // Distinguishes a Resync (source was already active) from an initial
+  // Connect. The stepper is reserved for first-time connects — during
+  // a Resync the button's disabled+spinner state is sufficient feedback.
+  const [isResync, setIsResync]             = useState(false)
 
   const mountedRef = useRef(true)
   const oidRef     = useRef(oid)
@@ -279,6 +283,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
         if (mountedRef.current) {
           setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
           setPhase('idle')
+          setIsResync(false)
           setBusy(false)
         }
         return
@@ -287,6 +292,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       if (status === 403) {
         setNotice({ type: 'error', msg: 'Only @relanto.ai accounts are permitted.' })
         setPhase('idle')
+        setIsResync(false)
         setBusy(false)
         return
       }
@@ -296,6 +302,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       const folderError = detail || 'Folder not found for this OID. Create it in OneDrive and click Resync.'
       setNotice({ type: 'error', msg: folderError })
       setPhase('idle')
+      setIsResync(false)
       setBusy(false)
       return
     }
@@ -306,15 +313,16 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
 
     // Silently poll until source.last_synced_at flips from null. We do not
     // call setMetrics here so the UI does not surface a stale or 0-file
-    // snapshot mid-sync. 60s budget (20 × 3s).
+    // snapshot mid-sync. 60s budget (20 × 3s); on timeout we still fall
+    // through to one final fetch so the metrics block can hydrate as soon
+    // as data is available.
     const POLL_INTERVAL = 3000
     const MAX_ATTEMPTS  = 20
-    let synced = false
     for (let i = 0; i < MAX_ATTEMPTS; i++) {
       if (!mountedRef.current || oidRef.current !== runOid) return
       try {
         const m = await fetchOneDriveMetrics(runOid)
-        if (Boolean(m?.last_synced_at)) { synced = true; break }
+        if (Boolean(m?.last_synced_at)) break
       } catch { /**/ }
       if (i < MAX_ATTEMPTS - 1) await new Promise(r => setTimeout(r, POLL_INTERVAL))
     }
@@ -330,24 +338,13 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
 
     if (finalMetrics) setMetrics(finalMetrics)
 
-    const fileCount = Number(finalMetrics?.total_files ?? 0)
-    if (synced) {
-      setNotice({
-        type: fileCount > 0 ? 'success' : 'info',
-        msg: fileCount > 0
-          ? `Sync complete! ${fileCount} ${fileCount === 1 ? 'file' : 'files'} ready.`
-          : 'Sync complete. Folder is empty — drop files into it and click Resync.',
-      })
-    } else {
-      // Soft timeout: ingestion exceeded our 60s budget. Surface what we
-      // have without locking the UI in 'indexing' forever.
-      setNotice({
-        type: 'info',
-        msg: 'Connected. Files are still being indexed — check back shortly.',
-      })
-    }
-
+    // Once the source is connected, the green "Active" pill in the header
+    // (and the metrics block, if last_synced_at is set) is the entire
+    // confirmation. No extra notices — they were redundant with the
+    // header status.
+    setNotice(null)
     setPhase('idle')
+    setIsResync(false)
     setBusy(false)
   }, [doRedirect])
 
@@ -409,6 +406,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
 
     setBusy(true)
     setNotice(null)
+    setIsResync(true) // suppresses the stepper for already-active sources
     setPhase('authorizing') // brief: confirming the connection still holds
 
     // Step 1: check authorize-info to confirm connection exists
@@ -427,6 +425,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       } catch { /**/ }
       setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
       setPhase('idle')
+      setIsResync(false)
       setBusy(false)
       return
     }
@@ -438,12 +437,18 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
   const totalFilesCount = Number(metrics?.total_files ?? 0)
   const noticeColor = notice?.type === 'success' ? '#047857' : notice?.type === 'info' ? OD_BLUE : '#DC2626'
   const inFlight = phase !== 'idle'
+  // Stepper is reserved for first-time connects. During a Resync the
+  // existing metrics block stays visible and the disabled/spinning button
+  // is sufficient feedback — adding the stepper would just flash a redundant
+  // "Connect → Sync" graphic over an already-active source.
+  const showStepper = inFlight && !isResync
   // Metrics block only renders for a fully-synced source. last_synced_at is
   // the only signal that the backend BackgroundTask actually completed, so
   // we never reveal the metrics block before that — preventing the
-  // misleading "0 files" snapshot the user reported.
-  const showMetricsBlock = !inFlight && isActive && Boolean(metrics?.last_synced_at)
-  const hasContentBelow = inFlight || Boolean(notice) || showMetricsBlock
+  // misleading "0 files" snapshot the user reported. During a resync we
+  // keep showing the previous metrics until the fresh fetch lands.
+  const showMetricsBlock = (!inFlight || isResync) && isActive && Boolean(metrics?.last_synced_at)
+  const hasContentBelow = showStepper || Boolean(notice) || showMetricsBlock
 
   return (
     <>
@@ -472,11 +477,15 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
             <span style={{ fontSize: 13, fontWeight: 800, color: NAVY }}>OneDrive</span>
             <Dot active={isActive} />
             <span style={{ fontSize: 11, color: isActive ? GREEN : '#94A3B8', fontWeight: 600 }}>
-              {metricsLoading ? 'Checking…' : isActive ? 'Active' : 'Not connected'}
+              {isActive ? 'Active' : 'Not connected'}
             </span>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)' }}>Microsoft OneDrive Files</div>
-          {userEmail && (
+          {/* Only surface the account once the source is genuinely active.
+              If a connect attempt fails (e.g. 404 folder-not-found), we
+              suppress the email so the UI doesn't claim a connection that
+              isn't really established. */}
+          {isActive && userEmail && (
             <div style={{ fontSize: 10.5, color: 'var(--text2)', marginTop: 2 }}>
               <span style={{ fontWeight: 600 }}>Account: </span>
               <span style={{ color: NAVY, fontWeight: 700 }}>{userEmail}</span>
@@ -522,8 +531,8 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
         )}
       </div>
 
-      {/* Phase stepper — shown only while a connect/sync is in flight */}
-      {inFlight && (
+      {/* Phase stepper — shown only on first-time connects, hidden on resyncs */}
+      {showStepper && (
         <div style={{ padding: '12px 22px 14px 80px' }}>
           <PhaseStepper phase={phase} />
         </div>
