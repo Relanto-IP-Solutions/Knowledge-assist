@@ -141,7 +141,10 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
     try {
       // Step 1: POST /integrations/slack/connect/{oid}
       setIngestStep('connect')
-      await connectSlack(runOid)
+      // Capture the connect-response — we fall back to it as a metrics
+      // surrogate below if /metrics fails (it carries enough fields to
+      // render the sync-metadata block without re-fetching).
+      const connected = await connectSlack(runOid)
       if (!mountedRef.current || oidRef.current !== runOid) return
 
       // Step 2: GET /integrations/slack/authorize-info/{oid}
