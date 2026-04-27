@@ -16,9 +16,13 @@ const NAVY       = '#1B264F'
 const GREEN      = '#10B981'
 const EMAIL_RE   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-const SS_EMAIL         = (oid) => `pzf_drive_email_${oid}`
-const SS_PENDING_OID   = 'pzf_drive_pending_oid'
-const SS_PENDING_EMAIL = 'pzf_drive_pending_email'
+const SS_EMAIL          = (oid) => `pzf_drive_email_${oid}`
+const SS_PENDING_OID    = 'pzf_drive_pending_oid'
+const SS_PENDING_EMAIL  = 'pzf_drive_pending_email'
+// Persists the "no Drive folder found for this OID" signal across reloads.
+// The /metrics endpoint doesn't return matched_folder, so without this the
+// hint would only show right after a Resync and disappear on refresh.
+const SS_FOLDER_MISSING = (oid) => `pzf_drive_folder_missing_${oid}`
 
 function ssGet(key) { try { return sessionStorage.getItem(key) } catch { return null } }
 function ssSet(key, val) { try { sessionStorage.setItem(key, val) } catch { /**/ } }
@@ -134,6 +138,8 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
   const [showModal, setShowModal]           = useState(false)
   const [userEmail, setUserEmail]           = useState(() => ssGet(SS_EMAIL(oid)) ?? '')
   const [err, setErr]                       = useState(null)
+  const [folderMissing, setFolderMissing]   = useState(() => ssGet(SS_FOLDER_MISSING(oid)) === '1')
+  const [copiedOid, setCopiedOid]           = useState(false)
 
   const mountedRef = useRef(true)
   const oidRef     = useRef(oid)
@@ -193,10 +199,21 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
     setErr(null)
     setSyncStatus('connecting')
     try {
-      await connectDrive(runOid, email)
+      const result = await connectDrive(runOid, email)
       if (!mountedRef.current || oidRef.current !== runOid) return
-      setSyncStatus('success')
-      // Refresh metrics after sync
+
+      // Backend returns matched_folder=null when no folder in the user's Drive
+      // contains a token like "oid560". In that case files_uploaded is also 0
+      // and no exception is thrown — the card would otherwise silently show
+      // "Active · 0 files" with no explanation. Surface an actionable banner
+      // instead, and persist the signal so it survives reloads (the /metrics
+      // endpoint doesn't return matched_folder).
+      const matchedFolder = String(result?.matched_folder ?? '').trim()
+      const noFolder = !matchedFolder
+      setFolderMissing(noFolder)
+      ssSet(SS_FOLDER_MISSING(runOid), noFolder ? '1' : '0')
+
+      setSyncStatus(noFolder ? null : 'success')
       const m = await fetchDriveMetrics(runOid, email)
       if (mountedRef.current && oidRef.current === runOid) setMetrics(m)
     } catch (e) {
@@ -266,10 +283,19 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
   const handleResync = useCallback(() => {
     setErr(null)
     setSyncStatus(null)
+    setCopiedOid(false)
     const email = userEmail || ssGet(SS_EMAIL(oid)) || ''
     if (!email) { setShowModal(true); return }
     void runSync(oid, email)
   }, [oid, userEmail, runSync])
+
+  const handleCopyOid = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(oid)
+      setCopiedOid(true)
+      setTimeout(() => setCopiedOid(false), 1800)
+    } catch { /* clipboard unavailable — silently no-op */ }
+  }, [oid])
 
   const totalFilesCount = Number(metrics?.total_files ?? 0)
 
@@ -350,14 +376,11 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
         )}
       </div>
 
-      {/* Sync status feedback */}
-      {syncStatus === 'connecting' && (
-        <div style={{ padding: '10px 22px 14px 80px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <SpinIcon size={12} />
-          <span style={{ fontSize: 12, color: DRIVE_BLUE, fontWeight: 600 }}>Connecting project folder…</span>
-        </div>
-      )}
-      {syncStatus === 'success' && (
+      {/* Sync status feedback — the Resync/Connect button already shows
+          "Syncing…" with a spinner during syncStatus==='connecting', so a
+          second "Connecting project folder…" row underneath was just
+          duplicate noise. Only the success message needs its own row. */}
+      {syncStatus === 'success' && !folderMissing && (
         <div style={{ padding: '10px 22px 14px 80px' }}>
           <span style={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>
             Drive connected successfully. Files are being synced.
@@ -365,8 +388,48 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
         </div>
       )}
 
-      {/* Metrics — status == ACTIVE */}
-      {isActive && metrics && (
+      {/* Missing-folder hint — Drive is connected but no folder for this OID
+          exists in the user's Drive yet. Tells them exactly what to name the
+          folder and offers a one-click copy of the project id. */}
+      {isActive && folderMissing && syncStatus !== 'connecting' && (
+        <div style={{ padding: '10px 22px 14px 80px' }}>
+          <div style={{
+            display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 10,
+            background: 'rgba(234,179,8,.08)', border: '1px solid rgba(234,179,8,.35)',
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 2 }}>
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#92400E', marginBottom: 4 }}>
+                No project folder found in Google Drive
+              </div>
+              <div style={{ fontSize: 11.5, color: '#92400E', lineHeight: 1.55, marginBottom: 8 }}>
+                Create a folder in your Google Drive whose name includes this project id, drop your files in it, then click <strong>Resync Drive</strong>. Acceptable names: <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{oid}</code>, <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`OID ${oid.replace(/^oid/i, '')}`}</code>, or <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`Project ${oid}`}</code>.
+              </div>
+              <button type="button" onClick={handleCopyOid}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '5px 11px', borderRadius: 6,
+                  border: '1px solid rgba(146,64,14,.35)', background: '#fff',
+                  color: '#92400E', fontSize: 11, fontWeight: 700,
+                  cursor: 'pointer', fontFamily: 'var(--font)',
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                {copiedOid ? 'Copied!' : `Copy ${oid}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Metrics — status == ACTIVE; suppressed when folderMissing because
+          "0 files" without context just confuses the user — the warning
+          above is more useful. */}
+      {isActive && !folderMissing && metrics && (
         <div style={{ padding: '12px 22px 18px 80px' }}>
           <div style={{
             borderRadius: 12, border: '1px solid rgba(66,133,244,.15)',
