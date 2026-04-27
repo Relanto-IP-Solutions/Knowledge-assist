@@ -122,20 +122,28 @@ class RegistryClient:
     ) -> None:
         """Write or update document_registry and chunk_registry for a single document.
 
+        Re-ingestion semantics:
+            - Chunks whose dict carries ``chunk_text`` (and ``embedding``) are upserted.
+            - Chunks whose dict has ``chunk_text is None`` are treated as *unchanged*
+              and are NOT touched in the DB (preserves their existing text + embedding).
+              The ingestion pipeline only attaches ``chunk_text`` / ``embedding`` for
+              chunks that are new or whose ``chunk_hash`` differs.
+            - Any rows in ``chunk_registry`` for this document with
+              ``chunk_index >= total_chunks`` are deleted (stale tail).
+
         Args:
             document_id: Logical document ID (e.g. "{opportunity_id}:documents:{object_name}").
             opportunity_id: Opportunity ID.
             gcs_path: Processed GCS path (e.g. "{opportunity_id}/processed/documents/{object_name}").
             doc_hash: SHA-256 hex of full processed file content.
-            total_chunks: Number of chunks.
+            total_chunks: Number of chunks in the new version of the document.
             chunks: List of dicts with keys: chunk_id, chunk_index, chunk_hash, datapoint_id,
-                    chunk_text (str), embedding (list[float]).
+                    chunk_text (str | None), embedding (list[float] | None).
         """
         now = datetime.now(UTC)
         con = get_db_connection()
         try:
             cur = con.cursor()
-            # 1. Upsert the document-level record
             cur.execute(
                 """
                 INSERT INTO document_registry (
@@ -159,12 +167,15 @@ class RegistryClient:
                     now,
                 ),
             )
-            cur.execute(
-                "DELETE FROM chunk_registry WHERE document_id = %s", (document_id,)
-            )
+
+            upserted = 0
             for c in chunks:
+                # Skip unchanged chunks: pipeline omits chunk_text/embedding for these
+                # so existing rows are preserved (correctness for re-ingestion).
+                if c.get("chunk_text") is None:
+                    continue
+
                 embedding = c.get("embedding")
-                # If pgvector adapter wasn't registered, convert list to string manually
                 if isinstance(embedding, list):
                     embedding = "[" + ",".join(map(str, embedding)) + "]"
 
@@ -198,11 +209,22 @@ class RegistryClient:
                         embedding,
                     ),
                 )
+                upserted += 1
+
+            cur.execute(
+                "DELETE FROM chunk_registry "
+                "WHERE document_id = %s AND chunk_index >= %s",
+                (document_id, total_chunks),
+            )
+            stale_removed = cur.rowcount if cur.rowcount is not None else 0
+
             con.commit()
             logger.debug(
-                "Registry updated — document_id=%s chunks=%s",
+                "Registry updated — document_id=%s total_chunks=%s upserted=%s stale_removed=%s",
                 document_id,
                 total_chunks,
+                upserted,
+                stale_removed,
             )
         except Exception:
             con.rollback()

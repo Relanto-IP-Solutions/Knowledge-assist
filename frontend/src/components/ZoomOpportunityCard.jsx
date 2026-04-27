@@ -283,7 +283,7 @@ export default function ZoomOpportunityCard({ opportunityId, onStatusChange }) {
             onMouseLeave={e => { e.currentTarget.style.opacity = busy ? '0.55' : '1' }}
           >
             {busy && <SpinIcon size={11} />}
-            {busy ? busyLabel : 'Connect Zoom'}
+            {busy ? busyLabel : 'Connect'}
           </button>
         )}
         {active && (

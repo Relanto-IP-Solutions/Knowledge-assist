@@ -532,6 +532,9 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          <Route path="/projects/:oid" element={<PostOAuthProjectRedirect />} />
+
           <Route
             path="/create"
             element={
