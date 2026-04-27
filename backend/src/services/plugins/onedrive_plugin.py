@@ -62,17 +62,24 @@ def _project_folder_matches(folder_name: str, oid: str) -> bool:
     name = (folder_name or "").strip()
     if not name:
         return False
-    m = _OID_PREFIX_RE.search(name)
-    if not m:
-        return False
-    return normalize_opportunity_oid(m.group(0)) == oid
+    try:
+        # Exact canonical folder names (e.g., "oid10034") should match directly.
+        return normalize_opportunity_oid(name) == oid
+    except ValueError:
+        m = _OID_PREFIX_RE.search(name)
+        if not m:
+            return False
+        try:
+            return normalize_opportunity_oid(m.group(0)) == oid
+        except ValueError:
+            return False
 
 
 async def find_onedrive_project_folder(
     token: str,
     opportunity_id_str: str,
 ) -> tuple[str | None, str | None]:
-    """Find OneDrive folder anywhere in drive containing canonical oid#### token."""
+    """Find OneDrive folder using direct root path check, then global search fallback."""
     try:
         oid = normalize_opportunity_oid(opportunity_id_str)
     except ValueError:
@@ -80,6 +87,16 @@ async def find_onedrive_project_folder(
 
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(timeout=60.0) as client:
+        logger.info("OneDrive: Checking root for direct path match: {}", oid)
+        direct_url = f"{GRAPH_BASE}/me/drive/root:/{oid}?$select=id,name,folder"
+        direct_resp = await client.get(direct_url, headers=headers)
+        if direct_resp.status_code == 200:
+            item = direct_resp.json()
+            if item.get("folder") and _project_folder_matches(item.get("name") or "", oid):
+                logger.info("OneDrive: Direct match found!")
+                return (item.get("id") or None), (item.get("name") or oid)
+        logger.info("OneDrive: Direct match failed, falling back to global search.")
+
         next_url = (
             f"{GRAPH_BASE}/me/drive/root/search(q='{oid}')"
             "?$top=200&select=id,name,folder"

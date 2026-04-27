@@ -50,6 +50,17 @@ app = FastAPI(
 
 
 @app.middleware("http")
+async def _strip_trailing_slashes(request: Request, call_next):
+    path = request.url.path
+    if path != "/" and path.endswith("/"):
+        normalized_path = path.rstrip("/")
+        query = request.url.query
+        redirect_url = f"{normalized_path}?{query}" if query else normalized_path
+        return RedirectResponse(url=redirect_url, status_code=308)
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def _process_time_header(request: Request, call_next):
     t0 = perf_counter()
     response = await call_next(request)
