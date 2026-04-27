@@ -137,6 +137,28 @@ export async function getGmailOAuthUrl(redirectUri) {
 }
 
 /**
+ * GET /auth/google/url?provider=gmail&oid=&redirect_uri=
+ *
+ * Used by the per-opportunity Gmail re-auth path on Sources when the stored
+ * refresh token is revoked. Mirrors {@link getDriveAuthUrl} so the OAuth
+ * flow targets the **generic** backend callback (`/auth/google/callback`)
+ * which doesn't require an HMAC-signed gmail-specific state — the simple
+ * `provider:oid` state from this endpoint is what that callback validates.
+ * After exchange, the backend redirects to `/projects/<oid>?provider=gmail`
+ * which the frontend forwards to `/sources/<oid>`.
+ *
+ * @param {string} oid
+ * @param {string} redirectUri — should be {VITE_API_BASE}/auth/google/callback
+ * @returns {Promise<{ auth_url: string | null, already_connected?: boolean }>}
+ */
+export async function getGmailReauthAuthUrl(oid, redirectUri) {
+  const { data } = await api.get('/auth/google/url', {
+    params: { provider: 'gmail', oid, redirect_uri: redirectUri },
+  })
+  return data
+}
+
+/**
  * POST /auth/google/callback
  * Exchanges the OAuth code returned by Google for backend tokens.
  * @param {string} code - from ?code= query param after redirect
