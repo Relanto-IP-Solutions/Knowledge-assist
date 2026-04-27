@@ -79,6 +79,8 @@ def infer_source_type(source_name: str) -> str:
         return "zoom_transcript"
     if source_name == "drive":
         return "gdrive_doc"
+    if source_name == "onedrive":
+        return "onedrive_doc"
     if source_name == "slack":
         return "slack_messages"
     return source_name

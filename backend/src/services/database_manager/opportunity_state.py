@@ -12,7 +12,7 @@ from src.utils.logger import get_logger
 
 
 logger = get_logger(__name__)
-
+STATUS_CREATED = "created"
 STATUS_DISCOVERED = "discovered"
 STATUS_SYNCED = "synced"
 STATUS_INGESTED = "ingested"
