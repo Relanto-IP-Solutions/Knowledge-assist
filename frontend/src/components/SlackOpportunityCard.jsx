@@ -302,7 +302,7 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
             onMouseLeave={e => { e.currentTarget.style.opacity = busy ? '0.55' : '1' }}
           >
             {busy && <SpinIcon size={11} />}
-            {busy ? busyLabel : 'Connect Slack'}
+            {busy ? busyLabel : 'Connect'}
           </button>
         )}
         {active && (
