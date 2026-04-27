@@ -177,7 +177,7 @@ export default function TeamDetailsModal({ teamId, onClose, onUpdated }) {
     setEditLeads(prev => {
       const next = new Set(prev)
       if (next.has(uid)) { next.delete(uid) }
-      else { if (next.size >= 2) return prev; next.add(uid) }
+      else { if (next.size >= 1) return prev; next.add(uid) }
       return next
     })
   }, [])
@@ -355,7 +355,7 @@ export default function TeamDetailsModal({ teamId, onClose, onUpdated }) {
                       Members
                     </span>
                     <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 500 }}>
-                      {isEditMode ? `${editMembers.size} selected · ${editLeads.size}/2 leads` : `${members.length} total`}
+                      {isEditMode ? `${editMembers.size} selected · ${editLeads.size}/1 lead` : `${members.length} total`}
                     </span>
                   </div>
 
@@ -425,7 +425,7 @@ export default function TeamDetailsModal({ teamId, onClose, onUpdated }) {
                                       color: isLead ? ACCENT : '#94a3b8',
                                       letterSpacing: '.02em',
                                     }}
-                                    title={editLeads.size >= 2 && !isLead ? 'Max 2 leads' : ''}
+                                    title={editLeads.size >= 1 && !isLead ? 'Max 1 lead' : ''}
                                   >
                                     {isLead ? '★ Lead' : 'Set Lead'}
                                   </button>

@@ -12,7 +12,7 @@ const ORANGE = '#E8532E'
 
 
 /* ── SourcesPage ─────────────────────────────────────────────────── */
-export default function SourcesPage({ opportunityId, opportunityName, onContinue, onBack }) {
+export default function SourcesPage({ opportunityId, opportunityName, onContinue, onBack, isOpportunityLocked = false }) {
   // Backend id used for all API calls (Zoom, answers, etc.)
   const apiOppId = toApiOpportunityId(opportunityId)
 
@@ -145,6 +145,21 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
             Use opportunity ID <strong>{apiOppId}</strong> for any conversation, prompts, or follow-up requests tied to this opportunity.
           </p>
         </div>
+        {isOpportunityLocked ? (
+          <div style={{
+            marginBottom: 14,
+            padding: '10px 12px',
+            borderRadius: 10,
+            border: '1px solid rgba(185,28,28,.24)',
+            background: 'rgba(254,242,242,.95)',
+            color: '#991B1B',
+            fontSize: 11.5,
+            fontWeight: 700,
+            lineHeight: 1.5,
+          }}>
+            This opportunity is locked (`is_active = false`). You can view connectors and answers, but editing is disabled.
+          </div>
+        ) : null}
 
         {/* ── Source connector cards ───────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -155,6 +170,8 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
             border: '1.5px solid rgba(27,38,79,.09)',
             boxShadow: '0 1px 6px rgba(15,23,42,.04)',
             overflow: 'hidden', transition: 'box-shadow .2s, border-color .2s',
+            pointerEvents: isOpportunityLocked ? 'none' : 'auto',
+            opacity: isOpportunityLocked ? 0.7 : 1,
           }}>
             <DriveOpportunityCard
               opportunityId={apiOppId}
@@ -169,6 +186,8 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
             border: '1.5px solid rgba(27,38,79,.09)',
             boxShadow: '0 1px 6px rgba(15,23,42,.04)',
             overflow: 'hidden', transition: 'box-shadow .2s, border-color .2s',
+            pointerEvents: isOpportunityLocked ? 'none' : 'auto',
+            opacity: isOpportunityLocked ? 0.7 : 1,
           }}>
             <GmailOpportunityCard
               opportunityId={apiOppId}
@@ -182,6 +201,8 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
             border: '1.5px solid rgba(27,38,79,.09)',
             boxShadow: '0 1px 6px rgba(15,23,42,.04)',
             overflow: 'hidden', transition: 'box-shadow .2s, border-color .2s',
+            pointerEvents: isOpportunityLocked ? 'none' : 'auto',
+            opacity: isOpportunityLocked ? 0.7 : 1,
           }}>
             <SlackOpportunityCard
               opportunityId={apiOppId}
@@ -195,6 +216,8 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
             border: '1.5px solid rgba(27,38,79,.09)',
             boxShadow: '0 1px 6px rgba(15,23,42,.04)',
             overflow: 'hidden', transition: 'box-shadow .2s, border-color .2s',
+            pointerEvents: isOpportunityLocked ? 'none' : 'auto',
+            opacity: isOpportunityLocked ? 0.7 : 1,
           }}>
             <ZoomOpportunityCard
               opportunityId={apiOppId}
@@ -208,6 +231,8 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
             border: '1.5px solid rgba(27,38,79,.09)',
             boxShadow: '0 1px 6px rgba(15,23,42,.04)',
             overflow: 'hidden', transition: 'box-shadow .2s, border-color .2s',
+            pointerEvents: isOpportunityLocked ? 'none' : 'auto',
+            opacity: isOpportunityLocked ? 0.7 : 1,
           }}>
             <OneDriveOpportunityCard
               opportunityId={apiOppId}
