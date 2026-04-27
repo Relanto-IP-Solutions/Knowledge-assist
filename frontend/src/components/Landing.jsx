@@ -552,11 +552,16 @@ export default function Landing({ user, onOpenOpp, onCreateNewOpp, refreshKey = 
   const [createName, setCreateName] = useState('')
   const [createCharErr, setCreateCharErr] = useState(null)
   const [createNameExists, setCreateNameExists] = useState(false)
+  const [createNameCheckedValue, setCreateNameCheckedValue] = useState('')
+  const [createOrgCheckedValue, setCreateOrgCheckedValue] = useState('')
+  const [createNameAvailable, setCreateNameAvailable] = useState(null)
   const [createChecking, setCreateChecking] = useState(false)
+  const [createCheckError, setCreateCheckError] = useState('')
   const [createBusy, setCreateBusy] = useState(false)
   const [createError, setCreateError] = useState('')
   const [createNotice, setCreateNotice] = useState('')
   const createDebounceRef = useRef(null)
+  const createNameCheckRequestRef = useRef(0)
   const NAME_VALID_RE = /^[A-Za-z0-9 -]*$/
   const [lockedIds, setLockedIds] = useState(() => new Set())
   const [lockConfirm, setLockConfirm] = useState(null)
@@ -566,6 +571,7 @@ export default function Landing({ user, onOpenOpp, onCreateNewOpp, refreshKey = 
     const roles = getRoles(user)
     return roles.includes('ADMIN') || roles.includes('OWNER')
   }, [user])
+  const isAdminOrOwner = canLockOpportunities
 
   const loadDashboard = useCallback(async (forceRefresh = false, requestedPage = 1) => {
     const parsedRequestedPage = Number(requestedPage)
@@ -575,7 +581,12 @@ export default function Landing({ user, onOpenOpp, onCreateNewOpp, refreshKey = 
       setIdsLoading(true)
       setIdsError(null)
       if (forceRefresh) clearOpportunityIdsCache()
-      const rows = await fetchOpportunityIds({ bypassCache: forceRefresh })
+      const rows = await fetchOpportunityIds({
+        bypassCache: forceRefresh,
+        cacheKey: String(user?.id ?? user?.uid ?? user?.email ?? 'anonymous'),
+        isAdmin: isAdminOrOwner,
+        includeAllForAdmin: true,
+      })
       const baseRows = rows.map(r => mapApiIdRowToOpportunity(r))
       const lockedFromApi = new Set(
         baseRows
@@ -601,7 +612,7 @@ export default function Landing({ user, onOpenOpp, onCreateNewOpp, refreshKey = 
       setIdsError(e instanceof Error ? e.message : 'Failed to load opportunities')
       setIdsLoading(false)
     }
-  }, [])
+  }, [isAdminOrOwner, user])
 
   useEffect(() => {
     loadDashboard(refreshKey > 0 || shouldForceRefresh, initialPage)
@@ -701,7 +712,11 @@ export default function Landing({ user, onOpenOpp, onCreateNewOpp, refreshKey = 
     setCreateName('')
     setCreateCharErr(null)
     setCreateNameExists(false)
+    setCreateNameCheckedValue('')
+    setCreateOrgCheckedValue('')
+    setCreateNameAvailable(null)
     setCreateChecking(false)
+    setCreateCheckError('')
     setCreateError('')
     clearTimeout(createDebounceRef.current)
   }
@@ -717,32 +732,103 @@ export default function Landing({ user, onOpenOpp, onCreateNewOpp, refreshKey = 
     resetCreateModal()
   }
 
+  const runCreateNameAvailabilityCheck = useCallback(async (rawName, rawOrgName) => {
+    const trimmed = String(rawName ?? '').trim()
+    const trimmedOrg = String(rawOrgName ?? '').trim()
+    if (!trimmed || !trimmedOrg) {
+      setCreateChecking(false)
+      setCreateNameExists(false)
+      setCreateNameCheckedValue('')
+      setCreateOrgCheckedValue('')
+      setCreateNameAvailable(null)
+      setCreateCheckError('')
+      return null
+    }
+    const requestId = createNameCheckRequestRef.current + 1
+    createNameCheckRequestRef.current = requestId
+    setCreateChecking(true)
+    setCreateCheckError('')
+    try {
+      const exists = await checkNameExists({ name: trimmed, organization_name: trimmedOrg })
+      if (createNameCheckRequestRef.current !== requestId) return null
+      setCreateNameExists(exists)
+      setCreateNameCheckedValue(trimmed)
+      setCreateOrgCheckedValue(trimmedOrg)
+      setCreateNameAvailable(!exists)
+      setCreateCheckError('')
+      return exists
+    } catch {
+      if (createNameCheckRequestRef.current !== requestId) return null
+      setCreateNameExists(false)
+      setCreateNameCheckedValue('')
+      setCreateOrgCheckedValue('')
+      setCreateNameAvailable(null)
+      setCreateCheckError('Unable to verify name availability. Please try again.')
+      return null
+    } finally {
+      if (createNameCheckRequestRef.current === requestId) setCreateChecking(false)
+    }
+  }, [])
+
   const handleCreateNameChange = (e) => {
     const val = e.target.value
     setCreateName(val)
     setCreateError('')
+    createNameCheckRequestRef.current += 1
     if (!NAME_VALID_RE.test(val)) {
       setCreateCharErr('Only letters, numbers, hyphens, and spaces are allowed.')
       setCreateNameExists(false)
+      setCreateNameCheckedValue('')
+      setCreateOrgCheckedValue('')
+      setCreateNameAvailable(null)
+      setCreateChecking(false)
       clearTimeout(createDebounceRef.current)
       return
     }
     setCreateCharErr(null)
-    clearTimeout(createDebounceRef.current)
-    const trimmed = val.trim()
-    if (!trimmed) { setCreateNameExists(false); setCreateChecking(false); return }
-    setCreateChecking(true)
-    createDebounceRef.current = setTimeout(async () => {
-      try {
-        const exists = await checkNameExists(trimmed)
-        setCreateNameExists(exists)
-      } catch {
-        setCreateNameExists(false)
-      } finally {
-        setCreateChecking(false)
-      }
-    }, 400)
+    setCreateNameExists(false)
+    setCreateNameCheckedValue('')
+    setCreateOrgCheckedValue('')
+    setCreateNameAvailable(null)
+    setCreateChecking(false)
+    setCreateCheckError('')
   }
+
+  const handleCreateNameBlur = () => {
+    if (createCharErr || createBusy) return
+    runCreateNameAvailabilityCheck(createName, createOrgName)
+  }
+
+  const handleCreateOrgNameChange = (e) => {
+    setCreateOrgName(e.target.value)
+    setCreateError('')
+    setCreateCheckError('')
+    setCreateNameExists(false)
+    setCreateNameCheckedValue('')
+    setCreateNameAvailable(null)
+    setCreateChecking(false)
+    createNameCheckRequestRef.current += 1
+  }
+
+  useEffect(() => {
+    clearTimeout(createDebounceRef.current)
+    if (createBusy || createCharErr) return
+    const trimmedName = createName.trim()
+    const trimmedOrg = createOrgName.trim()
+    if (!trimmedName || !trimmedOrg) {
+      setCreateChecking(false)
+      setCreateNameExists(false)
+      setCreateNameCheckedValue('')
+      setCreateOrgCheckedValue('')
+      setCreateNameAvailable(null)
+      setCreateCheckError('')
+      return
+    }
+    createDebounceRef.current = window.setTimeout(() => {
+      runCreateNameAvailabilityCheck(trimmedName, trimmedOrg)
+    }, 350)
+    return () => window.clearTimeout(createDebounceRef.current)
+  }, [createName, createOrgName, createBusy, createCharErr, runCreateNameAvailabilityCheck])
 
   const submitCreateOpportunity = async () => {
     if (createBusy || createChecking || createCharErr || createNameExists) return
@@ -750,6 +836,17 @@ export default function Landing({ user, onOpenOpp, onCreateNewOpp, refreshKey = 
     const name = String(createName ?? '').trim()
     if (!orgName) { setCreateError('Organization Name is required.'); return }
     if (!name) { setCreateError('Opportunity Name is required.'); return }
+    const nameExists = createNameCheckedValue === name && createOrgCheckedValue === orgName
+      ? createNameExists
+      : await runCreateNameAvailabilityCheck(name, orgName)
+    if (nameExists === null) {
+      setCreateError('Unable to verify name availability. Please try again.')
+      return
+    }
+    if (nameExists) {
+      setCreateError('This name already exists or has a pending request.')
+      return
+    }
     setCreateBusy(true)
     setCreateError('')
     try {
@@ -1122,9 +1219,9 @@ export default function Landing({ user, onOpenOpp, onCreateNewOpp, refreshKey = 
             </label>
             <input
               value={createOrgName}
-              onChange={(e) => { setCreateOrgName(e.target.value); setCreateError('') }}
+              onChange={handleCreateOrgNameChange}
               onKeyDown={(e) => { if (e.key === 'Enter') submitCreateOpportunity() }}
-              placeholder="e.g. Acme Corp"
+              placeholder="Eg: Organization Name"
               disabled={createBusy}
               autoComplete="off"
               style={{
@@ -1145,8 +1242,9 @@ export default function Landing({ user, onOpenOpp, onCreateNewOpp, refreshKey = 
             <input
               value={createName}
               onChange={handleCreateNameChange}
+              onBlur={handleCreateNameBlur}
               onKeyDown={(e) => { if (e.key === 'Enter') submitCreateOpportunity() }}
-              placeholder="e.g. DocuSign Relanto KA"
+              placeholder="Eg. Opportunity Name"
               disabled={createBusy}
               autoComplete="off"
               style={{
@@ -1160,13 +1258,13 @@ export default function Landing({ user, onOpenOpp, onCreateNewOpp, refreshKey = 
                 outline: 'none',
               }}
             />
-            {(createCharErr || createNameExists || createError) ? (
+            {(createCharErr || createNameExists || createError || createCheckError) ? (
               <div style={{ fontSize: 12, fontWeight: 600, color: '#b91c1c', marginTop: 5, marginBottom: 4 }}>
-                {createCharErr || (createNameExists ? 'This name already exists or has a pending request.' : createError)}
+                {createCharErr || (createNameExists ? 'Name is not available.' : (createError || createCheckError))}
               </div>
             ) : createChecking ? (
               <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 5, marginBottom: 4 }}>Checking availability…</div>
-            ) : createName.trim() && !createCharErr ? (
+            ) : createNameAvailable && createNameCheckedValue === createName.trim() ? (
               <div style={{ fontSize: 11, color: '#059669', marginTop: 5, marginBottom: 4 }}>Name is available.</div>
             ) : <div style={{ marginBottom: 10 }} />}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
