@@ -139,6 +139,22 @@ function LegacySourcesRedirect() {
   return <Navigate to={`/data-connectors/${oid}`} replace />
 }
 
+/**
+ * Backend's generic Google OAuth callback (`{API_BASE}/auth/google/callback`)
+ * redirects to `{frontend}/projects/<oid>?provider=...` after a successful
+ * code exchange (see backend/main.py). Drive and the new Gmail re-auth flow
+ * both rely on that bounce. We don't have a "projects" page in this app, so
+ * forward the user straight to `/sources/<oid>` (which itself redirects to
+ * the data-connectors view). Preserving the query string lets downstream
+ * components observe the OAuth result if they care.
+ */
+function PostOAuthProjectRedirect() {
+  const { oid } = useParams()
+  const location = useLocation()
+  const search = location.search || ''
+  return <Navigate to={`/sources/${oid}${search}`} replace />
+}
+
 function QARoute({ onReviewSaved }) {
   const { opportunityId } = useParams()
   const navigate = useNavigate()
@@ -391,6 +407,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/knowledge-assist" replace />} />
           <Route path="/data-connectors/:opportunityId" element={<SourcesRoute user={user} />} />
           <Route path="/sources/:oid" element={<LegacySourcesRedirect />} />
+          <Route path="/projects/:oid" element={<PostOAuthProjectRedirect />} />
           <Route path="/qa/:opportunityId" element={<QARoute onReviewSaved={bumpDashboardRefresh} />} />
           <Route
             path="/create"

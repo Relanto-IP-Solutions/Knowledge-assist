@@ -13,14 +13,16 @@ import {
   gmailConnectorEmailSessionKey,
 } from '../hooks/useGmailConnector'
 import { toApiOpportunityId } from '../config/opportunityApi'
-import { mapGmailError, WORKSPACE_POLICY_ERROR_MSG } from '../utils/gmailErrorMapper'
+import { mapGmailError, WORKSPACE_POLICY_ERROR_MSG, isInvalidGrantError } from '../utils/gmailErrorMapper'
 import {
   connectGmail,
   fetchGmailConnectInfo,
   fetchGmailMetrics,
   getCachedGmailConnectInfo,
   getCachedGmailMetrics,
+  getDriveOAuthRedirectUri,
   getGmailBackendRedirectUri,
+  getGmailReauthAuthUrl,
   getGmailSourcesReturnUrl,
   runGmailOpportunityConnectSequence,
 } from '../services/integrationsAuthApi'
@@ -361,6 +363,42 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
     onStatusChange?.(isActive)
   }, [isActive, onStatusChange])
 
+  /**
+   * Re-authorize Gmail when the backend reports invalid_grant (refresh
+   * token expired/revoked).
+   *
+   * We deliberately route through the **generic** backend callback
+   * (`{API_BASE}/auth/google/callback`, the same one Drive uses) instead of
+   * the gmail-specific `/integrations/gmail/callback`. That gmail callback
+   * demands an HMAC-signed state that's only minted from inside
+   * connect/discover — exactly the endpoints that 400 when the token is
+   * revoked. Routing through the generic callback bypasses that catch-22:
+   * `/auth/google/url?provider=gmail&oid=<oid>` produces a state that the
+   * generic callback validates, the generic callback persists the fresh
+   * tokens, and then redirects to `{frontend}/projects/<oid>?provider=gmail`.
+   * A small `/projects/:oid` redirect on the frontend forwards the user
+   * back to `/sources/<oid>`.
+   *
+   * Full-page redirect (rather than a popup) avoids popup-blocker friction
+   * and ensures the post-OAuth bounce lands cleanly in the same tab.
+   * Returns `true` once the redirect has been kicked off.
+   */
+  const triggerGmailReauth = useCallback(async (runOid) => {
+    try {
+      const oidStr = String(runOid)
+      const result = await getGmailReauthAuthUrl(oidStr, getDriveOAuthRedirectUri())
+      const authUrl = String(result?.auth_url || '').trim()
+      if (!authUrl) return false
+      try {
+        sessionStorage.setItem(GMAIL_SELECTED_OID_SESSION_KEY, oidStr)
+      } catch { /**/ }
+      window.location.assign(authUrl)
+      return true
+    } catch {
+      return false
+    }
+  }, [])
+
   const runConnectPipeline = useCallback(async (email) => {
     const runOid = oid
     hook.setIdentity(email)
@@ -406,13 +444,19 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
         }
       }
     } catch (e) {
+      // Refresh-token revoked? Re-launch the OAuth popup so the user can
+      // re-grant access instead of just rendering a raw "invalid_grant".
+      if (isInvalidGrantError(e)) {
+        const ok = await triggerGmailReauth(runOid)
+        if (ok) return
+      }
       if (mountedRef.current && oidRef.current === runOid) setErr(mapGmailError(e))
     } finally {
       if (mountedRef.current && oidRef.current === runOid) {
         if (!awaitingOAuthRef.current) setBusy(false)
       }
     }
-  }, [oid, hook.setIdentity, onStatusChange])
+  }, [oid, hook.setIdentity, onStatusChange, triggerGmailReauth])
 
   const resolveMailboxForResync = useCallback(async () => {
     let email = hook.identity?.userEmail?.trim().toLowerCase()
@@ -505,19 +549,30 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
           onStatusChange?.(true)
         }
       } catch (e) {
+        // If metrics fetch itself fails because the refresh token was
+        // revoked, re-launch OAuth (only when we don't already have inline
+        // metrics from the connect response to fall back on).
+        if (isInvalidGrantError(e) && !inline) {
+          const ok = await triggerGmailReauth(runOid)
+          if (ok) return
+        }
         if (mountedRef.current && oidRef.current === runOid && inline) onStatusChange?.(true)
         else if (mountedRef.current && oidRef.current === runOid) setErr(mapGmailError(e))
       } finally {
         if (mountedRef.current && oidRef.current === runOid) setMetricsLoading(false)
       }
     } catch (e) {
+      if (isInvalidGrantError(e)) {
+        const ok = await triggerGmailReauth(runOid)
+        if (ok) return
+      }
       if (mountedRef.current && oidRef.current === runOid) setErr(mapGmailError(e))
     } finally {
       if (mountedRef.current && oidRef.current === runOid) {
         if (!awaitingOAuthRef.current) setBusy(false)
       }
     }
-  }, [onStatusChange, oid, resolveMailboxForResync])
+  }, [onStatusChange, oid, resolveMailboxForResync, triggerGmailReauth])
 
   const statusText  = resolving ? 'Loading…' : isActive ? 'Active' : 'Not connected'
   const statusColor = isActive ? GREEN : '#94A3B8'
