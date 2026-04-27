@@ -4,6 +4,7 @@ import { toApiOpportunityId } from '../config/opportunityApi'
 import {
   connectDrive,
   fetchDriveMetrics,
+  getCachedDriveMetrics,
   getDriveAuthUrl,
   getDriveOAuthRedirectUri,
 } from '../services/integrationsAuthApi'
@@ -15,9 +16,13 @@ const NAVY       = '#1B264F'
 const GREEN      = '#10B981'
 const EMAIL_RE   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-const SS_EMAIL         = (oid) => `pzf_drive_email_${oid}`
-const SS_PENDING_OID   = 'pzf_drive_pending_oid'
-const SS_PENDING_EMAIL = 'pzf_drive_pending_email'
+const SS_EMAIL          = (oid) => `pzf_drive_email_${oid}`
+const SS_PENDING_OID    = 'pzf_drive_pending_oid'
+const SS_PENDING_EMAIL  = 'pzf_drive_pending_email'
+// Persists the "no Drive folder found for this OID" signal across reloads.
+// The /metrics endpoint doesn't return matched_folder, so without this the
+// hint would only show right after a Resync and disappear on refresh.
+const SS_FOLDER_MISSING = (oid) => `pzf_drive_folder_missing_${oid}`
 
 function ssGet(key) { try { return sessionStorage.getItem(key) } catch { return null } }
 function ssSet(key, val) { try { sessionStorage.setItem(key, val) } catch { /**/ } }
@@ -94,7 +99,7 @@ function EmailModal({ oid, onSubmit, onCancel }) {
             type="email" autoComplete="email" value={value}
             onChange={e => { setValue(e.target.value); setLocalErr('') }}
             onKeyDown={e => { if (e.key === 'Enter') submit() }}
-            placeholder="you@company.com"
+            placeholder="example@company.com"
             style={{
               width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10,
               border: `1.5px solid ${localErr ? '#DC2626' : 'rgba(27,38,79,.15)'}`,
@@ -124,13 +129,17 @@ function EmailModal({ oid, onSubmit, onCancel }) {
 export default function DriveOpportunityCard({ opportunityId, onStatusChange }) {
   const oid = useMemo(() => toApiOpportunityId(opportunityId), [opportunityId])
 
-  const [metrics, setMetrics]               = useState(null)
-  const [metricsLoading, setMetricsLoading] = useState(true)
+  const [metrics, setMetrics]               = useState(() => getCachedDriveMetrics(oid))
+  /** Only used to render a small in-card spinner inside the metrics block on first ever load. The
+   * header status is now derived deterministically from the cached/last-known status. */
+  const [metricsLoading, setMetricsLoading] = useState(() => getCachedDriveMetrics(oid) === null)
   const [busy, setBusy]                     = useState(false)
   const [syncStatus, setSyncStatus]         = useState(null) // 'connecting' | 'success' | null
   const [showModal, setShowModal]           = useState(false)
   const [userEmail, setUserEmail]           = useState(() => ssGet(SS_EMAIL(oid)) ?? '')
   const [err, setErr]                       = useState(null)
+  const [folderMissing, setFolderMissing]   = useState(() => ssGet(SS_FOLDER_MISSING(oid)) === '1')
+  const [copiedOid, setCopiedOid]           = useState(false)
 
   const mountedRef = useRef(true)
   const oidRef     = useRef(oid)
@@ -145,16 +154,30 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
 
   useEffect(() => { onStatusChange?.(isActive) }, [isActive, onStatusChange])
 
-  // ── Step 1: Load metrics on mount to determine initial button state
+  // ── Step 1: Background-refresh metrics on mount. Header status is derived from the cached
+  // value (seeded above); this fetch only updates state once the backend responds. An 8s soft
+  // timeout prevents a slow/hanging GCS list call from pinning the UI in a loading state.
   useEffect(() => {
     let alive = true
-    setMetricsLoading(true)
+    const ac = new AbortController()
+    const timeoutId = setTimeout(() => ac.abort(), 8000)
+
     setErr(null)
-    fetchDriveMetrics(oid)
+    if (getCachedDriveMetrics(oid) === null) setMetricsLoading(true)
+
+    fetchDriveMetrics(oid, undefined, { signal: ac.signal })
       .then(m => { if (alive) setMetrics(m) })
-      .catch(() => { if (alive) setMetrics(null) })
-      .finally(() => { if (alive) setMetricsLoading(false) })
-    return () => { alive = false }
+      .catch(() => { /** silent: keep cached value (or null), header falls back to "Not connected". */ })
+      .finally(() => {
+        clearTimeout(timeoutId)
+        if (alive) setMetricsLoading(false)
+      })
+
+    return () => {
+      alive = false
+      clearTimeout(timeoutId)
+      ac.abort()
+    }
   }, [oid])
 
   // ── Auto-sync after returning from Google OAuth ───────────────────
@@ -176,10 +199,21 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
     setErr(null)
     setSyncStatus('connecting')
     try {
-      await connectDrive(runOid, email)
+      const result = await connectDrive(runOid, email)
       if (!mountedRef.current || oidRef.current !== runOid) return
-      setSyncStatus('success')
-      // Refresh metrics after sync
+
+      // Backend returns matched_folder=null when no folder in the user's Drive
+      // contains a token like "oid560". In that case files_uploaded is also 0
+      // and no exception is thrown — the card would otherwise silently show
+      // "Active · 0 files" with no explanation. Surface an actionable banner
+      // instead, and persist the signal so it survives reloads (the /metrics
+      // endpoint doesn't return matched_folder).
+      const matchedFolder = String(result?.matched_folder ?? '').trim()
+      const noFolder = !matchedFolder
+      setFolderMissing(noFolder)
+      ssSet(SS_FOLDER_MISSING(runOid), noFolder ? '1' : '0')
+
+      setSyncStatus(noFolder ? null : 'success')
       const m = await fetchDriveMetrics(runOid, email)
       if (mountedRef.current && oidRef.current === runOid) setMetrics(m)
     } catch (e) {
@@ -237,14 +271,31 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
     setShowModal(true)
   }, [oid, userEmail, handleConnectWithEmail])
 
-  // Resync button handler — go straight to sync, no auth check
+  // Resync button handler — go straight to sync when we already know the
+  // account; otherwise open the Connect modal so the user can re-enter
+  // their Google email. The header only renders the Connect button while
+  // status != ACTIVE, so without this fallback an Active-but-locally-empty
+  // card (e.g. fresh browser session, cleared sessionStorage) would dead-
+  // end on a "use Connect" error pointing at a button that isn't visible.
+  // Re-using the modal funnels the user through getDriveAuthUrl, which
+  // either short-circuits via `already_connected` straight into runSync or
+  // kicks off OAuth (and the post-OAuth useEffect picks up sync on return).
   const handleResync = useCallback(() => {
     setErr(null)
     setSyncStatus(null)
+    setCopiedOid(false)
     const email = userEmail || ssGet(SS_EMAIL(oid)) || ''
-    if (!email) { setErr('No account found. Please use Connect to re-enter your Google account.'); return }
+    if (!email) { setShowModal(true); return }
     void runSync(oid, email)
   }, [oid, userEmail, runSync])
+
+  const handleCopyOid = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(oid)
+      setCopiedOid(true)
+      setTimeout(() => setCopiedOid(false), 1800)
+    } catch { /* clipboard unavailable — silently no-op */ }
+  }, [oid])
 
   const totalFilesCount = Number(metrics?.total_files ?? 0)
 
@@ -276,7 +327,7 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
             <span style={{ fontSize: 13, fontWeight: 800, color: NAVY }}>Google Drive</span>
             <Dot active={isActive} />
             <span style={{ fontSize: 11, color: isActive ? GREEN : '#94A3B8', fontWeight: 600 }}>
-              {metricsLoading ? 'Checking…' : isActive ? 'Active' : 'Not connected'}
+              {isActive ? 'Active' : 'Not connected'}
             </span>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)' }}>Documents &amp; Files</div>
@@ -289,7 +340,7 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
         </div>
 
         {/* Connect button — status != ACTIVE */}
-        {!metricsLoading && !isActive && (
+        {!isActive && (
           <button type="button" disabled={busy} onClick={handleConnect}
             style={{
               flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -302,12 +353,12 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
             onMouseLeave={e => { e.currentTarget.style.opacity = busy ? '0.55' : '1' }}
           >
             {busy && <SpinIcon size={11} />}
-            {busy ? 'Connecting…' : 'Connect Google Drive'}
+            {busy ? 'Connecting…' : 'Connect'}
           </button>
         )}
 
         {/* Resync button — status == ACTIVE */}
-        {!metricsLoading && isActive && (
+        {isActive && (
           <button type="button" disabled={busy} onClick={handleResync}
             style={{
               flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -325,14 +376,11 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
         )}
       </div>
 
-      {/* Sync status feedback */}
-      {syncStatus === 'connecting' && (
-        <div style={{ padding: '10px 22px 14px 80px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <SpinIcon size={12} />
-          <span style={{ fontSize: 12, color: DRIVE_BLUE, fontWeight: 600 }}>Connecting project folder…</span>
-        </div>
-      )}
-      {syncStatus === 'success' && (
+      {/* Sync status feedback — the Resync/Connect button already shows
+          "Syncing…" with a spinner during syncStatus==='connecting', so a
+          second "Connecting project folder…" row underneath was just
+          duplicate noise. Only the success message needs its own row. */}
+      {syncStatus === 'success' && !folderMissing && (
         <div style={{ padding: '10px 22px 14px 80px' }}>
           <span style={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>
             Drive connected successfully. Files are being synced.
@@ -340,8 +388,48 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
         </div>
       )}
 
-      {/* Metrics — status == ACTIVE */}
-      {isActive && metrics && (
+      {/* Missing-folder hint — Drive is connected but no folder for this OID
+          exists in the user's Drive yet. Tells them exactly what to name the
+          folder and offers a one-click copy of the project id. */}
+      {isActive && folderMissing && syncStatus !== 'connecting' && (
+        <div style={{ padding: '10px 22px 14px 80px' }}>
+          <div style={{
+            display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 10,
+            background: 'rgba(234,179,8,.08)', border: '1px solid rgba(234,179,8,.35)',
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 2 }}>
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#92400E', marginBottom: 4 }}>
+                No project folder found in Google Drive
+              </div>
+              <div style={{ fontSize: 11.5, color: '#92400E', lineHeight: 1.55, marginBottom: 8 }}>
+                Create a folder in your Google Drive whose name includes this project id, drop your files in it, then click <strong>Resync Drive</strong>. Acceptable names: <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{oid}</code>, <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`OID ${oid.replace(/^oid/i, '')}`}</code>, or <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`Project ${oid}`}</code>.
+              </div>
+              <button type="button" onClick={handleCopyOid}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '5px 11px', borderRadius: 6,
+                  border: '1px solid rgba(146,64,14,.35)', background: '#fff',
+                  color: '#92400E', fontSize: 11, fontWeight: 700,
+                  cursor: 'pointer', fontFamily: 'var(--font)',
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                {copiedOid ? 'Copied!' : `Copy ${oid}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Metrics — status == ACTIVE; suppressed when folderMissing because
+          "0 files" without context just confuses the user — the warning
+          above is more useful. */}
+      {isActive && !folderMissing && metrics && (
         <div style={{ padding: '12px 22px 18px 80px' }}>
           <div style={{
             borderRadius: 12, border: '1px solid rgba(66,133,244,.15)',
@@ -357,6 +445,12 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
               <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: DRIVE_BLUE }}>
                 Sync metadata
               </span>
+              {metricsLoading && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6, color: DRIVE_BLUE, opacity: .8 }}>
+                  <SpinIcon size={9} />
+                  <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase' }}>Refreshing</span>
+                </span>
+              )}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', padding: '12px 16px 16px' }}>
               <div style={{

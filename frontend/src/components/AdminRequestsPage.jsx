@@ -213,19 +213,19 @@ function ViewDetailModal({ request, onClose }) {
   const submitted = new Date(request.submitted_at)
   const dateStr = submitted.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   const timeStr = submitted.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+  const reviewedAt = request.reviewed_at
+    ? new Date(request.reviewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+      ' at ' +
+      new Date(request.reviewed_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    : null
 
   const rows = [
-    { label: 'Request ID', value: request.request_id },
     { label: 'Opportunity Title', value: request.opportunity_title },
-    { label: 'Opportunity ID', value: request.opportunity_id || '—' },
     { label: 'Requested By', value: request.user_name || `User #${request.user_id}` },
-    { label: 'User ID', value: request.user_id },
-    { label: 'User Email', value: request.user_email || '—' },
     { label: 'Status', value: request.status, badge: true },
     { label: 'Submitted On', value: `${dateStr} at ${timeStr}` },
     { label: 'Admin Remarks', value: request.admin_remarks || '—' },
-    { label: 'Reviewed By', value: request.reviewed_by || request.admin_name || '—' },
-    { label: 'Reviewed On', value: request.reviewed_at ? new Date(request.reviewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + new Date(request.reviewed_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—' },
+    { label: 'Reviewed On', value: reviewedAt },
   ]
 
   return (
@@ -254,7 +254,7 @@ function ViewDetailModal({ request, onClose }) {
               Request Details
             </h3>
             <p style={{ margin: '4px 0 0', fontSize: 12, color: '#94a3b8' }}>
-              Full details for this opportunity request
+              Important details for this request
             </p>
           </div>
           <button onClick={onClose} style={{
@@ -348,7 +348,9 @@ export default function AdminRequestsPage({ onBack }) {
   const [reviewMode, setReviewMode] = useState('review')
   const [viewing, setViewing] = useState(null)
   const [toastMsg, setToastMsg] = useState(null)
+  const [currentPage, setCurrentPage] = useState(1)
   const toastTimer = useRef(null)
+  const itemsPerPage = 10
 
   const showToast = useCallback((msg) => {
     setToastMsg(msg)
@@ -393,6 +395,10 @@ export default function AdminRequestsPage({ onBack }) {
     setReviewing(r)
   }
 
+  const totalPages = Math.ceil(filteredRequests.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const paginatedRequests = filteredRequests.slice(startIndex, startIndex + itemsPerPage)
+
   return (
     <div style={{
       minHeight: 'calc(100vh - 56px)',
@@ -410,9 +416,8 @@ export default function AdminRequestsPage({ onBack }) {
             fontSize: 11, fontWeight: 600, flexWrap: 'wrap',
           }}>
             {[
-              { label: 'Knowledge Assist', to: '/knowledge-assist' },
               { label: 'Sales Intelligence', to: '/knowledge-assist' },
-              { label: 'Admin Panel', to: null },
+              { label: 'Admin', to: null },
               { label: 'Opportunity Requests', to: null },
             ].map((crumb, index, arr) => {
               const isLast = index === arr.length - 1
@@ -463,10 +468,10 @@ export default function AdminRequestsPage({ onBack }) {
 
         {/* Stat cards */}
         <div style={{ display: 'flex', gap: 16, marginBottom: 28, flexWrap: 'wrap' }}>
-          <StatCard icon={iconTotal}    value={counts.ALL}      label="Total Requests"  active={filterStatus === 'ALL'}      onClick={() => setFilterStatus('ALL')} />
-          <StatCard icon={iconPending}  value={counts.PENDING}  label="Pending Review"  active={filterStatus === 'PENDING'}  onClick={() => setFilterStatus('PENDING')} />
-          <StatCard icon={iconApproved} value={counts.APPROVED} label="Approved"         active={filterStatus === 'APPROVED'} onClick={() => setFilterStatus('APPROVED')} />
-          <StatCard icon={iconRejected} value={counts.REJECTED} label="Rejected"         active={filterStatus === 'REJECTED'} onClick={() => setFilterStatus('REJECTED')} />
+          <StatCard icon={iconTotal}    value={counts.ALL}      label="Total Requests"  active={filterStatus === 'ALL'}      onClick={() => { setFilterStatus('ALL'); setCurrentPage(1) }} />
+          <StatCard icon={iconPending}  value={counts.PENDING}  label="Pending Review"  active={filterStatus === 'PENDING'}  onClick={() => { setFilterStatus('PENDING'); setCurrentPage(1) }} />
+          <StatCard icon={iconApproved} value={counts.APPROVED} label="Approved"         active={filterStatus === 'APPROVED'} onClick={() => { setFilterStatus('APPROVED'); setCurrentPage(1) }} />
+          <StatCard icon={iconRejected} value={counts.REJECTED} label="Rejected"         active={filterStatus === 'REJECTED'} onClick={() => { setFilterStatus('REJECTED'); setCurrentPage(1) }} />
         </div>
 
         {/* Table */}
@@ -547,7 +552,7 @@ export default function AdminRequestsPage({ onBack }) {
                 </tr>
               </thead>
               <tbody>
-                {filteredRequests.map(r => {
+                {paginatedRequests.map(r => {
                   const submitted = new Date(r.submitted_at)
                   const dateStr = submitted.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                   const timeStr = submitted.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
@@ -640,6 +645,76 @@ export default function AdminRequestsPage({ onBack }) {
                 })}
               </tbody>
             </table>
+            
+            {/* Pagination */}
+            <div style={{
+              padding: '16px 24px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: '#FAFBFD',
+              borderTop: '1px solid rgba(27,38,79,.08)',
+              fontSize: 13,
+              color: '#64748b',
+            }}>
+              <span style={{ fontWeight: 500 }}>
+                Showing {startIndex + 1}–{Math.min(startIndex + itemsPerPage, filteredRequests.length)} of {filteredRequests.length} requests
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                    border: `1px solid ${currentPage === 1 ? '#e2e8f0' : '#cbd5e1'}`,
+                    background: '#fff', color: currentPage === 1 ? '#cbd5e1' : SI_NAVY,
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                    transition: 'all .2s',
+                  }}
+                  onMouseEnter={e => { if (currentPage > 1) { e.currentTarget.style.background = 'rgba(27,38,79,.04)'; e.currentTarget.style.borderColor = SI_NAVY } }}
+                  onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = currentPage === 1 ? '#e2e8f0' : '#cbd5e1' }}
+                >
+                  ← Previous
+                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 8px' }}>
+                  {Array.from({ length: totalPages }, (_, i) => {
+                    const pageNum = i + 1
+                    const isActive = pageNum === currentPage
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        style={{
+                          width: 32, height: 32, borderRadius: 6, fontSize: 12, fontWeight: 700,
+                          border: isActive ? `2px solid ${SI_NAVY}` : '1px solid #e2e8f0',
+                          background: isActive ? SI_NAVY : '#fff',
+                          color: isActive ? '#fff' : SI_NAVY,
+                          cursor: 'pointer', fontFamily: 'inherit',
+                          transition: 'all .2s',
+                        }}
+                        onMouseEnter={e => { if (!isActive) { e.currentTarget.style.borderColor = SI_NAVY; e.currentTarget.style.color = SI_NAVY } }}
+                        onMouseLeave={e => { if (!isActive) { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.color = SI_NAVY } }}
+                      >
+                        {pageNum}
+                      </button>
+                    )
+                  })}
+                </div>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  style={{
+                    padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                    border: `1px solid ${currentPage === totalPages ? '#e2e8f0' : '#cbd5e1'}`,
+                    background: '#fff', color: currentPage === totalPages ? '#cbd5e1' : SI_NAVY,
+                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                    transition: 'all .2s',
+                  }}
+                  onMouseEnter={e => { if (currentPage < totalPages) { e.currentTarget.style.background = 'rgba(27,38,79,.04)'; e.currentTarget.style.borderColor = SI_NAVY } }}
+                  onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = currentPage === totalPages ? '#e2e8f0' : '#cbd5e1' }}
+                >
+                  Next →
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

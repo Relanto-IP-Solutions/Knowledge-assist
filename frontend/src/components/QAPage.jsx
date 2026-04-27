@@ -48,6 +48,83 @@ import {
 
 const SI_NAVY = 'var(--si-navy, #1B264F)'
 const SI_ORANGE = 'var(--si-orange, #E8532E)'
+const QA_PROGRESS_STORAGE_PREFIX = 'knowledgeAssist:qaProgress:v1'
+
+function getQaProgressStorageKey(oppId) {
+  const key = String(oppId ?? '').trim()
+  if (!key) return ''
+  return `${QA_PROGRESS_STORAGE_PREFIX}:${key}`
+}
+
+function readQaProgress(oppId) {
+  const storageKey = getQaProgressStorageKey(oppId)
+  if (!storageKey) return null
+  try {
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function persistQaProgress(oppId, payload) {
+  const storageKey = getQaProgressStorageKey(oppId)
+  if (!storageKey) return
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(payload))
+  } catch {
+    /* noop */
+  }
+}
+
+// ── Per-opportunity accepted-answers persistence ──────────────────────────────
+// Key format: accepted_<opportunity_id>
+// Value:      { [question_id]: true }  (only accepted/overridden questions)
+// This is intentionally separate from the broader qaProgress snapshot so it can
+// be read, written, and merged with the API response without touching other state.
+
+function getAcceptedStorageKey(oppId) {
+  const key = String(oppId ?? '').trim()
+  if (!key) return ''
+  return `accepted_${key}`
+}
+
+function readAcceptedAnswers(oppId) {
+  const storageKey = getAcceptedStorageKey(oppId)
+  if (!storageKey) return {}
+  try {
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed
+  } catch {
+    return {}
+  }
+}
+
+function writeAcceptedAnswers(oppId, acceptedMap) {
+  const storageKey = getAcceptedStorageKey(oppId)
+  if (!storageKey) return
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(acceptedMap))
+  } catch {
+    /* noop */
+  }
+}
+
+function buildAcceptedMapFromState(qState) {
+  const acceptedMap = {}
+  for (const [qid, state] of Object.entries(qState || {})) {
+    if (state?.status === 'accepted' || state?.status === 'overridden') {
+      acceptedMap[String(qid)] = true
+    }
+  }
+  return acceptedMap
+}
 
 /** isValidAnswer — checks answer_value only, never answer_type. */
 function isValidAnswer(value) {
@@ -765,7 +842,7 @@ export function applyAcceptAllToQState(prevQState, {
   return { next, changed }
 }
 
-export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReviewSaved }) {
+export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReviewSaved, isOpportunityLocked = false }) {
   const [apiOppName, setApiOppName] = useState(null)
   const sections = allSections[oppId] || []
   const apiFeatureOn = useOpportunityAnswersApi()
@@ -863,6 +940,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     if (apiQData?.questions?.length) return apiQData.questions
     return []
   }, [apiData?.answers, apiQData?.questions, questionTextById, apiOid])
+
   const reviewQuestionById = useMemo(() => {
     const out = new Map()
     for (const q of reviewQuestions || []) {
@@ -929,6 +1007,23 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
   const [showConflicts, setShowConflicts] = useState(false)
   const [resolvedConflicts, setResolvedConflicts] = useState({})
   const isSubmitting = submitBusy
+  const isOpportunityReadOnly = Boolean(isOpportunityLocked)
+
+  // reviewQuestionsWithAccepted: enriches each question with is_accepted flag derived from
+  // qState (which is kept in sync with accepted_<oppId> in localStorage).
+  // Use this list when you need to know which questions have been accepted in the current session.
+  const reviewQuestionsWithAccepted = useMemo(() => {
+    return reviewQuestions.map(q => {
+      const qid = String(q?.question_id ?? '')
+      if (!qid) return q
+      const status = qState?.[qid]?.status
+      return {
+        ...q,
+        is_accepted: status === 'accepted' || status === 'overridden',
+      }
+    })
+  }, [reviewQuestions, qState])
+
   /**
    * Seed per-question review state from GET /answers once per bundle load (`oppId` reset clears the ref).
    * Local `status` is QA workflow only — never inferred from API row `active` (that flag is lifecycle/POST, not “accepted”).
@@ -936,10 +1031,26 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
   const apiReviewStateSeededRef = useRef(false)
 
   useEffect(() => {
-    setApiSelections({})
     apiReviewStateSeededRef.current = false
-    /** Fresh opportunity — review status must start pending until Accept / Accept all (not from GET /answers). */
-    setQState(initQAState(oppId))
+    const saved = readQaProgress(oppId)
+    /** Fresh opportunity starts pending, but existing progress should be restored when available. */
+    if (!saved) {
+      setActiveSec(null)
+      setApiSelections({})
+      setQState(initQAState(oppId))
+      return
+    }
+    setActiveSec(saved.activeSec != null ? String(saved.activeSec) : null)
+    setQState(
+      saved.qState && typeof saved.qState === 'object' && !Array.isArray(saved.qState)
+        ? { ...initQAState(oppId), ...saved.qState }
+        : initQAState(oppId),
+    )
+    setApiSelections(
+      saved.apiSelections && typeof saved.apiSelections === 'object' && !Array.isArray(saved.apiSelections)
+        ? saved.apiSelections
+        : {},
+    )
   }, [oppId])
 
   useEffect(() => {
@@ -989,6 +1100,40 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     })
   }, [reviewQuestions, apiQData?.questions, apiData?.answers])
 
+  // Hydrate accepted status from accepted_<oppId> when API answers load.
+  // Merges stored accepted question IDs into qState without overwriting already-accepted rows.
+  // Adds is_accepted semantics: any question found in localStorage is treated as accepted.
+  useEffect(() => {
+    if (!apiData?.answers?.length) return
+    const storedAccepted = readAcceptedAnswers(oppId)
+    const storedQids = Object.keys(storedAccepted)
+    if (!storedQids.length) return
+    setQState(prev => {
+      let changed = false
+      const next = { ...prev }
+      for (const qid of storedQids) {
+        const cur = next[qid]
+        // Skip if already accepted/overridden or server-locked (do not regress state).
+        if (cur?.status === 'accepted' || cur?.status === 'overridden' || cur?.serverLocked) continue
+        const row = apiData.answers.find(a => String(a.question_id) === qid)
+        if (!row) continue
+        const fallbackValue = String(
+          cur?.editedAnswer || cur?.override || row.answer_value || '',
+        ).trim()
+        next[qid] = {
+          ...(cur || DEFAULT_API_Q_STATE),
+          status: 'accepted',
+          complete: true,
+          acceptedAnswerValue: fallbackValue,
+          userCleared: false,
+          is_accepted: true,
+        }
+        changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [oppId, apiData?.answers])
+
   const useApiLayout =
     apiFeatureOn &&
     apiData &&
@@ -1022,10 +1167,20 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     })
   }, [apiOid, apiLoading, apiError])
 
-  const apiGrouped = useMemo(
-    () => (apiData?.answers?.length ? groupAnswersByQaCatalog(apiData.answers) : null),
-    [apiData?.answers],
-  )
+  const apiGrouped = useMemo(() => {
+    if (!(apiData?.answers?.length)) return null
+    try {
+      return groupAnswersByQaCatalog(apiData.answers)
+    } catch (error) {
+      console.error('[QA Grouping Error]', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return {
+        sections: [],
+        uncategorized: Array.isArray(apiData.answers) ? apiData.answers : [],
+      }
+    }
+  }, [apiData?.answers])
   const apiQuestionCardModelsById = useMemo(() => {
     const out = new Map()
     for (const a of apiData?.answers || []) {
@@ -1579,8 +1734,9 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
   )
 
   const handleResolveConflicts = useCallback(() => {
+    if (isOpportunityReadOnly) return
     setShowConflicts(true)
-  }, [])
+  }, [isOpportunityReadOnly])
 
   const handleSelectConflict = useCallback((qid, value) => {
     setResolvedConflicts(prev => ({
@@ -1590,6 +1746,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
   }, [])
 
   const applyResolvedConflicts = useCallback(() => {
+    if (isOpportunityReadOnly) return
     for (const a of conflictedQuestions) {
       const qid = a.question_id
       const selected = resolvedConflicts[qid]
@@ -1597,7 +1754,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
       resolveConflict(qid, selected)
     }
     setShowConflicts(false)
-  }, [conflictedQuestions, resolvedConflicts, resolveConflict])
+  }, [conflictedQuestions, resolvedConflicts, resolveConflict, isOpportunityReadOnly])
 
   /** Resolved vs total questions that require conflict clarification (for Resolve conflicts button bar). */
   const conflictResolutionProgress = useMemo(() => {
@@ -1677,6 +1834,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
   ])
 
   const openBulkResolve = useCallback(() => {
+    if (isOpportunityReadOnly) return
     const unresolved = useApiLayout ? apiUnresolvedConflictCount : demoUnresolvedConflictCount
     const editable = useApiLayout ? apiEditableConflictCount : demoEditableConflictCount
     if (editable === 0) return
@@ -1684,7 +1842,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     setBulkConflictSessionTotal(unresolved > 0 ? unresolved : editable)
     setBulkConflictIndex(0)
     setBulkResolveOpen(true)
-  }, [useApiLayout, apiUnresolvedConflictCount, demoUnresolvedConflictCount, apiEditableConflictCount, demoEditableConflictCount])
+  }, [useApiLayout, apiUnresolvedConflictCount, demoUnresolvedConflictCount, apiEditableConflictCount, demoEditableConflictCount, isOpportunityReadOnly])
 
   useEffect(() => {
     if (!bulkResolveOpen) return
@@ -1854,6 +2012,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
   }, [activeSec, sectionComplete, pendingSectionQids])
 
   const handleAcceptAll = useCallback(() => {
+    if (isOpportunityReadOnly) return
     if (apiFeatureOn && apiData?.answers?.length && useApiLayout) {
       console.log('[Accept All Start]', {
         totalQuestions: apiData?.answers?.length ?? 0,
@@ -1928,9 +2087,11 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     apiSelections,
     apiQData?.questions,
     sections,
+    isOpportunityReadOnly,
   ])
 
   const openSubmitModal = () => {
+    if (isOpportunityReadOnly) return
     if (isSubmitting) return
     setSubmitConfirmValidation('')
     setSubmitConfirmMissing([])
@@ -1950,15 +2111,39 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
   }
 
   const handleSaveNextClick = useCallback(() => {
-    if (!sectionComplete) return
+    if (isOpportunityReadOnly) return
+    const acceptedMap = buildAcceptedMapFromState(qState)
+    persistQaProgress(oppId, {
+      activeSec,
+      qState,
+      apiSelections,
+      updatedAt: Date.now(),
+    })
+    writeAcceptedAnswers(oppId, acceptedMap)
     handleSaveNextSection()
-  }, [sectionComplete, handleSaveNextSection])
+  }, [handleSaveNextSection, isOpportunityReadOnly, oppId, activeSec, qState, apiSelections])
+
+  const handleSaveClick = useCallback(() => {
+    if (isOpportunityReadOnly) return
+    const acceptedMap = buildAcceptedMapFromState(qState)
+    persistQaProgress(oppId, {
+      activeSec,
+      qState,
+      apiSelections,
+      updatedAt: Date.now(),
+    })
+    writeAcceptedAnswers(oppId, acceptedMap)
+    setSubmitNotice('Saved')
+    setTimeout(() => setSubmitNotice(null), 1800)
+  }, [isOpportunityReadOnly, oppId, activeSec, qState, apiSelections])
 
   const handleSubmitClick = useCallback(() => {
+    if (isOpportunityReadOnly) return
     openSubmitModal()
-  }, [openSubmitModal])
+  }, [openSubmitModal, isOpportunityReadOnly])
 
   const confirmSubmit = async () => {
+    if (isOpportunityReadOnly) return
     if (isSubmitting) return
     const totalStart = performance.now()
     console.log('[Submit] Started at:', new Date().toISOString())
@@ -2119,6 +2304,16 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
         return
       }
 
+      // Final section has no "Save & next"; persist explicitly when user confirms submit.
+      const acceptedMap = buildAcceptedMapFromState(qState)
+      persistQaProgress(oppId, {
+        activeSec,
+        qState,
+        apiSelections,
+        updatedAt: Date.now(),
+      })
+      writeAcceptedAnswers(oppId, acceptedMap)
+
       setSubmitConfirmOpen(false)
       setSubmitBusy(true)
       try {
@@ -2251,6 +2446,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
           <QuestionCard
             q={qModel}
             oppId={oppId}
+            readOnly={isOpportunityReadOnly}
             qState={qState[String(a.question_id)] || DEFAULT_API_Q_STATE}
             onAccept={acceptQ}
             onUndo={undoQ}
@@ -2418,17 +2614,45 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     boxSizing: 'border-box',
   }
 
-  const showPrimarySubmit =
-    showSectionNav && (reviewSectionOrder.length === 1 || isLastReviewSection)
-  const showSaveNext = showSectionNav && hasNextReviewSection && !isOpportunityAlreadySubmitted
-  const showSubmitButton = showPrimarySubmit || isOpportunityAlreadySubmitted
+  const currentSessionNumber = activeSectionIdx >= 0 ? activeSectionIdx + 1 : 1
+  const totalSessions = reviewSectionOrder.length
+  const hasFourOrMoreSessions = totalSessions >= 4
+  // Sessions 1–(N-1): show Save & Next; last session: show Submit.
+  // For ≥4-session opportunities the 4th session (idx 3) is always the submit session
+  // regardless of how many more sections follow (matching the original requirement).
+  // For <4-session opportunities the last section is always the submit session.
+  const isPreSubmitSession = totalSessions > 1 && activeSectionIdx >= 0 && (
+    hasFourOrMoreSessions ? activeSectionIdx < 3 : !isLastReviewSection
+  )
+  const isFinalSubmitSession = activeSectionIdx >= 0 && (
+    hasFourOrMoreSessions ? activeSectionIdx >= 3 : (totalSessions === 1 || isLastReviewSection)
+  )
+
+  const { acceptedAnswersCount, totalQuestionsCount } = useMemo(() => {
+    let accepted = 0
+    const total = allQuestionsForCompletion.length
+    for (const q of allQuestionsForCompletion) {
+      const qid = questionCompletionKey(q)
+      if (!qid) continue
+      if (isQuestionComplete(q, qState?.[qid])) accepted++
+    }
+    return { acceptedAnswersCount: accepted, totalQuestionsCount: total }
+  }, [allQuestionsForCompletion, qState])
+
+  const isSubmitEnabled = totalQuestionsCount > 0 && acceptedAnswersCount === totalQuestionsCount
+  const showSaveNext = showSectionNav && isPreSubmitSession && !isOpportunityAlreadySubmitted
+  const showSubmitButton = (showSectionNav && isFinalSubmitSession) || isOpportunityAlreadySubmitted
+  const showSaveOnFinalSection = showSectionNav && isFinalSubmitSession && !isOpportunityAlreadySubmitted
   console.log('[Main Submit Render]', {
     isSubmitting,
     label: isSubmitting ? 'Submitting...' : 'Submit',
   })
   console.log('[Button Render]', {
-    submitDisabled: !allQuestionsComplete,
-    saveDisabled: !sectionComplete,
+    submitDisabled: !isSubmitEnabled,
+    saveDisabled: false,
+    currentSessionNumber,
+    acceptedAnswersCount,
+    totalQuestionsCount,
   })
 
   const qaContentMax = { maxWidth: 960, margin: 0, width: '100%', boxSizing: 'border-box' }
@@ -2820,6 +3044,24 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
           ) : null}
 
           <div style={{ ...qaContentMax }}>
+          {isOpportunityReadOnly ? (
+            <div
+              role="status"
+              style={{
+                marginBottom: 6,
+                padding: '8px 12px',
+                borderRadius: 6,
+                background: '#FEF2F2',
+                border: '1px solid #FECACA',
+                color: '#991B1B',
+                fontSize: 12,
+                fontWeight: 700,
+                lineHeight: 1.4,
+              }}
+            >
+              This opportunity is locked. You can review answers, but editing and submission are disabled.
+            </div>
+          ) : null}
           {!submitReady && totalQ > 0 && (unresolvedConflicts > 0 || pendingFinalize > 0) ? (
             <div
               role="alert"
@@ -3000,6 +3242,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
                     <QuestionCard
                       q={q}
                       oppId={oppId}
+                      readOnly={isOpportunityReadOnly}
                       qState={qState[q.id] || { status: q.status, override: '', editedAnswer: '', answerSource: 'ai', feedback: null, feedbackText: '', notes: '', conflictResolved: false, serverLocked: false }}
                       onAccept={acceptQ}
                       onUndo={undoQ}
@@ -3050,7 +3293,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
                   <button
                     type="button"
                     onClick={handleAcceptAll}
-                    disabled={submitBusy || isOpportunityAlreadySubmitted}
+                    disabled={submitBusy || isOpportunityAlreadySubmitted || isOpportunityReadOnly}
                     title="Accept every pending question using your current MCQ selections and sentence edits. Does not send to the server — use Submit for that."
                     style={{
                       ...footBarBtnBase,
@@ -3058,8 +3301,8 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
                       background: 'var(--bg2)',
                       color: SI_NAVY,
                       boxShadow: 'none',
-                      opacity: submitBusy || isOpportunityAlreadySubmitted ? 0.7 : 1,
-                      cursor: submitBusy || isOpportunityAlreadySubmitted ? 'not-allowed' : 'pointer',
+                      opacity: submitBusy || isOpportunityAlreadySubmitted || isOpportunityReadOnly ? 0.7 : 1,
+                      cursor: submitBusy || isOpportunityAlreadySubmitted || isOpportunityReadOnly ? 'not-allowed' : 'pointer',
                     }}
                   >
                     Accept all answers
@@ -3069,29 +3312,47 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
                   <button
                     type="button"
                     onClick={handleSaveNextClick}
-                    disabled={!sectionComplete}
+                    disabled={isOpportunityReadOnly}
                     style={{
                       ...footBarBtnBase,
                       border: 'none',
-                      background: sectionComplete ? SI_ORANGE : 'var(--bg3)',
-                      color: sectionComplete ? '#fff' : 'var(--text3)',
-                      boxShadow: sectionComplete ? '0 2px 10px rgba(232,83,46,.28)' : 'none',
-                      cursor: sectionComplete ? 'pointer' : 'not-allowed',
-                      opacity: sectionComplete ? 1 : 0.7,
+                      background: !isOpportunityReadOnly ? SI_ORANGE : 'var(--bg3)',
+                      color: !isOpportunityReadOnly ? '#fff' : 'var(--text3)',
+                      boxShadow: !isOpportunityReadOnly ? '0 2px 10px rgba(232,83,46,.28)' : 'none',
+                      cursor: !isOpportunityReadOnly ? 'pointer' : 'not-allowed',
+                      opacity: !isOpportunityReadOnly ? 1 : 0.7,
                     }}
                   >
                     Save &amp; next
+                  </button>
+                )}
+                {showSaveOnFinalSection && (
+                  <button
+                    type="button"
+                    onClick={handleSaveClick}
+                    disabled={isOpportunityReadOnly}
+                    style={{
+                      ...footBarBtnBase,
+                      border: '1px solid rgba(27,38,79,.22)',
+                      background: 'var(--bg2)',
+                      color: SI_NAVY,
+                      boxShadow: 'none',
+                      opacity: !isOpportunityReadOnly ? 1 : 0.7,
+                      cursor: !isOpportunityReadOnly ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    Save
                   </button>
                 )}
                 {showSubmitButton && (
                   <button
                     type="button"
                     onClick={handleSubmitClick}
-                    disabled={isSubmitting || isOpportunityAlreadySubmitted}
+                    disabled={!isSubmitEnabled || isSubmitting || isOpportunityAlreadySubmitted || isOpportunityReadOnly}
                     title={
                       isOpportunityAlreadySubmitted
                         ? 'Responses are already submitted'
-                        : !allQuestionsComplete
+                        : !isSubmitEnabled
                         ? unresolvedConflicts > 0
                           ? 'Resolve all conflicts before submitting'
                           : 'Accept or override every question before submitting'
@@ -3100,11 +3361,11 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
                     style={{
                       ...footBarBtnBase,
                       border: 'none',
-                      opacity: allQuestionsComplete && !isSubmitting && !isOpportunityAlreadySubmitted ? 1 : 0.7,
-                      cursor: allQuestionsComplete && !isSubmitting && !isOpportunityAlreadySubmitted ? 'pointer' : 'not-allowed',
-                      background: allQuestionsComplete && !isSubmitting && !isOpportunityAlreadySubmitted ? SI_ORANGE : 'var(--bg3)',
-                      color: allQuestionsComplete && !isSubmitting && !isOpportunityAlreadySubmitted ? '#fff' : 'var(--text3)',
-                      boxShadow: allQuestionsComplete && !isSubmitting && !isOpportunityAlreadySubmitted ? '0 2px 10px rgba(232,83,46,.28)' : 'none',
+                      opacity: isSubmitEnabled && !isSubmitting && !isOpportunityAlreadySubmitted && !isOpportunityReadOnly ? 1 : 0.7,
+                      cursor: isSubmitEnabled && !isSubmitting && !isOpportunityAlreadySubmitted && !isOpportunityReadOnly ? 'pointer' : 'not-allowed',
+                      background: isSubmitEnabled && !isSubmitting && !isOpportunityAlreadySubmitted && !isOpportunityReadOnly ? SI_ORANGE : 'var(--bg3)',
+                      color: isSubmitEnabled && !isSubmitting && !isOpportunityAlreadySubmitted && !isOpportunityReadOnly ? '#fff' : 'var(--text3)',
+                      boxShadow: isSubmitEnabled && !isSubmitting && !isOpportunityAlreadySubmitted && !isOpportunityReadOnly ? '0 2px 10px rgba(232,83,46,.28)' : 'none',
                     }}
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit'}
@@ -3123,15 +3384,15 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
                 <button
                   type="button"
                   onClick={openBulkResolve}
-                  disabled={bulkResolveConflictCount === 0}
-                  title={bulkResolveConflictCount === 0 ? 'No conflicts to resolve' : undefined}
+                  disabled={bulkResolveConflictCount === 0 || isOpportunityReadOnly}
+                  title={bulkResolveConflictCount === 0 || isOpportunityReadOnly ? 'No conflicts to resolve' : undefined}
                   style={{
                     ...footBarBtnBase,
-                    opacity: bulkResolveConflictCount === 0 ? 0.5 : 1,
-                    cursor: bulkResolveConflictCount === 0 ? 'not-allowed' : 'pointer',
-                    border: `1px solid ${bulkResolveConflictCount > 0 ? '#DC2626' : 'var(--border)'}`,
-                    color: bulkResolveConflictCount > 0 ? '#DC2626' : 'var(--text2)',
-                    background: bulkResolveConflictCount > 0 ? 'rgba(220,38,38,.06)' : 'var(--bg3)',
+                    opacity: bulkResolveConflictCount === 0 || isOpportunityReadOnly ? 0.5 : 1,
+                    cursor: bulkResolveConflictCount === 0 || isOpportunityReadOnly ? 'not-allowed' : 'pointer',
+                    border: `1px solid ${bulkResolveConflictCount > 0 && !isOpportunityReadOnly ? '#DC2626' : 'var(--border)'}`,
+                    color: bulkResolveConflictCount > 0 && !isOpportunityReadOnly ? '#DC2626' : 'var(--text2)',
+                    background: bulkResolveConflictCount > 0 && !isOpportunityReadOnly ? 'rgba(220,38,38,.06)' : 'var(--bg3)',
                   }}
                 >
                   Resolve conflicts{bulkResolveConflictCount > 0 ? ` (${bulkResolveConflictCount})` : ''}

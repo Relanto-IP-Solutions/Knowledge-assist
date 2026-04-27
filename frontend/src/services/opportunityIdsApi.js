@@ -1,7 +1,7 @@
 import { api } from './apiClient'
 
-let inflight = null
-let cache = null
+const inflightByKey = new Map()
+const cacheByKey = new Map()
 
 /**
  * GET /opportunities/ids
@@ -13,15 +13,24 @@ let cache = null
  * @returns {Promise<Array<{opportunity_id: string, name: string}>>}
  */
 export async function fetchOpportunityIds(options = {}) {
-  const { bypassCache = false } = options
-  if (!bypassCache && Array.isArray(cache)) return cache
-  if (!bypassCache && inflight) return inflight
+  const {
+    bypassCache = false,
+    cacheKey = 'default',
+    isAdmin = false,
+    includeAllForAdmin = true,
+  } = options
+  const normalizedCacheKey = String(cacheKey || 'default').trim() || 'default'
+  const useAdminScope = Boolean(isAdmin) && Boolean(includeAllForAdmin)
+  const requestKey = `${normalizedCacheKey}|admin:${useAdminScope ? '1' : '0'}`
+  if (!bypassCache && cacheByKey.has(requestKey)) return cacheByKey.get(requestKey)
+  if (!bypassCache && inflightByKey.has(requestKey)) return inflightByKey.get(requestKey)
 
   const url = '/opportunities/ids'
+  const params = useAdminScope ? { include_all: true } : undefined
   const debugUrl = `${String(api.defaults.baseURL || '').replace(/\/$/, '')}${url}`
   const p = (async () => {
     try {
-      const { data: json } = await api.get(url)
+      const { data: json } = await api.get(url, params ? { params } : undefined)
       const list = Array.isArray(json)
         ? json
         : Array.isArray(json?.opportunities)
@@ -30,6 +39,8 @@ export async function fetchOpportunityIds(options = {}) {
             ? json.ids
             : []
       const passthroughKeys = [
+        'owner_id',
+        'is_active',
         'status',
         'completion',
         'total_questions',
@@ -44,7 +55,7 @@ export async function fetchOpportunityIds(options = {}) {
         'conflict_message',
         'conflictMessage',
       ]
-      cache = list
+      const normalizedRows = list
         .filter(x => x && typeof x === 'object')
         .map(x => {
           const opportunity_id = String(x.opportunity_id ?? x.opportunityId ?? x.id ?? '').trim()
@@ -57,6 +68,7 @@ export async function fetchOpportunityIds(options = {}) {
           return row
         })
         .filter(x => x.opportunity_id)
+      cacheByKey.set(requestKey, normalizedRows)
 
       if (import.meta.env.DEV) {
         console.info(
@@ -64,21 +76,22 @@ export async function fetchOpportunityIds(options = {}) {
           'color:#2563eb;font-weight:700',
           'color:inherit',
           debugUrl,
-          cache,
+          params || {},
+          normalizedRows,
         )
       }
-      return cache
+      return normalizedRows
     } finally {
-      inflight = null
+      inflightByKey.delete(requestKey)
     }
   })()
 
-  inflight = p
+  inflightByKey.set(requestKey, p)
   return p
 }
 
 export function clearOpportunityIdsCache() {
-  cache = null
-  inflight = null
+  cacheByKey.clear()
+  inflightByKey.clear()
 }
 

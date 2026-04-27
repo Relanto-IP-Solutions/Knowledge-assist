@@ -125,10 +125,10 @@ async def connect_onedrive_project(
     )
     if not folder_id:
         raise HTTPException(
-            status_code=404,
+            status_code=422,
             detail=(
-                f"We found your OneDrive, but we couldn't find a folder for {normalized_oid}. "
-                "Please create it manually and click 'Retry Sync'."
+                f"OneDrive project folder {normalized_oid} not found. "
+                "Please ensure it exists in your OneDrive and click Retry Sync."
             ),
         )
 
