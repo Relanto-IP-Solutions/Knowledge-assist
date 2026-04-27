@@ -95,7 +95,7 @@ function EmailModal({ oid, onSubmit, onCancel }) {
             type="email" autoComplete="email" value={value}
             onChange={e => { setValue(e.target.value); setLocalErr('') }}
             onKeyDown={e => { if (e.key === 'Enter') submit() }}
-            placeholder="you@company.com"
+            placeholder="example@company.com"
             style={{
               width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10,
               border: `1.5px solid ${localErr ? '#DC2626' : 'rgba(27,38,79,.15)'}`,
