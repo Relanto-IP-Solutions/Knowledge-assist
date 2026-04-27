@@ -77,15 +77,27 @@ export default function AddTeamModal({ onClose, onCreated }) {
       }
       return next
     })
+    setError(null)
   }, [])
 
   const toggleLead = useCallback((id) => {
+    let shouldShowError = false
     setLeadIds(prev => {
       const next = new Set(prev)
-      if (next.has(id)) { next.delete(id) }
-      else { if (next.size >= 2) return prev; next.add(id) }
+      if (next.has(id)) { 
+        next.delete(id)
+      } else { 
+        if (next.size >= 1) {
+          shouldShowError = true
+          return prev
+        }
+        next.add(id)
+      }
       return next
     })
+    if (shouldShowError) {
+      setError('A lead is already assigned. Deselect it to select a new lead.')
+    }
   }, [])
 
   const toggleOpp = useCallback((id) => {
@@ -315,7 +327,7 @@ export default function AddTeamModal({ onClose, onCreated }) {
                   Select Members
                 </span>
                 <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 500 }}>
-                  {selectedMembers.size} selected · {leadIds.size}/2 leads
+                  {selectedMembers.size} selected · {leadIds.size}/1 lead
                 </span>
               </div>
 
@@ -378,7 +390,7 @@ export default function AddTeamModal({ onClose, onCreated }) {
                         </div>
                         {isSelected && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); toggleLead(uid) }}
+                            onClick={(e) => { e.stopPropagation(); toggleLead(uid); if (isLead) setError(null) }}
                             style={{
                               padding: '2px 8px', borderRadius: 10, fontSize: 9, fontWeight: 700,
                               cursor: 'pointer', transition: 'all .15s', flexShrink: 0,
@@ -386,8 +398,8 @@ export default function AddTeamModal({ onClose, onCreated }) {
                               background: isLead ? 'rgba(242,140,40,.1)' : 'transparent',
                               color: isLead ? ACCENT : '#94a3b8',
                               letterSpacing: '.02em',
+                              opacity: isLead ? 1 : 0.6,
                             }}
-                            title={leadIds.size >= 2 && !isLead ? 'Max 2 leads allowed' : ''}
                           >
                             {isLead ? '★ Lead' : 'Set Lead'}
                           </button>

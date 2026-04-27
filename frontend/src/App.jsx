@@ -9,7 +9,7 @@ import CreateOpportunityPage from './components/CreateOpportunityPage'
 import AdminRequestsPage from './components/AdminRequestsPage'
 import TeamBuilderPage from './components/TeamBuilderPage'
 import LoginWithTheme from './components/Login'
-import { subscribeAuth, signOutUser } from './services/authService'
+import { subscribeAuth, signOutUser, forceRegisterCurrentUser } from './services/authService'
 import {
   OAUTH_RETURN_CREATE_OPP_KEY,
   OAUTH_OPP_ID_KEY,
@@ -59,6 +59,17 @@ function markKnowledgeAssistFreshLoginReset() {
   }
 }
 
+function clearPostLoginSessionCache() {
+  try {
+    sessionStorage.removeItem(OAUTH_RETURN_CREATE_OPP_KEY)
+    sessionStorage.removeItem(OAUTH_OPP_ID_KEY)
+    sessionStorage.removeItem(GMAIL_RESUME_POLL_OID_KEY)
+    sessionStorage.removeItem(GMAIL_CONNECTOR_EMAIL_SESSION_KEY)
+  } catch {
+    /* noop */
+  }
+}
+
 function parsePositivePage(value) {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
@@ -77,6 +88,7 @@ function SourcesRoute({ user }) {
   const { opportunityId } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const isOpportunityLocked = location.state?.opportunityLocked === true
   const searchPage = getKnowledgeAssistPageFromSearch(location.search)
   const statePage = parsePositivePage(location.state?.knowledgeAssistPage)
   const storedPage = getStoredKnowledgeAssistPage()
@@ -87,8 +99,8 @@ function SourcesRoute({ user }) {
   const safeKnowledgeAssistPage = Number(knowledgeAssistPage)
   const knowledgeAssistBackTarget =
     Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
-      ? { pathname: '/knowledge-assist', search: `?page=${safeKnowledgeAssistPage}` }
-      : { pathname: '/knowledge-assist' }
+      ? { pathname: '/homepage', state: { knowledgeAssistPage: safeKnowledgeAssistPage, forceRefresh: true } }
+      : { pathname: '/homepage' }
 
   useEffect(() => {
     if (!Number.isInteger(safeKnowledgeAssistPage) || safeKnowledgeAssistPage <= 0) return
@@ -115,13 +127,18 @@ function SourcesRoute({ user }) {
     <SourcesPage
       opportunityId={opportunityId}
       opportunityName={opportunityId}
+      isOpportunityLocked={isOpportunityLocked}
       userEmail={user?.email || ''}
       onContinue={() => navigate(
         '/qa/' + opportunityId,
         {
-          state: Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
-            ? { ...(location.state ?? {}), knowledgeAssistPage: safeKnowledgeAssistPage }
-            : location.state ?? undefined,
+          state: {
+            ...(location.state ?? {}),
+            ...(Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
+              ? { knowledgeAssistPage: safeKnowledgeAssistPage }
+              : {}),
+            opportunityLocked: isOpportunityLocked,
+          },
         },
       )}
       onBack={() => {
@@ -159,6 +176,7 @@ function QARoute({ onReviewSaved }) {
   const { opportunityId } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const isOpportunityLocked = location.state?.opportunityLocked === true
   const searchPage = getKnowledgeAssistPageFromSearch(location.search)
   const statePage = parsePositivePage(location.state?.knowledgeAssistPage)
   const storedPage = getStoredKnowledgeAssistPage()
@@ -169,8 +187,8 @@ function QARoute({ onReviewSaved }) {
   const safeKnowledgeAssistPage = Number(knowledgeAssistPage)
   const knowledgeAssistBackTarget =
     Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
-      ? { pathname: '/knowledge-assist', search: `?page=${safeKnowledgeAssistPage}` }
-      : { pathname: '/knowledge-assist' }
+      ? { pathname: '/homepage', state: { knowledgeAssistPage: safeKnowledgeAssistPage, forceRefresh: true } }
+      : { pathname: '/homepage' }
 
   useEffect(() => {
     if (!Number.isInteger(safeKnowledgeAssistPage) || safeKnowledgeAssistPage <= 0) return
@@ -179,6 +197,7 @@ function QARoute({ onReviewSaved }) {
   return (
     <QAPage
       oppId={opportunityId}
+      isOpportunityLocked={isOpportunityLocked}
       onBack={() => {
         if (Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0) {
           setStoredKnowledgeAssistPage(safeKnowledgeAssistPage)
@@ -188,9 +207,13 @@ function QARoute({ onReviewSaved }) {
       onBackToDataConnectors={() => navigate(
         '/data-connectors/' + opportunityId,
         {
-          state: Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
-            ? { ...(location.state ?? {}), knowledgeAssistPage: safeKnowledgeAssistPage }
-            : location.state ?? undefined,
+          state: {
+            ...(location.state ?? {}),
+            ...(Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
+              ? { knowledgeAssistPage: safeKnowledgeAssistPage }
+              : {}),
+            opportunityLocked: isOpportunityLocked,
+          },
         },
       )}
       onReviewSaved={onReviewSaved}
@@ -208,14 +231,45 @@ function CreateRoute({ user, onBackToKnowledgeAssist, onCreated }) {
   )
 }
 
+function getRoles(user) {
+  const roles = Array.isArray(user?.roles_assigned) ? user.roles_assigned : []
+  return roles.map((role) => String(role || '').trim().toUpperCase()).filter(Boolean)
+}
+
+function isAdminUser(user) {
+  return getRoles(user).includes('ADMIN')
+}
+
+function ProtectedRoute({ user, children }) {
+  const location = useLocation()
+  if (!user) return <Navigate to="/login" replace state={{ from: location }} />
+  return children
+}
+
+function PublicOnlyRoute({ user, children }) {
+  if (user) {
+    return <Navigate to="/homepage" replace />
+  }
+  return children
+}
+
+function RoleGuard({ user, allow = [], children }) {
+  const allowed = allow.map((role) => String(role || '').trim().toUpperCase()).filter(Boolean)
+  const hasAccess = allowed.length === 0 || getRoles(user).some((role) => allowed.includes(role))
+  if (!hasAccess) return <Navigate to="/homepage" replace />
+  return children
+}
+
 export default function App() {
   const navigate = useNavigate()
   const hasHandledInitialAuthRef = useRef(false)
   const previousAuthUidRef = useRef(null)
+  const registerPingedUidRef = useRef(null)
   const [user, setUser] = useState(null)
   const [authReady, setAuthReady] = useState(false)
   const [activeModule, setActiveModule] = useState('sales')
   const [landingRefreshKey, setLandingRefreshKey] = useState(0)
+  const isAdmin = isAdminUser(user)
   const getKnowledgeAssistNavState = () => {
     const page = getStoredKnowledgeAssistPage()
     return Number.isInteger(page) && page > 0
@@ -232,10 +286,11 @@ export default function App() {
       const nextUid = nextUser?.uid ?? null
       const isFreshLogin = hasHandledInitialAuthRef.current && !previousAuthUidRef.current && !!nextUid
       if (isFreshLogin) {
+        clearPostLoginSessionCache()
         setStoredKnowledgeAssistPage(1)
         markKnowledgeAssistFreshLoginReset()
         navigate(
-          { pathname: '/knowledge-assist', search: '?page=1' },
+          { pathname: '/homepage' },
           { replace: true, state: { knowledgeAssistPage: 1, forceRefresh: true } },
         )
       }
@@ -245,6 +300,15 @@ export default function App() {
       setAuthReady(true)
     })
   }, [navigate])
+
+  useEffect(() => {
+    if (!authReady || !user?.uid) return
+    if (registerPingedUidRef.current === user.uid) return
+    registerPingedUidRef.current = user.uid
+    forceRegisterCurrentUser().catch(() => {
+      /* noop: auth subscriber already has fallback handling */
+    })
+  }, [authReady, user?.uid])
 
   const bumpDashboardRefresh = () => setLandingRefreshKey(k => k + 1)
 
@@ -261,7 +325,7 @@ export default function App() {
         sessionStorage.removeItem(OAUTH_RETURN_CREATE_OPP_KEY)
         sessionStorage.removeItem(OAUTH_OPP_ID_KEY)
         if (oid) navigate('/data-connectors/' + oid)
-        else navigate('/knowledge-assist', { state: getKnowledgeAssistNavState() })
+        else navigate('/homepage', { state: getKnowledgeAssistNavState() })
       }
     } catch {
       /* noop */
@@ -277,7 +341,7 @@ export default function App() {
 
       if (msg.gmailDiscover) {
         bumpDashboardRefresh()
-        navigate('/knowledge-assist', { state: getKnowledgeAssistNavState() })
+        navigate('/homepage', { state: getKnowledgeAssistNavState() })
       }
 
       if (msg.gmailConnect && msg.oid) {
@@ -317,10 +381,11 @@ export default function App() {
     setUser(loggedInUser)
     if (module) setActiveModule(module)
     // Fresh sign-in should always start the dashboard table at page 1.
+    clearPostLoginSessionCache()
     setStoredKnowledgeAssistPage(1)
     markKnowledgeAssistFreshLoginReset()
     navigate(
-      { pathname: '/knowledge-assist', search: '?page=1' },
+      { pathname: '/homepage' },
       { replace: true, state: { knowledgeAssistPage: 1, forceRefresh: true } },
     )
   }
@@ -331,7 +396,7 @@ export default function App() {
     // Reset landing pagination context on sign-out so next sign-in starts fresh.
     setStoredKnowledgeAssistPage(1)
     navigate(
-      { pathname: '/knowledge-assist', search: '?page=1' },
+      { pathname: '/homepage' },
       { replace: true, state: { knowledgeAssistPage: 1, forceRefresh: true } },
     )
   }
@@ -339,7 +404,7 @@ export default function App() {
   const switchModule = (mod) => {
     if (!mod.enabled) return
     setActiveModule(mod.id)
-    navigate('/knowledge-assist', { state: getKnowledgeAssistNavState() })
+    navigate('/homepage', { state: getKnowledgeAssistNavState() })
   }
 
   if (!authReady) {
@@ -361,68 +426,140 @@ export default function App() {
     )
   }
 
-  if (!user) {
-    return <LoginWithTheme onLogin={handleLogin} theme="relanto" />
-  }
-
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      <Topbar
-        activeModule={activeModule}
-        onLogoClick={() => navigate('/knowledge-assist', { state: getKnowledgeAssistNavState() })}
-        onSwitchModule={switchModule}
-        user={user}
-        onLogout={handleLogout}
-        onNavigate={(path) => navigate(path)}
-      />
+      {user && (
+        <Topbar
+          activeModule={activeModule}
+          onLogoClick={() => navigate('/homepage', { state: getKnowledgeAssistNavState() })}
+          onSwitchModule={switchModule}
+          user={user}
+          isAdmin={isAdmin}
+          onLogout={handleLogout}
+          onNavigate={(path) => navigate(path)}
+        />
+      )}
 
       {activeModule === 'sales' && (
         <Routes>
           <Route
-            path="/knowledge-assist"
+            path="/login"
             element={
-              <Landing
-                key={landingRefreshKey}
-                onOpenOpp={(id, _name, page) => {
-                  const parsedPage = Number(page)
-                  if (Number.isInteger(parsedPage) && parsedPage > 0) {
-                    setStoredKnowledgeAssistPage(parsedPage)
-                  }
-                  navigate(
-                    '/data-connectors/' + id,
-                    {
-                    state: Number.isInteger(parsedPage) && parsedPage > 0
-                      ? { knowledgeAssistPage: parsedPage }
-                      : undefined,
-                    },
-                  )
-                }}
-                userEmail={user?.email || ''}
-                refreshKey={landingRefreshKey}
-                onOpportunitiesRefresh={bumpDashboardRefresh}
-                onAdminPanel={() => navigate('/admin/requests')}
-              />
+              <PublicOnlyRoute user={user}>
+                <LoginWithTheme onLogin={handleLogin} theme="relanto" />
+              </PublicOnlyRoute>
             }
           />
+          <Route
+            path="/homepage"
+            element={
+              <ProtectedRoute user={user}>
+                <Landing
+                  key={landingRefreshKey}
+                  user={user}
+                  onOpenOpp={(id, _name, page, isOpportunityLocked = false) => {
+                    const parsedPage = Number(page)
+                    if (Number.isInteger(parsedPage) && parsedPage > 0) {
+                      setStoredKnowledgeAssistPage(parsedPage)
+                    }
+                    navigate(
+                      '/data-connectors/' + id,
+                      {
+                      state: {
+                        ...(Number.isInteger(parsedPage) && parsedPage > 0
+                          ? { knowledgeAssistPage: parsedPage }
+                          : {}),
+                        opportunityLocked: Boolean(isOpportunityLocked),
+                      },
+                      },
+                    )
+                  }}
+                  userEmail={user?.email || ''}
+                  refreshKey={landingRefreshKey}
+                  onOpportunitiesRefresh={bumpDashboardRefresh}
+                  onAdminPanel={isAdmin ? () => navigate('/admin/requests') : undefined}
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/" element={<Navigate to={user ? '/homepage' : '/login'} replace />} />
+          <Route
+            path="/knowledge-assist"
+            element={<Navigate to={user ? '/homepage' : '/login'} replace />}
+          />
+          <Route
+            path="/data-connectors/:opportunityId"
+            element={
+              <ProtectedRoute user={user}>
+                <SourcesRoute user={user} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sources/:oid"
+            element={
+              <ProtectedRoute user={user}>
+                <LegacySourcesRedirect />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/qa/:opportunityId"
+            element={
+              <ProtectedRoute user={user}>
+                <QARoute onReviewSaved={bumpDashboardRefresh} />
+              </ProtectedRoute>
+            }
+          />
+<<<<<<< feature/frontend_changes
+=======
           <Route path="/" element={<Navigate to="/knowledge-assist" replace />} />
           <Route path="/data-connectors/:opportunityId" element={<SourcesRoute user={user} />} />
           <Route path="/sources/:oid" element={<LegacySourcesRedirect />} />
           <Route path="/projects/:oid" element={<PostOAuthProjectRedirect />} />
           <Route path="/qa/:opportunityId" element={<QARoute onReviewSaved={bumpDashboardRefresh} />} />
+>>>>>>> develop
           <Route
             path="/create"
-            element={<CreateRoute user={user} onBackToKnowledgeAssist={() => navigate('/knowledge-assist', { state: getKnowledgeAssistNavState() })} onCreated={bumpDashboardRefresh} />}
+            element={
+              <ProtectedRoute user={user}>
+                <CreateRoute user={user} onBackToKnowledgeAssist={() => navigate('/homepage', { state: getKnowledgeAssistNavState() })} onCreated={bumpDashboardRefresh} />
+              </ProtectedRoute>
+            }
           />
           <Route
             path="/admin/requests"
-            element={<AdminRequestsPage user={user} onBack={() => navigate('/')} />}
+            element={
+              <ProtectedRoute user={user}>
+                <RoleGuard user={user} allow={['ADMIN']}>
+                  <AdminRequestsPage user={user} onBack={() => navigate('/')} />
+                </RoleGuard>
+              </ProtectedRoute>
+            }
           />
           <Route
             path="/admin/team-builder"
-            element={<TeamBuilderPage onBack={() => navigate('/admin/requests')} />}
+            element={
+              <ProtectedRoute user={user}>
+                <RoleGuard user={user} allow={['ADMIN']}>
+                  <TeamBuilderPage onBack={() => navigate('/admin/requests')} />
+                </RoleGuard>
+              </ProtectedRoute>
+            }
           />
-          <Route path="/gmail-result" element={<GmailResultPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route
+            path="/admin/taskbuilder"
+            element={<Navigate to="/admin/team-builder" replace />}
+          />
+          <Route
+            path="/gmail-result"
+            element={
+              <ProtectedRoute user={user}>
+                <GmailResultPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to={user ? '/homepage' : '/login'} replace />} />
         </Routes>
       )}
 

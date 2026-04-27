@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { clearOpportunityIdsCache, fetchOpportunityIds } from '../services/opportunityIdsApi'
 import { checkNameExists, createOpportunityRequest } from '../services/requestsApi'
 import { lockOpportunity } from '../services/opportunitiesApi'
-import { useIsAdmin } from '../hooks/useIsAdmin'
 // ── Fiscal Quarter data ──────────────────────────────────────────────────────
 const FISCAL_YEARS = [2025, 2026]
 const QUARTERS = FISCAL_YEARS.flatMap(yr =>
@@ -65,6 +64,18 @@ function getKnowledgeAssistPageFromSearch(search) {
     return null
   } catch {
     return null
+  }
+}
+
+function stripLegacyPageSearch(search) {
+  try {
+    const params = new URLSearchParams(String(search ?? ''))
+    if (!params.has('page')) return String(search ?? '')
+    params.delete('page')
+    const serialized = params.toString()
+    return serialized ? `?${serialized}` : ''
+  } catch {
+    return String(search ?? '')
   }
 }
 
@@ -247,7 +258,7 @@ function SkeletonTableRow({ last }) {
         <div className="sk" style={{ height: 13, width: '60%', borderRadius: 5 }} />
         <div className="sk" style={{ height: 9, width: '38%', borderRadius: 4, marginTop: 8, animationDelay: '.12s' }} />
       </td>
-      <td style={{ padding: '16px 18px', borderBottom: last ? 'none' : '1px solid var(--border)', verticalAlign: 'middle', minWidth: 220 }}>
+      <td style={{ padding: '16px 18px', borderBottom: last ? 'none' : '1px solid var(--border)', verticalAlign: 'middle' }}>
         <div className="sk" style={{ height: 10, borderRadius: 6, animationDelay: '.08s' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7 }}>
           <div className="sk" style={{ height: 8, width: '25%', borderRadius: 3, animationDelay: '.2s' }} />
@@ -383,26 +394,45 @@ function OverviewMetricCard({
   )
 }
 
-/** GET /opportunities/ids `status: "completed"` — processing done; needs human Q&A review (Ready for Review card / filter). */
+/**
+ * Ready for Review: status === "COMPLETED" AND percentage is valid AND percentage >= 0 AND percentage < 100
+ * Excludes: negative percentage values
+ */
 function isOpportunityReadyForReviewFromApi(o) {
   if (!o || typeof o !== 'object') return false
-  return String(o.apiStatus ?? '').toLowerCase() === 'completed'
+  const st = String(o.apiStatus ?? '').toLowerCase()
+  const perc = Number(o.percentage ?? -1)
+  
+  // Must have COMPLETED status
+  if (st !== 'completed') return false
+  
+  // Percentage must be valid number >= 0 and < 100
+  if (!Number.isFinite(perc) || perc < 0 || perc >= 100) return false
+  
+  return true
 }
 
 /**
- * Completed card / filter only: 100% Q&A from row fields already on the dashboard (no API workflow status).
+ * Completed: percentage === 100
+ * No status requirement for completion
  */
 function isOpportunityFullyAnsweredFromRow(o) {
   if (!o || typeof o !== 'object') return false
-  const compRaw = o.completion != null ? o.completion : o.percentage
-  const comp = Number(compRaw)
-  if (Number.isFinite(comp) && comp >= 100) return true
-  const tq = Number(o.total_questions) || 0
-  if (tq <= 0) return false
-  const ai = Number(o.ai_count) || 0
-  const hc = Number(o.human_count) || 0
-  if (ai + hc >= tq) return true
-  return false
+  const perc = Number(o.percentage ?? -1)
+  
+  // Completed: only percentage === 100
+  return Number.isFinite(perc) && perc === 100
+}
+
+function parseOpportunityIsActive(value) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'false' || normalized === '0') return false
+    if (normalized === 'true' || normalized === '1') return true
+  }
+  return true
 }
 
 function mapApiIdRowToOpportunity(r) {
@@ -430,14 +460,12 @@ function mapApiIdRowToOpportunity(r) {
     percentage: Number(totalPercent) || 0,
     human_percentage: Number(humanPercent) || 0,
     ai_percentage: Number(aiPercent) || 0,
+    is_active: parseOpportunityIsActive(r.is_active),
   }
   out.status = 'progress'
 
   const st = String(r.status ?? '').toLowerCase()
   out.apiStatus = st
-  if (st === 'review' || st === 'progress' || st === 'in_progress') out.status = st === 'in_progress' ? 'progress' : st
-  else if (st === 'ready') out.status = 'review'
-  else if (st === 'completed') out.status = 'review'
 
   const compIn = r.completion
   if (compIn != null && compIn !== '') {
@@ -454,7 +482,16 @@ function mapApiIdRowToOpportunity(r) {
   const cm = r.conflict_message ?? r.conflictMessage
   if (cm != null && String(cm).trim() !== '') out.conflictMessage = String(cm).trim()
 
-  if (isOpportunityFullyAnsweredFromRow(out)) out.status = 'completed'
+  // Strict classification: Completed > Ready for Review > Progress
+  if (isOpportunityFullyAnsweredFromRow(out)) {
+    out.status = 'completed'
+  } else if (isOpportunityReadyForReviewFromApi(out)) {
+    out.status = 'review'
+  } else if (st === 'review' || st === 'progress' || st === 'in_progress') {
+    out.status = st === 'in_progress' ? 'progress' : st
+  } else if (st === 'ready') {
+    out.status = 'review'
+  }
 
   return out
 }
@@ -476,7 +513,12 @@ function LockIcon({ size = 14, locked }) {
   )
 }
 
-export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onOpportunitiesRefresh, onAdminPanel }) {
+function getRoles(user) {
+  const roles = Array.isArray(user?.roles_assigned) ? user.roles_assigned : []
+  return roles.map((role) => String(role || '').trim().toUpperCase()).filter(Boolean)
+}
+
+export default function Landing({ user, onOpenOpp, onCreateNewOpp, refreshKey = 0, onOpportunitiesRefresh, onAdminPanel }) {
   const navigate = useNavigate()
   const location = useLocation()
   const restoreStateRef = useRef(null)
@@ -516,11 +558,14 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
   const [createNotice, setCreateNotice] = useState('')
   const createDebounceRef = useRef(null)
   const NAME_VALID_RE = /^[A-Za-z0-9 -]*$/
-  const { isAdmin } = useIsAdmin()
   const [lockedIds, setLockedIds] = useState(() => new Set())
   const [lockConfirm, setLockConfirm] = useState(null)
   const [lockBusy, setLockBusy] = useState(false)
   const [lockError, setLockError] = useState(null)
+  const canLockOpportunities = useMemo(() => {
+    const roles = getRoles(user)
+    return roles.includes('ADMIN') || roles.includes('OWNER')
+  }, [user])
 
   const loadDashboard = useCallback(async (forceRefresh = false, requestedPage = 1) => {
     const parsedRequestedPage = Number(requestedPage)
@@ -532,6 +577,11 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
       if (forceRefresh) clearOpportunityIdsCache()
       const rows = await fetchOpportunityIds({ bypassCache: forceRefresh })
       const baseRows = rows.map(r => mapApiIdRowToOpportunity(r))
+      const lockedFromApi = new Set(
+        baseRows
+          .filter((row) => row.is_active === false)
+          .map((row) => row.id),
+      )
       console.log('[List Refreshed]', {
         refreshKey,
         opportunityCount: baseRows.length,
@@ -544,6 +594,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
         total: o.percentage,
       })))
       setOpportunities(baseRows)
+      setLockedIds(lockedFromApi)
       setIdsLoading(false)
     } catch (e) {
       setOpportunities([])
@@ -626,15 +677,12 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
   }, [page])
 
   useEffect(() => {
-    const parsedSearchPage = getKnowledgeAssistPageFromSearch(location.search)
-    const shouldUpdateSearch = parsedSearchPage !== page
+    const nextSearch = stripLegacyPageSearch(location.search)
+    const shouldUpdateSearch = nextSearch !== location.search
     const statePage = Number(location.state?.knowledgeAssistPage)
     const shouldUpdateState = !Number.isInteger(statePage) || statePage !== page
     if (!shouldUpdateSearch && !shouldUpdateState) return
 
-    const params = new URLSearchParams(location.search)
-    params.set('page', String(page))
-    const nextSearch = `?${params.toString()}`
     const forceRefresh = location.state?.forceRefresh === true
     navigate(
       { pathname: location.pathname, search: nextSearch },
@@ -876,27 +924,6 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
                 outline: 'none',
               }}
             />
-            {oppSearch.trim() !== '' && (
-              <button
-                type="button"
-                onClick={() => setOppSearch('')}
-                aria-label="Clear search"
-                style={{
-                  flexShrink: 0,
-                  padding: '2px 6px',
-                  border: 'none',
-                  borderRadius: 6,
-                  background: 'rgba(27,38,79,.08)',
-                  color: 'var(--text2)',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontFamily: 'var(--font)',
-                }}
-              >
-                Clear
-              </button>
-            )}
           </div>
         </div>
 
@@ -910,7 +937,11 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
           position: 'relative',
         }}>
           <div style={{ position: 'absolute', inset: 0, borderRadius: 20, background: `linear-gradient(135deg,rgba(var(--tint),.04) 0%,rgba(var(--tint3),.02) 50%,transparent 70%)`, pointerEvents: 'none' }} />
-          <table style={{ width: '100%', borderCollapse: 'collapse', position: 'relative', zIndex: 1 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', position: 'relative', zIndex: 1 }}>
+            <colgroup>
+              <col style={{ width: '46%' }} />
+              <col style={{ width: '54%' }} />
+            </colgroup>
             <thead>
               <tr style={{ background: 'var(--bg3)', borderBottom: '1px solid var(--border)' }}>
                 {['Opportunity detail', 'Intelligence coverage (AI vs Human)'].map(h => (
@@ -962,9 +993,14 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
                     key={o.id}
                     o={o}
                     last={i === pageSlice.length - 1}
-                    onOpen={() => onOpenOpp(o.id, o.name || o.id, page)}
+                    onOpen={() => onOpenOpp(o.id, o.name || o.id, page, o.is_active === false)}
                     isLocked={lockedIds.has(o.id)}
-                    onLockClick={(opp) => { setLockConfirm(opp); setLockError(null) }}
+                    canLockOpportunity={canLockOpportunities}
+                    onLockClick={(opp) => {
+                      if (!canLockOpportunities) return
+                      setLockConfirm(opp)
+                      setLockError(null)
+                    }}
                   />
                 ))
               )}
@@ -1176,7 +1212,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
       ) : null}
 
       {/* Lock Confirmation Dialog */}
-      {lockConfirm && (
+      {canLockOpportunities && lockConfirm && (
         <div
           style={{
             position: 'fixed', inset: 0, zIndex: 300,
@@ -1235,6 +1271,10 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
                 type="button"
                 disabled={lockBusy}
                 onClick={async () => {
+                  if (!canLockOpportunities) {
+                    setLockError('Only admin or owner can lock opportunities.')
+                    return
+                  }
                   setLockBusy(true)
                   setLockError(null)
                   try {
@@ -1284,7 +1324,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
   )
 }
 
-function TableRow({ o, last, onOpen, isLocked, onLockClick }) {
+function TableRow({ o, last, onOpen, isLocked, canLockOpportunity, onLockClick }) {
   const [hov, setHov] = useState(false)
   const aiCount = Number(o.ai_count) || 0
   const humanCount = Number(o.human_count) || 0
@@ -1296,17 +1336,18 @@ function TableRow({ o, last, onOpen, isLocked, onLockClick }) {
   const humanBarW = Math.max(0, Math.min(totalPercent - aiBarW, humanPercent))
   const orgDisplay = o.organizationName || o.projectLine || ''
   const formatPct = (n) => `${Number(n || 0).toFixed(2).replace(/\.?0+$/, '')}%`
+  const canShowLockIcon = canLockOpportunity && isOpportunityFullyAnsweredFromRow(o)
 
   return (
     <tr
-      onClick={isLocked ? undefined : onOpen}
+      onClick={onOpen}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
-        cursor: isLocked ? 'not-allowed' : 'pointer',
+        cursor: 'pointer',
         transition: 'background .12s',
         background: hov ? (isLocked ? 'rgba(220,38,38,.03)' : 'rgba(27,38,79,.04)') : 'transparent',
-        opacity: isLocked ? 0.55 : 1,
+        opacity: isLocked ? 0.7 : 1,
       }}
     >
       <td style={{ padding: '16px 18px', borderBottom: last ? 'none' : '1px solid var(--border)', verticalAlign: 'top', maxWidth: 320 }}>
@@ -1322,13 +1363,13 @@ function TableRow({ o, last, onOpen, isLocked, onLockClick }) {
               </div>
             )}
           </div>
-          {(
+          {canShowLockIcon && (
             <button
               type="button"
               title={isLocked ? 'Opportunity is locked' : 'Lock this opportunity'}
               onClick={(e) => {
                 e.stopPropagation()
-                if (!isLocked) onLockClick?.(o)
+                if (!isLocked && canShowLockIcon) onLockClick?.(o)
               }}
               style={{
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -1336,11 +1377,11 @@ function TableRow({ o, last, onOpen, isLocked, onLockClick }) {
                 border: 'none',
                 background: isLocked ? 'rgba(220,38,38,.1)' : 'rgba(27,38,79,.06)',
                 color: isLocked ? '#dc2626' : 'rgba(27,38,79,.45)',
-                cursor: isLocked ? 'default' : 'pointer',
+                cursor: isLocked || !canShowLockIcon ? 'default' : 'pointer',
                 transition: 'all .15s',
               }}
-              onMouseEnter={e => { if (!isLocked) { e.currentTarget.style.background = 'rgba(27,38,79,.12)'; e.currentTarget.style.color = SI_NAVY } }}
-              onMouseLeave={e => { if (!isLocked) { e.currentTarget.style.background = 'rgba(27,38,79,.06)'; e.currentTarget.style.color = 'rgba(27,38,79,.45)' } }}
+              onMouseEnter={e => { if (!isLocked && canShowLockIcon) { e.currentTarget.style.background = 'rgba(27,38,79,.12)'; e.currentTarget.style.color = SI_NAVY } }}
+              onMouseLeave={e => { if (!isLocked && canShowLockIcon) { e.currentTarget.style.background = 'rgba(27,38,79,.06)'; e.currentTarget.style.color = 'rgba(27,38,79,.45)' } }}
             >
               <LockIcon size={14} locked={isLocked} />
             </button>
@@ -1358,8 +1399,15 @@ function TableRow({ o, last, onOpen, isLocked, onLockClick }) {
         )}
       </td>
       <td style={{ padding: '16px 18px', borderBottom: last ? 'none' : '1px solid var(--border)', verticalAlign: 'middle', minWidth: 220 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 180px', minWidth: 160 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) 68px',
+            columnGap: 14,
+            alignItems: 'center',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
             <div style={{ height: 10, borderRadius: 6, overflow: 'hidden', display: 'flex', background: 'var(--bg4)' }}>
               <div style={{ width: `${aiBarW}%`, background: SI_NAVY }} />
               <div style={{ width: `${humanBarW}%`, background: SI_ORANGE }} />
@@ -1372,7 +1420,7 @@ function TableRow({ o, last, onOpen, isLocked, onLockClick }) {
               Total Questions: {totalQuestions}
             </div>
           </div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: SI_NAVY, letterSpacing: '-0.3px', whiteSpace: 'nowrap' }}>
+          <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 800, color: SI_NAVY, letterSpacing: '-0.3px', whiteSpace: 'nowrap' }}>
             {formatPct(totalPercent)}<span style={{ fontSize: 8, fontWeight: 700, color: 'var(--text3)', marginLeft: 3, letterSpacing: '.04em' }}>TOTAL</span>
           </div>
         </div>
