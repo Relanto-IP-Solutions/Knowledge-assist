@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   listTeamUsers,
+  listTeams,
   createTeam,
   assignOpportunities,
   listUnassignedOpportunities,
@@ -27,6 +28,7 @@ function Avatar({ name, size = 28 }) {
 
 export default function AddTeamModal({ onClose, onCreated }) {
   const [teamName, setTeamName] = useState('')
+  const [status, setStatus] = useState('idle') // idle | checking | valid | invalid
 
   const [users, setUsers] = useState([])
   const [loadingUsers, setLoadingUsers] = useState(true)
@@ -43,6 +45,7 @@ export default function AddTeamModal({ onClose, onCreated }) {
   const [busyMsg, setBusyMsg] = useState('')
   const [error, setError] = useState(null)
   const nameRef = useRef(null)
+  const nameValidationRequestRef = useRef(0)
 
   useEffect(() => {
     let cancelled = false
@@ -122,11 +125,43 @@ export default function AddTeamModal({ onClose, onCreated }) {
     return name.includes(q)
   })
 
-  const isValid = teamName.trim().length > 0 && selectedMembers.size > 0
+  const isValid = teamName.trim().length > 0 && selectedMembers.size > 0 && status === 'valid'
+
+  const validateTeamName = useCallback(async () => {
+    const name = teamName.trim()
+    if (!name) {
+      setStatus('idle')
+      return false
+    }
+    const requestId = nameValidationRequestRef.current + 1
+    nameValidationRequestRef.current = requestId
+    setStatus('checking')
+    try {
+      const teams = await listTeams()
+      if (nameValidationRequestRef.current !== requestId) return false
+      const exists = (teams || []).some(
+        (t) => String(t?.name ?? '').trim().toLowerCase() === name.toLowerCase(),
+      )
+      setStatus(exists ? 'invalid' : 'valid')
+      return !exists
+    } catch {
+      if (nameValidationRequestRef.current !== requestId) return false
+      setStatus('idle')
+      setError('Unable to validate team name right now. Please try again.')
+      return false
+    }
+  }, [teamName])
 
   const handleSubmit = async () => {
     const name = teamName.trim()
     if (!name) { setError('Team name is required.'); return }
+    if (status !== 'valid') {
+      const ok = await validateTeamName()
+      if (!ok) {
+        if (status === 'invalid') setError('Team name already exists.')
+        return
+      }
+    }
     if (selectedMembers.size === 0) { setError('Select at least one member.'); return }
 
     setBusy(true)
@@ -226,7 +261,12 @@ export default function AddTeamModal({ onClose, onCreated }) {
             <input
               ref={nameRef}
               value={teamName}
-              onChange={e => { setTeamName(e.target.value); setError(null) }}
+              onChange={e => {
+                setTeamName(e.target.value)
+                setError(null)
+                setStatus('idle')
+                nameValidationRequestRef.current += 1
+              }}
               placeholder="Enter team name"
               maxLength={100}
               style={{
@@ -237,8 +277,25 @@ export default function AddTeamModal({ onClose, onCreated }) {
                 transition: 'border-color .15s',
               }}
               onFocus={e => { e.target.style.borderColor = PRIMARY }}
-              onBlur={e => { e.target.style.borderColor = '#e2e8f0' }}
+              onBlur={async (e) => {
+                e.target.style.borderColor = '#e2e8f0'
+                setError(null)
+                await validateTeamName()
+              }}
             />
+            {status === 'checking' ? (
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                Checking availability...
+              </div>
+            ) : status === 'valid' ? (
+              <div style={{ fontSize: 11, color: '#059669', marginTop: 2 }}>
+                Team name is available
+              </div>
+            ) : status === 'invalid' ? (
+              <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>
+                Team name already exists
+              </div>
+            ) : null}
           </label>
 
           {/* Two-column layout */}
