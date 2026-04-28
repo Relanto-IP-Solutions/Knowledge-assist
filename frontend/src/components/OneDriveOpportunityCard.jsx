@@ -20,6 +20,7 @@ const EMAIL_RE   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const SS_EMAIL          = (oid) => `pzf_onedrive_email_${oid}`
 const SS_PENDING_OID    = 'pzf_onedrive_pending_oid'
 const SS_PENDING_EMAIL  = 'pzf_onedrive_pending_email'
+const SS_AUTH_DONE      = (oid) => `pzf_onedrive_auth_done_${oid}`
 // Persists the "no OneDrive folder for this OID" signal across reloads.
 // Backend returns a 404 on connect when the folder is missing; once the user
 // navigates away and back the 404 isn't re-issued, so without this flag the
@@ -281,7 +282,9 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
     ssDel(SS_PENDING_EMAIL)
     setUserEmail(pendingEmail)
     ssSet(SS_EMAIL(oid), pendingEmail)
-    void runConnectAndMetrics(oid, pendingEmail)
+    ssSet(SS_AUTH_DONE(oid), '1')
+    // Keep post-redirect flow in-place. Next Connect/Resync proceeds directly
+    // to sync without forcing OAuth again.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -297,7 +300,8 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
   // /metrics silently (without writing to UI state) and watch for
   // last_synced_at to become non-null. Only when sync is verifiably
   // complete do we fetch the metrics one final time and reveal them.
-  const runConnectAndMetrics = useCallback(async (runOid, email) => {
+  const runConnectAndMetrics = useCallback(async (runOid, email, options = {}) => {
+    const allowOAuthRedirect = options.allowOAuthRedirect !== false
     if (!mountedRef.current) return
     setBusy(true)
     setNotice(null)
@@ -317,15 +321,20 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       const detail = e?.response?.data?.detail ?? ''
 
       if (status === 401 || status === 400) {
-        // Token expired/missing — redirect to OAuth.
-        setPhase('authorizing')
-        try {
-          const auth = await getMicrosoftOAuthUrl(getOneDriveOAuthRedirectUri(), email, runOid)
-          if (auth?.auth_url) { doRedirect(runOid, email, auth.auth_url); return }
-        } catch { /**/ }
+        if (allowOAuthRedirect) {
+          // First-time flow: no valid token/connection yet, route to OAuth.
+          setPhase('authorizing')
+          try {
+            const auth = await getMicrosoftOAuthUrl(getOneDriveOAuthRedirectUri(), email, runOid)
+            if (auth?.auth_url) { doRedirect(runOid, email, auth.auth_url); return }
+          } catch { /**/ }
+        }
         if (mountedRef.current) {
           setIsConnected(false)
-          setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
+          setNotice({
+            type: 'error',
+            msg: allowOAuthRedirect ? 'Please login to OneDrive first.' : 'Unable to sync OneDrive right now. Try Resync again.',
+          })
           setPhase('idle')
           setIsResync(false)
           setBusy(false)
@@ -409,10 +418,25 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
     ssSet(SS_EMAIL(oid), email)
     setBusy(true)
     setNotice(null)
-    setPhase('authorizing')
+    // If the user just returned from Microsoft OAuth (or is already connected),
+    // skip the extra authorize hop and go straight to connect+sync.
+    setPhase('connecting')
 
+    try {
+      const info = await getOneDriveAuthorizeInfo(oid, email)
+      if (info?.has_onedrive_connection === true) {
+        ssSet(SS_AUTH_DONE(oid), '1')
+        await runConnectAndMetrics(oid, email, { allowOAuthRedirect: false })
+        return
+      }
+    } catch {
+      // Non-fatal: fall through to OAuth URL check below.
+    }
+
+    const hasAuthedBefore = ssGet(SS_AUTH_DONE(oid)) === '1'
     let auth = null
     try {
+      setPhase('authorizing')
       auth = await getMicrosoftOAuthUrl(getOneDriveOAuthRedirectUri(), email, oid)
     } catch (e) {
       if (!mountedRef.current) return
@@ -435,10 +459,17 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
     if (!mountedRef.current) return
 
     if (auth?.already_connected === true) {
+      ssSet(SS_AUTH_DONE(oid), '1')
       // runConnectAndMetrics will move phase from 'authorizing' -> 'connecting'.
-      await runConnectAndMetrics(oid, email)
+      await runConnectAndMetrics(oid, email, { allowOAuthRedirect: false })
     } else if (auth?.auth_url) {
-      doRedirect(oid, email, auth.auth_url)
+      if (hasAuthedBefore) {
+        // User already completed first-time login for this OID — do not
+        // auto-redirect to auth again.
+        await runConnectAndMetrics(oid, email, { allowOAuthRedirect: false })
+      } else {
+        doRedirect(oid, email, auth.auth_url)
+      }
     } else {
       setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
       setPhase('idle')
@@ -480,7 +511,8 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
 
     if (!mountedRef.current || oidRef.current !== oid) return
 
-    if (authorizeInfo?.has_onedrive_connection === false) {
+    const hasAuthedBefore = ssGet(SS_AUTH_DONE(oid)) === '1'
+    if (authorizeInfo?.has_onedrive_connection === false && !hasAuthedBefore) {
       setIsConnected(false)
       // No connection — route to OAuth
       try {
@@ -494,8 +526,10 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       return
     }
 
-    // Connection exists (or unknown) — run connect + metrics
-    await runConnectAndMetrics(oid, email)
+    // Connection exists (or unknown) — always allow one OAuth recovery hop on
+    // auth failures (400/401). This handles token-expired/deleted scenarios
+    // for users who were connected previously.
+    await runConnectAndMetrics(oid, email, { allowOAuthRedirect: true })
   }, [oid, userEmail, doRedirect, runConnectAndMetrics])
 
   const totalFilesCount = Number(metrics?.total_files ?? 0)
