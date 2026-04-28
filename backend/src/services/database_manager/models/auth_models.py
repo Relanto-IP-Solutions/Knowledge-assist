@@ -12,8 +12,23 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
+from sqlalchemy.types import TypeDecorator
 
 from src.services.database_manager.orm import Base
+from src.utils.crypto_utils import decrypt, encrypt
+
+
+class EncryptedText(TypeDecorator):
+    """Column type that stores encrypted strings and reads mixed plaintext/encrypted."""
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):  # noqa: ARG002
+        return encrypt(value)
+
+    def process_result_value(self, value, dialect):  # noqa: ARG002
+        return decrypt(value)
 
 
 class Team(Base):
@@ -50,16 +65,16 @@ class User(Base):
     roles_assigned = Column(ARRAY(String), nullable=True)
 
     # Deprecated: Google OAuth tokens live in ``user_connections`` (provider ``google``).
-    google_refresh_token = Column(Text, nullable=True)
+    google_refresh_token = Column(EncryptedText, nullable=True)
 
     # Store Slack OAuth tokens
-    slack_access_token = Column(Text, nullable=True)
+    slack_access_token = Column(EncryptedText, nullable=True)
 
     # Store Zoom App credentials if users bring their own app (generalized)
     # If using a single global app, these can remain null and fall back to env vars.
     zoom_account_id = Column(String, nullable=True)
     zoom_client_id = Column(String, nullable=True)
-    zoom_client_secret = Column(Text, nullable=True)
+    zoom_client_secret = Column(EncryptedText, nullable=True)
 
     opportunities = relationship("Opportunity", back_populates="owner")
     connections = relationship("UserConnection", back_populates="user")
@@ -71,8 +86,8 @@ class UserConnection(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     provider = Column(String, nullable=False)
-    access_token = Column(Text, nullable=False)
-    refresh_token = Column(Text, nullable=False)
+    access_token = Column(EncryptedText, nullable=False)
+    refresh_token = Column(EncryptedText, nullable=False)
     granted_scopes = Column(JSON, nullable=True)
     status = Column(String, nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
