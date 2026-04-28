@@ -16,6 +16,7 @@ Restrictions imposed by Vertex AI when a cache is active:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import threading
 import time
 
@@ -72,8 +73,14 @@ class CacheManager:
         self._client: genai.Client | None = None
         self._cache_names: dict[str, str] = {}
         self._cache_created_at: dict[str, float] = {}
+        self._cache_prompt_hash: dict[str, str] = {}
         self._ready: bool = False
         self._ensure_lock = asyncio.Lock()
+
+    @staticmethod
+    def _prompt_hash(system_prompt: str) -> str:
+        """Stable hash used to detect prompt changes within a process."""
+        return hashlib.sha256(system_prompt.encode("utf-8")).hexdigest()
 
     # ------------------------------------------------------------------
     # Initialisation
@@ -166,6 +173,20 @@ class CacheManager:
         self._ensure_client()
 
         async with self._ensure_lock:
+            # If the underlying prompt text changed (code deploy, DB prompt update, etc.),
+            # the existing Vertex cache becomes stale even if it hasn't expired. Detect
+            # that situation and force a re-upload so the LLM uses the updated prompt.
+            for key, prompt in system_prompts.items():
+                h = self._prompt_hash(prompt)
+                if key in self._cache_names and self._cache_prompt_hash.get(key) != h:
+                    logger.info(
+                        "CacheManager: prompt changed for batch_key=%s; invalidating in-process cache entry",
+                        key,
+                    )
+                    self._cache_names.pop(key, None)
+                    self._cache_created_at.pop(key, None)
+                    self._cache_prompt_hash.pop(key, None)
+
             pending = {
                 key: prompt
                 for key, prompt in system_prompts.items()
@@ -192,6 +213,7 @@ class CacheManager:
                     key, name = result
                     self._cache_names[key] = name
                     self._cache_created_at[key] = time.monotonic()
+                    self._cache_prompt_hash[key] = self._prompt_hash(system_prompts[key])
 
             self._ready = True
             logger.info(

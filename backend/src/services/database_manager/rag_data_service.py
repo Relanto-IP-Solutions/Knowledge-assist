@@ -1,9 +1,10 @@
+import ast
 import math
 import uuid
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any
 
-import ast
 from src.services.database_manager.answers_legacy_unique import (
     drop_legacy_unique_one_row_per_question_on_answers,
 )
@@ -16,7 +17,14 @@ from src.utils.opportunity_id import require_stored_opportunity_id
 
 logger = get_logger(__name__)
 
-ANSWER_CONFLICT_EMBEDDING_THRESHOLD = 0.90  # cosine similarity; below => conflict
+# Cosine similarity vs *prior* active answer: below this => treat new generation as conflicting.
+# Keep this lower than within-run paraphrase merge: we want to avoid creating cross-version
+# conflicts for small wording/prefix changes ("A CRM integration plan..." vs "(1) define...").
+ANSWER_CONFLICT_EMBEDDING_THRESHOLD = 0.85
+
+# Between two *new* candidates in the same batch: at or above => same meaning (paraphrase /
+# format); merge before insert. High threshold avoids collapsing genuinely different facts.
+ANSWER_WITHIN_BATCH_DEDUP_SIMILARITY = 0.90
 
 def _drop_unique_opportunity_question_on_answers_if_present(cur: Any) -> None:
     """Drop legacy UNIQUE(opportunity_id, question_id) on ``public.answers`` if present."""
@@ -97,6 +105,152 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if na <= 0.0 or nb <= 0.0:
         return 0.0
     return dot / (math.sqrt(na) * math.sqrt(nb))
+
+
+def _citation_merge_key(c: dict[str, Any]) -> tuple[str, str, str]:
+    """Cheap key for deduping citation dicts when merging candidate rows."""
+    return (
+        str(c.get("source_file") or ""),
+        str(c.get("source_name") or ""),
+        (str(c.get("quote") or c.get("context") or ""))[:400],
+    )
+
+
+def _merge_candidate_records_by_embedding_similarity(
+    records: list[dict[str, Any]],
+    *,
+    opportunity_id: str,
+    question_id: str,
+    similarity_threshold: float | None = None,
+    use_embedding_similarity: bool = True,
+) -> list[dict[str, Any]]:
+    """Union candidates whose answer embeddings are nearly identical (same-run paraphrases).
+
+    Heuristic and embedding keys in :mod:`form_output` catch many cases; this pass uses
+    the same embedding model as retrieval to merge remaining near-duplicates (e.g. uncommon
+    phrasings) without hand-written rules per question.
+    """
+    if len(records) <= 1:
+        return records
+
+    thr = (
+        similarity_threshold
+        if similarity_threshold is not None
+        else ANSWER_WITHIN_BATCH_DEDUP_SIMILARITY
+    )
+
+    n = len(records)
+    parent = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        pi, pj = find(i), find(j)
+        if pi != pj:
+            parent[pj] = pi
+
+    for a in range(n):
+        for b in range(a + 1, n):
+            ta = _normalize_answer_text_for_compare(records[a].get("answer_text"))
+            tb = _normalize_answer_text_for_compare(records[b].get("answer_text"))
+            if ta and ta == tb:
+                union(a, b)
+                continue
+
+            if not use_embedding_similarity:
+                continue
+
+            va = records[a].get("answer_embedding")
+            vb = records[b].get("answer_embedding")
+            if not isinstance(va, list) or not va or not isinstance(vb, list) or not vb:
+                continue
+            if _cosine_similarity(va, vb) >= thr:
+                union(a, b)
+
+    clusters: dict[int, list[int]] = {}
+    for i in range(n):
+        clusters.setdefault(find(i), []).append(i)
+
+    if all(len(idxs) == 1 for idxs in clusters.values()):
+        return records
+
+    from src.services.agent.form_output import prefer_answer_display
+
+    merged: list[dict[str, Any]] = []
+    for root in sorted(clusters.keys()):
+        idxs = sorted(clusters[root])
+        if len(idxs) == 1:
+            merged.append(records[idxs[0]])
+            continue
+
+        texts = [str(records[i].get("answer_text") or "").strip() for i in idxs]
+        best_text = ""
+        for t in texts:
+            if not best_text:
+                best_text = t
+            elif t:
+                best_text = prefer_answer_display(best_text, t)
+
+        best_conf = max(
+            float(records[i].get("confidence_score") or 0.0) for i in idxs
+        )
+        anchor_i = max(
+            idxs,
+            key=lambda i: float(records[i].get("confidence_score") or 0.0),
+        )
+        reasoning = records[anchor_i].get("reasoning") or ""
+
+        cite_keys: set[tuple[str, str, str]] = set()
+        merged_cites: list[dict[str, Any]] = []
+        for i in idxs:
+            for c in records[i].get("citations") or []:
+                if not isinstance(c, dict):
+                    continue
+                ck = _citation_merge_key(c)
+                if ck in cite_keys:
+                    continue
+                cite_keys.add(ck)
+                merged_cites.append(c)
+
+        new_emb: list[float] | None = None
+        if best_text.strip():
+            try:
+                vecs = embed_texts([best_text])
+                if vecs:
+                    new_emb = vecs[0]
+            except Exception:
+                new_emb = None
+        if new_emb is None:
+            new_emb = records[anchor_i].get("answer_embedding")
+
+        base = records[idxs[0]]
+        merged.append({
+            "answer_id": base.get("answer_id"),
+            "answer_text": best_text,
+            "confidence_score": best_conf,
+            "reasoning": reasoning,
+            "citations": merged_cites,
+            "answer_idx": base.get("answer_idx", 0),
+            "answer_embedding": new_emb,
+        })
+
+        logger.bind(
+            opportunity_id=opportunity_id,
+            question_id=question_id,
+        ).info(
+            "Merged {} near-duplicate answer candidates into one row | threshold={} preview={!r}",
+            len(idxs),
+            thr,
+            (best_text[:120] + "…") if len(best_text) > 120 else best_text,
+        )
+
+    for i, rec in enumerate(merged, start=1):
+        rec["answer_idx"] = i
+    return merged
 
 
 def _coerce_pgvector_to_list(raw: Any) -> list[float] | None:
@@ -484,18 +638,14 @@ class RagDataService:
                     "answer_idx": answer_idx,
                 })
 
-            # Unique (opportunity_id, question_id) allows only one answers row per question.
-            # Multi-candidate conflict flows would INSERT N>1 rows and fail with 23505 on the
-            # second insert — the whole question rolls back and nothing is stored for it.
             if len(candidate_records) > 1:
-                logger.warning(
-                    "Multiple answer candidates for one question; persisting primary only "
-                    "(unique opportunity_id+question_id on answers). | opportunity_id=%s question_id=%s n=%d",
+                logger.info(
+                    "Multiple answer candidates for one question; preserving all candidates "
+                    "for conflict detection. | opportunity_id=%s question_id=%s n=%d",
                     opportunity_id,
                     question_id,
                     len(candidate_records),
                 )
-                candidate_records = [candidate_records[0]]
 
             # Some deployments add UNIQUE (opportunity_id, question_id) on ``answers`` so only
             # one row per question exists. In that case we must UPDATE the existing row and
@@ -521,10 +671,8 @@ class RagDataService:
                     _drop_unique_opportunity_question_on_answers_if_present(cur)
                     cur.execute("RELEASE SAVEPOINT savepoint_drop_uq_answers")
                 except Exception as exc:
-                    try:
+                    with suppress(Exception):
                         cur.execute("ROLLBACK TO SAVEPOINT savepoint_drop_uq_answers")
-                    except Exception:
-                        pass
                     logger.warning(
                         "Could not DROP uq_answers_opp_question in this transaction; "
                         "will UPDATE existing row if exactly one | opportunity_id={} question_id={} err={!r}",
@@ -661,7 +809,11 @@ class RagDataService:
             old_active_embedding = (
                 _coerce_pgvector_to_list(old_active_row[2]) if old_active_row else None
             )
-            old_active_norm = _normalize_answer_text_for_compare(old_active_text)
+            # Use the same dedupe key as same-run persistence so formatting variants
+            # (e.g. "99.95" vs "99.95%") do not create artificial cross-version conflicts.
+            from src.services.agent.form_output import answer_dedupe_key
+
+            old_active_norm = answer_dedupe_key(old_active_text)
 
             # Embed candidate answer text (batched) so we can persist in answers.answer_embedding.
             try:
@@ -695,6 +847,48 @@ class RagDataService:
                 )
                 for rec in candidate_records:
                     rec["answer_embedding"] = None
+
+            # IMPORTANT: do not merge picklist/multi-select candidates by embedding similarity.
+            # Embeddings can be high-similarity for distinct options ("Quarterly" vs "Annually"),
+            # which must remain separate conflict candidates.
+            use_embedding_similarity = True
+            try:
+                self._execute_step(
+                    cur,
+                    "SELECT answer_type FROM sase_questions WHERE q_id = %s LIMIT 1",
+                    (question_id,),
+                    "load_sase_question_answer_type_for_merge",
+                    {"question_id": question_id},
+                )
+                row_at = cur.fetchone()
+                answer_type = (
+                    str(row_at[0]).strip().lower()
+                    if row_at and row_at[0] is not None
+                    else ""
+                )
+                self._execute_step(
+                    cur,
+                    "SELECT 1 FROM sase_picklist_options WHERE q_id = %s LIMIT 1",
+                    (question_id,),
+                    "check_picklist_options_for_merge",
+                    {"question_id": question_id},
+                )
+                has_picklist_options = bool(cur.fetchone())
+                is_picklist_question = (
+                    answer_type in {"picklist", "multi_select"}
+                ) or has_picklist_options
+                if is_picklist_question:
+                    use_embedding_similarity = False
+            except Exception:
+                # Non-fatal: default to embedding merge (existing behavior)
+                use_embedding_similarity = True
+
+            candidate_records = _merge_candidate_records_by_embedding_similarity(
+                candidate_records,
+                opportunity_id=opportunity_id,
+                question_id=question_id,
+                use_embedding_similarity=use_embedding_similarity,
+            )
 
             for record in candidate_records:
                 primary_source = (
@@ -844,16 +1038,14 @@ class RagDataService:
                         )
                         cur.execute("RELEASE SAVEPOINT savepoint_insert_answer")
                     except Exception as insert_exc:
-                        try:
+                        with suppress(Exception):
                             cur.execute("ROLLBACK TO SAVEPOINT savepoint_insert_answer")
-                        except Exception:
-                            pass
                         if not (
                             _pg_is_unique_violation(insert_exc)
                             and existing_answer_count == 1
                             and len(candidate_records) == 1
                         ):
-                            raise insert_exc
+                            raise
                         logger.warning(
                             "INSERT answers hit 23505 (uq_answers_opp_question); falling back to UPDATE in place | opportunity_id={} question_id={}",
                             opportunity_id,
@@ -873,7 +1065,7 @@ class RagDataService:
                         )
                         sole = cur.fetchone()
                         if not sole or not sole[0]:
-                            raise insert_exc
+                            raise
                         record["answer_id"] = sole[0]
                         self._execute_step(
                             cur,
@@ -1046,7 +1238,7 @@ class RagDataService:
 
             if not reuse_single_row:
                 inserted_norm_values = {
-                    _normalize_answer_text_for_compare(r["answer_text"])
+                    answer_dedupe_key(r["answer_text"])
                     for r in inserted_answer_records
                 }
 
@@ -1268,37 +1460,72 @@ class RagDataService:
 
                         if is_conflict:
                             should_create_conflict = True
-                            conflict_answer_ids = [old_active_answer_id, *inserted_answer_ids]
+                            # If the old active value is already represented in the new
+                            # candidates (same normalized text), retire the old row as
+                            # inactive rather than including it as a duplicate conflict
+                            # participant.  Only add the old row when its value is absent
+                            # from every new candidate so the conflict group stays unique.
+                            old_value_already_in_new = old_active_norm in inserted_norm_values
+                            if old_value_already_in_new:
+                                conflict_answer_ids = list(inserted_answer_ids)
+                            else:
+                                conflict_answer_ids = [old_active_answer_id, *inserted_answer_ids]
 
-                            # Demote old active -> pending, keep it in active candidate pool.
-                            self._execute_step(
-                                cur,
-                                """
-                                UPDATE answers
-                                SET status = 'pending',
-                                    is_active = true,
-                                    has_conflicts = true,
-                                    needs_review = true,
-                                    conflict_count = %s,
-                                    updated_at = %s
-                                WHERE opportunity_id = %s
-                                  AND question_id = %s
-                                  AND answer_id = %s
-                                """,
-                                (
-                                    len(conflict_answer_ids),
-                                    now,
-                                    opportunity_id,
-                                    question_id,
-                                    old_active_answer_id,
-                                ),
-                                "mark_old_active_as_pending_on_conflict",
-                                {
-                                    "opportunity_id": opportunity_id,
-                                    "question_id": question_id,
-                                    "answer_id": old_active_answer_id,
-                                },
-                            )
+                            if old_value_already_in_new:
+                                # Old value is superseded by an identical new candidate —
+                                # retire the old row so it doesn't appear as a duplicate.
+                                self._execute_step(
+                                    cur,
+                                    """
+                                    UPDATE answers
+                                    SET status = 'inactive',
+                                        is_active = false,
+                                        has_conflicts = false,
+                                        needs_review = false,
+                                        conflict_count = 0,
+                                        updated_at = %s
+                                    WHERE opportunity_id = %s
+                                      AND question_id = %s
+                                      AND answer_id = %s
+                                    """,
+                                    (now, opportunity_id, question_id, old_active_answer_id),
+                                    "retire_old_active_value_already_in_new_candidates",
+                                    {
+                                        "opportunity_id": opportunity_id,
+                                        "question_id": question_id,
+                                        "answer_id": old_active_answer_id,
+                                    },
+                                )
+                            else:
+                                # Demote old active -> pending, keep it in active candidate pool.
+                                self._execute_step(
+                                    cur,
+                                    """
+                                    UPDATE answers
+                                    SET status = 'pending',
+                                        is_active = true,
+                                        has_conflicts = true,
+                                        needs_review = true,
+                                        conflict_count = %s,
+                                        updated_at = %s
+                                    WHERE opportunity_id = %s
+                                      AND question_id = %s
+                                      AND answer_id = %s
+                                    """,
+                                    (
+                                        len(conflict_answer_ids),
+                                        now,
+                                        opportunity_id,
+                                        question_id,
+                                        old_active_answer_id,
+                                    ),
+                                    "mark_old_active_as_pending_on_conflict",
+                                    {
+                                        "opportunity_id": opportunity_id,
+                                        "question_id": question_id,
+                                        "answer_id": old_active_answer_id,
+                                    },
+                                )
                         else:
                             # Case B: values unchanged => archive prior active row.
                             self._execute_step(
