@@ -18,6 +18,19 @@ const ZOOM_BLUE = '#2D8CFF'
 const NAVY = '#1B264F'
 const GREEN = '#10B981'
 const BLUE = '#3B82F6'
+const SS_ZOOM_ACTIVE = (oid) => `pzf_zoom_active_${oid}`
+const SS_ZOOM_METRICS = (oid) => `pzf_zoom_metrics_view_${oid}`
+
+function ssGet(key) { try { return sessionStorage.getItem(key) } catch { return null } }
+function ssSet(key, val) { try { sessionStorage.setItem(key, val) } catch { /**/ } }
+function ssGetJson(key) {
+  try {
+    const raw = sessionStorage.getItem(key)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
 
 function timeAgo(iso) {
   if (!iso) return null
@@ -63,12 +76,17 @@ function Dot({ state }) {
 
 export default function ZoomOpportunityCard({ opportunityId, onStatusChange }) {
   const oid = useMemo(() => toApiOpportunityId(opportunityId), [opportunityId])
+  const cachedInfo = getCachedZoomConnectInfo(oid)
+  const sessionMetrics = ssGetJson(SS_ZOOM_METRICS(oid))
 
-  const [active, setActive] = useState(() => getCachedZoomConnectInfo(oid)?.status === 'ACTIVE')
-  const [metrics, setMetrics] = useState(() => getCachedZoomMetrics(oid))
+  const [active, setActive] = useState(() => (
+    cachedInfo?.status === 'ACTIVE'
+    || ssGet(SS_ZOOM_ACTIVE(oid)) === '1'
+    || Boolean(sessionMetrics)
+  ))
+  const [metrics, setMetrics] = useState(() => getCachedZoomMetrics(oid) ?? sessionMetrics)
   const [metricsLoading, setMetricsLoading] = useState(() => {
-    const info = getCachedZoomConnectInfo(oid)
-    return info?.status === 'ACTIVE' && !getCachedZoomMetrics(oid)
+    return (cachedInfo?.status === 'ACTIVE' || ssGet(SS_ZOOM_ACTIVE(oid)) === '1') && !(getCachedZoomMetrics(oid) ?? sessionMetrics)
   })
   const [busy, setBusy] = useState(false)
   /** 'discover' | 'connect' | 'metrics' — which API phase is running */
@@ -88,15 +106,21 @@ export default function ZoomOpportunityCard({ opportunityId, onStatusChange }) {
 
   useEffect(() => {
     const info = getCachedZoomConnectInfo(oid)
-    const cachedM = getCachedZoomMetrics(oid)
-    setActive(info?.status === 'ACTIVE')
+    const cachedM = getCachedZoomMetrics(oid) ?? ssGetJson(SS_ZOOM_METRICS(oid))
+    const persistedActive = ssGet(SS_ZOOM_ACTIVE(oid)) === '1'
+    setActive(info?.status === 'ACTIVE' || persistedActive || Boolean(cachedM))
     setMetrics(cachedM ?? null)
-    setMetricsLoading(info?.status === 'ACTIVE' && !cachedM)
+    setMetricsLoading((info?.status === 'ACTIVE' || persistedActive) && !cachedM)
     setDiscoveryResult(null)
     setErr(null)
     setBusy(false)
     setIngestStep(null)
   }, [oid])
+
+  useEffect(() => {
+    ssSet(SS_ZOOM_ACTIVE(oid), active ? '1' : '0')
+    if (metrics) ssSet(SS_ZOOM_METRICS(oid), JSON.stringify(metrics))
+  }, [oid, active, metrics])
 
   useEffect(() => {
     onStatusChange?.(active)
@@ -148,8 +172,10 @@ export default function ZoomOpportunityCard({ opportunityId, onStatusChange }) {
         onStatusChange?.(true)
       }
 
-      setIngestStep('metrics')
+      // Fetch metrics in background so Connect feels snappier.
       setMetricsLoading(true)
+      setBusy(false)
+      setIngestStep(null)
       try {
         const m = await fetchZoomMetrics(runOid)
         if (mountedRef.current && oidRef.current === runOid) setMetrics(m)
@@ -182,8 +208,10 @@ export default function ZoomOpportunityCard({ opportunityId, onStatusChange }) {
       setActive(true)
       onStatusChange?.(true)
 
-      setIngestStep('metrics')
+      // Refresh metrics in background; unblock card interactions immediately.
       setMetricsLoading(true)
+      setBusy(false)
+      setIngestStep(null)
       try {
         const m = await fetchZoomMetrics(runOid)
         if (mountedRef.current && oidRef.current === runOid) setMetrics(m)
