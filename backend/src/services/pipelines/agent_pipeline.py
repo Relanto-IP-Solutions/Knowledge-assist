@@ -44,6 +44,7 @@ from src.services.database_manager.answer_generation_lock import (
     AnswerGenerationAlreadyRunningError,
     hold_answer_generation_db_lock,
 )
+from src.services.database_manager.connection import get_db_connection
 from src.services.database_manager.opportunity_state import (
     refresh_opportunity_pipeline_state,
 )
@@ -53,6 +54,73 @@ from src.utils.logger import get_logger
 
 
 logger = get_logger(__name__)
+
+
+class OpportunityLockedError(Exception):
+    """Raised when answer-generation is requested for a locked opportunity."""
+
+
+def _assert_opportunity_is_active(opportunity_id: str) -> None:
+    oid = (opportunity_id or "").strip()
+    if not oid:
+        raise ValueError("opportunity_id is required")
+
+    # One-shot retry on transient DB network errors: Cloud SQL can drop an idle
+    # pooled socket between pre-ping and the real query, producing an
+    # ``InterfaceError: network error`` / ``BrokenPipeError`` on the first execute.
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        con = get_db_connection()
+        try:
+            cur = con.cursor()
+            cur.execute(
+                """
+                SELECT is_active
+                FROM opportunities
+                WHERE opportunity_id = %s
+                LIMIT 1
+                """,
+                (oid,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Opportunity not found")
+            if not bool(row[0]):
+                raise OpportunityLockedError("Opportunity is locked")
+            return
+        except (ValueError, OpportunityLockedError):
+            raise
+        except Exception as exc:
+            if not _is_transient_db_network_error(exc) or attempt == 1:
+                raise
+            last_exc = exc
+            logger.warning(
+                "Transient DB network error on is_active check for {}; retrying once: {}",
+                oid,
+                exc,
+            )
+        finally:
+            try:
+                con.close()
+            except Exception:
+                pass
+    if last_exc is not None:
+        raise last_exc
+
+
+def _is_transient_db_network_error(exc: BaseException) -> bool:
+    """True if ``exc`` looks like a transient Postgres connection drop we can safely retry."""
+    if isinstance(exc, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError)):
+        return True
+    try:
+        from pg8000.exceptions import InterfaceError as _PgInterfaceError
+
+        if isinstance(exc, _PgInterfaceError):
+            return True
+    except Exception:
+        pass
+    msg = str(exc).lower()
+    return "network error" in msg or "broken pipe" in msg or "connection reset" in msg
 
 
 def _gcs_response_oid_segment(opportunity_id: str) -> str:
@@ -267,6 +335,8 @@ class AnswerGenerationPipeline:
         extras = {"opportunity_id": opportunity_id} if opportunity_id else {}
         lx = logger.bind(**extras)
 
+        _assert_opportunity_is_active(opportunity_id)
+
         with hold_answer_generation_db_lock(opportunity_id):
             lx.info("Answer generation pipeline started")
             if opportunity_id:
@@ -379,6 +449,8 @@ class AnswerGenerationPipeline:
         opportunity_id = body.get("opportunity_id") or ""
         extras = {"opportunity_id": opportunity_id} if opportunity_id else {}
         lx = logger.bind(**extras)
+
+        _assert_opportunity_is_active(opportunity_id)
 
         with hold_answer_generation_db_lock(opportunity_id):
             lx.info("Answer generation pipeline started")

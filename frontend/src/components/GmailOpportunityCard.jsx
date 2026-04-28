@@ -13,14 +13,16 @@ import {
   gmailConnectorEmailSessionKey,
 } from '../hooks/useGmailConnector'
 import { toApiOpportunityId } from '../config/opportunityApi'
-import { mapGmailError } from '../utils/gmailErrorMapper'
+import { mapGmailError, WORKSPACE_POLICY_ERROR_MSG, isInvalidGrantError } from '../utils/gmailErrorMapper'
 import {
   connectGmail,
   fetchGmailConnectInfo,
   fetchGmailMetrics,
   getCachedGmailConnectInfo,
   getCachedGmailMetrics,
+  getDriveOAuthRedirectUri,
   getGmailBackendRedirectUri,
+  getGmailReauthAuthUrl,
   getGmailSourcesReturnUrl,
   runGmailOpportunityConnectSequence,
 } from '../services/integrationsAuthApi'
@@ -29,6 +31,33 @@ import { GmailIcon } from './SourceIcons'
 const GMAIL_RED = '#EA4335'
 const NAVY = '#1B264F'
 const GREEN = '#10B981'
+
+// Persists the "no Gmail threads matched this OID" signal across reloads.
+// The /metrics endpoint returns total_threads but doesn't expose how many
+// threads actually contained the OID token, so without this we'd lose the
+// distinction between "synced 0 threads because none exist" and "haven't
+// synced yet" the moment the user navigates away.
+const SS_NO_THREADS = (oid) => `pzf_gmail_no_threads_${oid}`
+const ssGet = (k) => { try { return sessionStorage.getItem(k) } catch { return null } }
+const ssSet = (k, v) => { try { sessionStorage.setItem(k, v) } catch { /**/ } }
+
+/** Pulls discovery counts out of the Gmail connect response. The backend
+ *  shape is `{ discovery_result: { threads_with_oid, threads_scanned, ... } }`
+ *  but we tolerate a few fallbacks (top-level fields, snake/camel) so a
+ *  small backend drift won't silently disable the hint.
+ */
+function readDiscoveryCounts(connectResult) {
+  if (!connectResult || typeof connectResult !== 'object') return null
+  const d = connectResult.discovery_result ?? connectResult.discoveryResult ?? connectResult
+  if (!d || typeof d !== 'object') return null
+  const matched = d.threads_with_oid ?? d.threadsWithOid ?? d.matched_threads ?? d.matchedThreads
+  const scanned = d.threads_scanned ?? d.threadsScanned
+  if (matched === undefined && scanned === undefined) return null
+  return {
+    matched: typeof matched === 'number' ? matched : Number(matched ?? 0),
+    scanned: typeof scanned === 'number' ? scanned : Number(scanned ?? 0),
+  }
+}
 
 function timeAgo(iso) {
   if (!iso) return null
@@ -153,7 +182,7 @@ function GmailConnectModal({ initialEmail, onSubmit, onCancel }) {
             value={value}
             onChange={e => { setValue(e.target.value); setLocalErr('') }}
             onKeyDown={e => { if (e.key === 'Enter') submit() }}
-            placeholder="you@company.com"
+            placeholder="example@company.com"
             style={{
               width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10,
               border: `1.5px solid ${localErr ? '#DC2626' : 'rgba(27,38,79,.15)'}`,
@@ -216,6 +245,8 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
   const [err,             setErr]           = useState(null)
   const [awaitingOAuth, setAwaitingOAuth] = useState(false)
   const awaitingOAuthRef = useRef(false)
+  const [noThreadsFound, setNoThreadsFound] = useState(() => ssGet(SS_NO_THREADS(oid)) === '1')
+  const [copiedOid, setCopiedOid]           = useState(false)
 
   const oauthPopupRef = useRef(null)
   const mountedRef = useRef(true)
@@ -236,6 +267,9 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
     setConnectModal(false)
     awaitingOAuthRef.current = false
     setAwaitingOAuth(false)
+    setCopiedOid(false)
+    // Re-read the per-oid no-threads flag (sessionStorage is keyed per OID).
+    setNoThreadsFound(ssGet(SS_NO_THREADS(oid)) === '1')
     const ci = getCachedGmailConnectInfo(oid)
     if (ci?.status !== 'ACTIVE') {
       setMetrics(null)
@@ -361,6 +395,42 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
     onStatusChange?.(isActive)
   }, [isActive, onStatusChange])
 
+  /**
+   * Re-authorize Gmail when the backend reports invalid_grant (refresh
+   * token expired/revoked).
+   *
+   * We deliberately route through the **generic** backend callback
+   * (`{API_BASE}/auth/google/callback`, the same one Drive uses) instead of
+   * the gmail-specific `/integrations/gmail/callback`. That gmail callback
+   * demands an HMAC-signed state that's only minted from inside
+   * connect/discover — exactly the endpoints that 400 when the token is
+   * revoked. Routing through the generic callback bypasses that catch-22:
+   * `/auth/google/url?provider=gmail&oid=<oid>` produces a state that the
+   * generic callback validates, the generic callback persists the fresh
+   * tokens, and then redirects to `{frontend}/projects/<oid>?provider=gmail`.
+   * A small `/projects/:oid` redirect on the frontend forwards the user
+   * back to `/sources/<oid>`.
+   *
+   * Full-page redirect (rather than a popup) avoids popup-blocker friction
+   * and ensures the post-OAuth bounce lands cleanly in the same tab.
+   * Returns `true` once the redirect has been kicked off.
+   */
+  const triggerGmailReauth = useCallback(async (runOid) => {
+    try {
+      const oidStr = String(runOid)
+      const result = await getGmailReauthAuthUrl(oidStr, getDriveOAuthRedirectUri())
+      const authUrl = String(result?.auth_url || '').trim()
+      if (!authUrl) return false
+      try {
+        sessionStorage.setItem(GMAIL_SELECTED_OID_SESSION_KEY, oidStr)
+      } catch { /**/ }
+      window.location.assign(authUrl)
+      return true
+    } catch {
+      return false
+    }
+  }, [])
+
   const runConnectPipeline = useCallback(async (email) => {
     const runOid = oid
     hook.setIdentity(email)
@@ -391,6 +461,17 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
           }))
           onStatusChange?.(true)
         }
+        // Detect "no threads matched the OID" from the discovery payload.
+        // threads_with_oid is the count after subject/body filter; if it's 0
+        // we surface an actionable banner instead of silently rendering
+        // "Total threads: 0" in the metrics block. Persisted per-oid so the
+        // hint survives reloads (the /metrics endpoint can't reproduce it).
+        const counts = readDiscoveryCounts(connectResult) ?? readDiscoveryCounts(out.discoverResult)
+        if (counts && mountedRef.current && oidRef.current === runOid) {
+          const empty = counts.matched <= 0
+          setNoThreadsFound(empty)
+          ssSet(SS_NO_THREADS(runOid), empty ? '1' : '0')
+        }
         const inline = metricsFromConnectPayload(connectResult)
         if (inline && mountedRef.current && oidRef.current === runOid) setMetrics(inline)
         if (mountedRef.current && oidRef.current === runOid) setMetricsLoading(true)
@@ -406,13 +487,19 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
         }
       }
     } catch (e) {
+      // Refresh-token revoked? Re-launch the OAuth popup so the user can
+      // re-grant access instead of just rendering a raw "invalid_grant".
+      if (isInvalidGrantError(e)) {
+        const ok = await triggerGmailReauth(runOid)
+        if (ok) return
+      }
       if (mountedRef.current && oidRef.current === runOid) setErr(mapGmailError(e))
     } finally {
       if (mountedRef.current && oidRef.current === runOid) {
         if (!awaitingOAuthRef.current) setBusy(false)
       }
     }
-  }, [oid, hook.setIdentity, onStatusChange])
+  }, [oid, hook.setIdentity, onStatusChange, triggerGmailReauth])
 
   const resolveMailboxForResync = useCallback(async () => {
     let email = hook.identity?.userEmail?.trim().toLowerCase()
@@ -495,6 +582,16 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
           requires_oauth: false,
         }))
       }
+      // Mirror the no-threads detection from runConnectPipeline so a Resync
+      // also clears or sets the hint. Resync re-runs discover behind the
+      // scenes — if the user just sent emails containing the OID, this
+      // flips back to false and the metrics block re-appears.
+      const resyncCounts = readDiscoveryCounts(result)
+      if (resyncCounts && mountedRef.current && oidRef.current === runOid) {
+        const empty = resyncCounts.matched <= 0
+        setNoThreadsFound(empty)
+        ssSet(SS_NO_THREADS(runOid), empty ? '1' : '0')
+      }
       const inline = metricsFromConnectPayload(result)
       if (inline && mountedRef.current && oidRef.current === runOid) setMetrics(inline)
       if (mountedRef.current && oidRef.current === runOid) setMetricsLoading(true)
@@ -505,19 +602,38 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
           onStatusChange?.(true)
         }
       } catch (e) {
+        // If metrics fetch itself fails because the refresh token was
+        // revoked, re-launch OAuth (only when we don't already have inline
+        // metrics from the connect response to fall back on).
+        if (isInvalidGrantError(e) && !inline) {
+          const ok = await triggerGmailReauth(runOid)
+          if (ok) return
+        }
         if (mountedRef.current && oidRef.current === runOid && inline) onStatusChange?.(true)
         else if (mountedRef.current && oidRef.current === runOid) setErr(mapGmailError(e))
       } finally {
         if (mountedRef.current && oidRef.current === runOid) setMetricsLoading(false)
       }
     } catch (e) {
+      if (isInvalidGrantError(e)) {
+        const ok = await triggerGmailReauth(runOid)
+        if (ok) return
+      }
       if (mountedRef.current && oidRef.current === runOid) setErr(mapGmailError(e))
     } finally {
       if (mountedRef.current && oidRef.current === runOid) {
         if (!awaitingOAuthRef.current) setBusy(false)
       }
     }
-  }, [onStatusChange, oid, resolveMailboxForResync])
+  }, [onStatusChange, oid, resolveMailboxForResync, triggerGmailReauth])
+
+  const handleCopyOid = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(oid)
+      setCopiedOid(true)
+      setTimeout(() => setCopiedOid(false), 1800)
+    } catch { /* clipboard unavailable */ }
+  }, [oid])
 
   const statusText  = resolving ? 'Loading…' : isActive ? 'Active' : 'Not connected'
   const statusColor = isActive ? GREEN : '#94A3B8'
@@ -525,6 +641,15 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
   const gmailThreadCount = Number(
     metrics?.total_files ?? metrics?.total_threads ?? metrics?.thread_count ?? 0,
   )
+  // The metrics block is the "Total threads / Last synced" panel. We hide
+  // it when we know discovery returned 0 OID-matching threads, since the
+  // banner below explains why and rendering "0 threads" alongside would
+  // just create noise.
+  const showMetricsBlock = isActive && !metricsLoading && metrics && !noThreadsFound
+  const showNoThreadsBanner = isActive && noThreadsFound && !busy && !awaitingOAuth
+  // The "Connected — metrics not available yet." fallback only makes sense
+  // when neither the metrics block nor the no-threads banner is showing.
+  const showMetricsUnavailable = isActive && !metricsLoading && !metrics && !resolving && !noThreadsFound
 
   return (
     <>
@@ -595,7 +720,7 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
             onMouseLeave={e => { e.currentTarget.style.opacity = busy ? '0.55' : '1' }}
           >
             {busy && <SpinIcon size={11} />}
-            {awaitingOAuth ? 'Waiting for authorisation…' : busy ? 'Syncing project data…' : 'Connect Gmail'}
+            {awaitingOAuth ? 'Waiting for authorisation…' : busy ? 'Syncing project data…' : 'Connect'}
           </button>
         )}
         {isActive && (
@@ -646,7 +771,46 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
         </div>
       )}
 
-      {isActive && !metricsLoading && metrics && (
+      {/* Missing-threads hint — Gmail is connected but the discover step
+          returned 0 threads matching this project's OID. Tells the user
+          exactly which token to put in their email subjects/bodies and
+          offers a one-click copy of the project id. */}
+      {showNoThreadsBanner && (
+        <div style={{ padding: '10px 22px 14px 80px' }}>
+          <div style={{
+            display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 10,
+            background: 'rgba(234,179,8,.08)', border: '1px solid rgba(234,179,8,.35)',
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 2 }}>
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#92400E', marginBottom: 4 }}>
+                No emails found for this project
+              </div>
+              <div style={{ fontSize: 11.5, color: '#92400E', lineHeight: 1.55, marginBottom: 8 }}>
+                We searched <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`subject:${oid} OR body:${oid}`}</code> in your mailbox and got no matches. Send or receive emails that include <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{oid}</code> in the subject or body, then click <strong>Resync</strong>.
+              </div>
+              <button type="button" onClick={handleCopyOid}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '5px 11px', borderRadius: 6,
+                  border: '1px solid rgba(146,64,14,.35)', background: '#fff',
+                  color: '#92400E', fontSize: 11, fontWeight: 700,
+                  cursor: 'pointer', fontFamily: 'var(--font)',
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                {copiedOid ? 'Copied!' : `Copy ${oid}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showMetricsBlock && (
         <div style={{ padding: '12px 22px 18px 80px' }}>
           <div style={{
             borderRadius: 12, border: '1px solid rgba(234,67,53,.15)',
@@ -691,7 +855,7 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
         </div>
       )}
 
-      {isActive && !metricsLoading && !metrics && !resolving && (
+      {showMetricsUnavailable && (
         <div style={{ padding: '10px 22px 14px 80px' }}>
           <span style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 600 }}>
             Connected — metrics not available yet.
@@ -699,7 +863,20 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
         </div>
       )}
 
-      {err && (
+      {err && err === WORKSPACE_POLICY_ERROR_MSG && (
+        <div style={{ padding: '0 22px 14px 80px' }}>
+          <div style={{
+            display: 'flex', gap: 10, padding: '10px 14px', borderRadius: 10,
+            background: 'rgba(234,179,8,.08)', border: '1px solid rgba(234,179,8,.35)',
+          }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}>
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span style={{ fontSize: 12, color: '#92400E', fontWeight: 600, lineHeight: 1.5 }}>{err}</span>
+          </div>
+        </div>
+      )}
+      {err && err !== WORKSPACE_POLICY_ERROR_MSG && (
         <div style={{ padding: '0 22px 14px 80px' }}>
           <span style={{ fontSize: 12, color: '#DC2626' }}>{err}</span>
         </div>

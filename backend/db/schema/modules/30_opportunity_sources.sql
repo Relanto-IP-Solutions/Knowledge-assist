@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS opportunity_sources (
     id SERIAL PRIMARY KEY,
     opportunity_id INTEGER NOT NULL REFERENCES opportunities (id) ON DELETE CASCADE,
     source_type VARCHAR(64) NOT NULL,
+    channel_id TEXT,
     status VARCHAR(30) NOT NULL DEFAULT 'PENDING_AUTHORIZATION',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     deleted_at TIMESTAMPTZ,
@@ -19,6 +20,9 @@ CREATE INDEX IF NOT EXISTS idx_opportunity_sources_type ON opportunity_sources (
 
 ALTER TABLE opportunity_sources
     ADD COLUMN IF NOT EXISTS status VARCHAR(30) NOT NULL DEFAULT 'PENDING_AUTHORIZATION';
+
+ALTER TABLE opportunity_sources
+ADD COLUMN IF NOT EXISTS channel_id TEXT;
 
 DO $$
 BEGIN

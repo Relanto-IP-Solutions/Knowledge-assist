@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from datetime import datetime
 from pathlib import Path
@@ -19,11 +20,49 @@ _form_output_builder: FormOutputBuilder | None = None
 
 def norm_val_str(val: Any) -> str:
     """Normalize value to string for dedupe."""
+    def _norm_token(x: Any) -> str:
+        # Case-insensitive normalization for conflict/dedupe keys.
+        return str(x).strip().casefold()
+
     if val is None:
         return ""
+    if isinstance(val, str):
+        s = val.strip()
+        # Some worker outputs stringify multiselect lists. Normalize list-like strings
+        # so ordering does not create artificial conflicts.
+        if s.startswith("[") and s.endswith("]"):
+            try:
+                parsed = ast.literal_eval(s)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, list):
+                return ",".join(sorted(_norm_token(x) for x in parsed))
     if isinstance(val, list):
-        return ",".join(sorted(str(x) for x in val))
-    return str(val)
+        return ",".join(sorted(_norm_token(x) for x in val))
+    return _norm_token(val)
+
+
+def _canonicalize_multiselect_value(val: Any) -> Any:
+    """Return a deterministic representation for multiselect values.
+
+    The UI may treat list order as meaningful; for multiselect answers we sort
+    case-insensitively to avoid artificial conflicts from ordering differences.
+    """
+    if val is None:
+        return None
+    if isinstance(val, str):
+        s = val.strip()
+        if s.startswith("[") and s.endswith("]"):
+            try:
+                parsed = ast.literal_eval(s)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, list):
+                return sorted([str(x).strip() for x in parsed], key=lambda x: x.casefold())
+        return val
+    if isinstance(val, list):
+        return sorted([str(x).strip() for x in val], key=lambda x: x.casefold())
+    return val
 
 
 class FormOutputBuilder:
@@ -99,6 +138,7 @@ class FormOutputBuilder:
             for c in candidates:
                 for detail in c.get("conflict_details") or []:
                     val = detail.get("value")
+                    val = _canonicalize_multiselect_value(val)
                     val_str = norm_val_str(val) if val is not None else ""
                     if val_str and val_str not in seen:
                         seen.add(val_str)
@@ -112,6 +152,7 @@ class FormOutputBuilder:
                 cand_val = c.get("candidate_answer")
                 if cand_val is None:
                     continue
+                cand_val = _canonicalize_multiselect_value(cand_val)
                 cand_str = norm_val_str(cand_val)
                 if cand_str not in seen:
                     seen.add(cand_str)
@@ -151,7 +192,7 @@ class FormOutputBuilder:
 
         for q_id in sorted(active, key=self._sort_q_id):
             data = final_answers.get(q_id, {})
-            answer_val = data.get("answer")
+            answer_val = _canonicalize_multiselect_value(data.get("answer"))
             confidence = float(data.get("confidence", 0) or 0)
             basis = data.get("answer_basis") or data.get("sources") or []
             citations = [self._citation_from_basis(b) for b in basis]
@@ -161,7 +202,7 @@ class FormOutputBuilder:
             conflicts_list: list[dict] = []
 
             for entry in accumulated.get(q_id, []):
-                v = entry.get("answer_value")
+                v = _canonicalize_multiselect_value(entry.get("answer_value"))
                 v_str = norm_val_str(v) if v is not None else ""
                 if (
                     v_str
@@ -179,7 +220,7 @@ class FormOutputBuilder:
 
             for c in by_q.get(q_id, []):
                 for detail in c.get("conflict_details") or []:
-                    val = detail.get("value")
+                    val = _canonicalize_multiselect_value(detail.get("value"))
                     val_str = norm_val_str(val) if val is not None else ""
                     if (
                         not val_str
@@ -198,6 +239,7 @@ class FormOutputBuilder:
                 cand_val = c.get("candidate_answer")
                 if cand_val is None:
                     continue
+                cand_val = _canonicalize_multiselect_value(cand_val)
                 cand_str = norm_val_str(cand_val)
                 if cand_str == selected_str or cand_str in seen_conflict_values:
                     continue

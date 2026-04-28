@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { clearOpportunityIdsCache, fetchOpportunityIds } from '../services/opportunityIdsApi'
-import { createOpportunity } from '../services/opportunitiesApi'
+import { checkNameExists, createOpportunityRequest } from '../services/requestsApi'
+import { lockOpportunity } from '../services/opportunitiesApi'
 // ── Fiscal Quarter data ──────────────────────────────────────────────────────
 const FISCAL_YEARS = [2025, 2026]
 const QUARTERS = FISCAL_YEARS.flatMap(yr =>
@@ -20,6 +22,62 @@ const CURRENT_Q = QUARTERS.find(q => {
   const end   = new Date(q.year, q.startMonth + 2, 0)
   return TODAY >= start && TODAY <= end
 }) || QUARTERS[4] // Q1 FY2026
+const KNOWLEDGE_ASSIST_PAGE_SESSION_KEY = 'knowledgeAssist:lastPage'
+const KNOWLEDGE_ASSIST_FRESH_LOGIN_RESET_KEY = 'knowledgeAssist:freshLoginReset'
+
+function getStoredKnowledgeAssistPage() {
+  try {
+    const raw = sessionStorage.getItem(KNOWLEDGE_ASSIST_PAGE_SESSION_KEY)
+    const parsed = Number(raw)
+    if (Number.isInteger(parsed) && parsed > 0) return parsed
+    return null
+  } catch {
+    return null
+  }
+}
+
+function persistKnowledgeAssistPage(page) {
+  const parsed = Number(page)
+  if (!Number.isInteger(parsed) || parsed <= 0) return
+  try {
+    sessionStorage.setItem(KNOWLEDGE_ASSIST_PAGE_SESSION_KEY, String(parsed))
+  } catch {
+    /* noop */
+  }
+}
+
+function consumeKnowledgeAssistFreshLoginReset() {
+  try {
+    const shouldReset = sessionStorage.getItem(KNOWLEDGE_ASSIST_FRESH_LOGIN_RESET_KEY) === '1'
+    if (shouldReset) sessionStorage.removeItem(KNOWLEDGE_ASSIST_FRESH_LOGIN_RESET_KEY)
+    return shouldReset
+  } catch {
+    return false
+  }
+}
+
+function getKnowledgeAssistPageFromSearch(search) {
+  try {
+    const params = new URLSearchParams(String(search ?? ''))
+    const parsed = Number(params.get('page'))
+    if (Number.isInteger(parsed) && parsed > 0) return parsed
+    return null
+  } catch {
+    return null
+  }
+}
+
+function stripLegacyPageSearch(search) {
+  try {
+    const params = new URLSearchParams(String(search ?? ''))
+    if (!params.has('page')) return String(search ?? '')
+    params.delete('page')
+    const serialized = params.toString()
+    return serialized ? `?${serialized}` : ''
+  } catch {
+    return String(search ?? '')
+  }
+}
 
 function quarterStatus(q) {
   const end = new Date(q.year, q.startMonth + 2, 0)
@@ -200,7 +258,7 @@ function SkeletonTableRow({ last }) {
         <div className="sk" style={{ height: 13, width: '60%', borderRadius: 5 }} />
         <div className="sk" style={{ height: 9, width: '38%', borderRadius: 4, marginTop: 8, animationDelay: '.12s' }} />
       </td>
-      <td style={{ padding: '16px 18px', borderBottom: last ? 'none' : '1px solid var(--border)', verticalAlign: 'middle', minWidth: 220 }}>
+      <td style={{ padding: '16px 18px', borderBottom: last ? 'none' : '1px solid var(--border)', verticalAlign: 'middle' }}>
         <div className="sk" style={{ height: 10, borderRadius: 6, animationDelay: '.08s' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7 }}>
           <div className="sk" style={{ height: 8, width: '25%', borderRadius: 3, animationDelay: '.2s' }} />
@@ -337,21 +395,44 @@ function OverviewMetricCard({
 }
 
 /**
- * Fully submitted / done opportunity: use whichever signals exist on the row (safe for partial API data).
+ * Ready for Review: status === "COMPLETED" AND percentage is valid AND percentage >= 0 AND percentage < 100
+ * Excludes: negative percentage values
  */
-function isOpportunityCompleted(o) {
+function isOpportunityReadyForReviewFromApi(o) {
   if (!o || typeof o !== 'object') return false
-  const apiSt = String(o.apiStatus ?? '').toLowerCase()
-  if (apiSt === 'submitted') return true
-  const compRaw = o.completion != null ? o.completion : o.percentage
-  const comp = Number(compRaw)
-  if (Number.isFinite(comp) && comp >= 100) return true
-  const tq = Number(o.total_questions) || 0
-  if (tq > 0) {
-    const hc = Number(o.human_count) || 0
-    if (hc >= tq) return true
+  const st = String(o.apiStatus ?? '').toLowerCase()
+  const perc = Number(o.percentage ?? -1)
+  
+  // Must have COMPLETED status
+  if (st !== 'completed') return false
+  
+  // Percentage must be valid number >= 0 and < 100
+  if (!Number.isFinite(perc) || perc < 0 || perc >= 100) return false
+  
+  return true
+}
+
+/**
+ * Completed: percentage === 100
+ * No status requirement for completion
+ */
+function isOpportunityFullyAnsweredFromRow(o) {
+  if (!o || typeof o !== 'object') return false
+  const perc = Number(o.percentage ?? -1)
+  
+  // Completed: only percentage === 100
+  return Number.isFinite(perc) && perc === 100
+}
+
+function parseOpportunityIsActive(value) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'false' || normalized === '0') return false
+    if (normalized === 'true' || normalized === '1') return true
   }
-  return false
+  return true
 }
 
 function mapApiIdRowToOpportunity(r) {
@@ -379,13 +460,12 @@ function mapApiIdRowToOpportunity(r) {
     percentage: Number(totalPercent) || 0,
     human_percentage: Number(humanPercent) || 0,
     ai_percentage: Number(aiPercent) || 0,
+    is_active: parseOpportunityIsActive(r.is_active),
   }
-  out.status = 'review'
+  out.status = 'progress'
 
   const st = String(r.status ?? '').toLowerCase()
   out.apiStatus = st
-  if (st === 'review' || st === 'progress') out.status = st
-  else if (st === 'ready') out.status = 'review'
 
   const compIn = r.completion
   if (compIn != null && compIn !== '') {
@@ -393,38 +473,130 @@ function mapApiIdRowToOpportunity(r) {
     if (Number.isFinite(n)) out.completion = n
   }
 
+  const orgName = r.organization_name
+  if (orgName != null && String(orgName).trim() !== '') out.organizationName = String(orgName).trim()
+
   const pl = r.project_line ?? r.projectLine
   if (pl != null && String(pl).trim() !== '') out.projectLine = String(pl).trim()
 
   const cm = r.conflict_message ?? r.conflictMessage
   if (cm != null && String(cm).trim() !== '') out.conflictMessage = String(cm).trim()
 
-  if (isOpportunityCompleted(out)) out.status = 'completed'
+  // Strict classification: Completed > Ready for Review > Progress
+  if (isOpportunityFullyAnsweredFromRow(out)) {
+    out.status = 'completed'
+  } else if (isOpportunityReadyForReviewFromApi(out)) {
+    out.status = 'review'
+  } else if (st === 'review' || st === 'progress' || st === 'in_progress') {
+    out.status = st === 'in_progress' ? 'progress' : st
+  } else if (st === 'ready') {
+    out.status = 'review'
+  }
 
   return out
 }
 
-export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onOpportunitiesRefresh }) {
+function LockIcon({ size = 14, locked }) {
+  if (locked) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+      </svg>
+    )
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+    </svg>
+  )
+}
+
+function getRoles(user) {
+  const roles = Array.isArray(user?.roles_assigned) ? user.roles_assigned : []
+  return roles.map((role) => String(role || '').trim().toUpperCase()).filter(Boolean)
+}
+
+export default function Landing({ user, onOpenOpp, onCreateNewOpp, refreshKey = 0, onOpportunitiesRefresh, onAdminPanel }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const restoreStateRef = useRef(null)
+  if (restoreStateRef.current == null) {
+    const shouldStartFromFirstPage = consumeKnowledgeAssistFreshLoginReset()
+    const restoredPageFromSearch = getKnowledgeAssistPageFromSearch(location.search)
+    const restoredPageFromNavigation = Number(location.state?.knowledgeAssistPage)
+    const navigationPage = Number.isInteger(restoredPageFromNavigation) && restoredPageFromNavigation > 0
+      ? restoredPageFromNavigation
+      : null
+    const sessionPage = getStoredKnowledgeAssistPage()
+    const restoredPage = shouldStartFromFirstPage ? 1 : (navigationPage ?? restoredPageFromSearch ?? sessionPage)
+    const shouldRestorePage = shouldStartFromFirstPage || (Number.isInteger(restoredPage) && restoredPage > 0)
+    restoreStateRef.current = {
+      restoredPage,
+      shouldRestorePage,
+      initialPage: shouldRestorePage ? restoredPage : 1,
+    }
+  }
+  const { shouldRestorePage, initialPage } = restoreStateRef.current
+  const shouldForceRefresh = location.state?.forceRefresh === true || shouldRestorePage
+  const didApplyInitialRestoreRef = useRef(false)
+  const prevFilterSearchRef = useRef(null)
+  const PAGE_SIZE = 10
   const [filter, setFilter] = useState('all')
   const [opportunities, setOpportunities] = useState([])
   const [idsLoading, setIdsLoading] = useState(true)
   const [idsError, setIdsError] = useState(null)
   const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [createOrgName, setCreateOrgName] = useState('')
   const [createName, setCreateName] = useState('')
+  const [createCharErr, setCreateCharErr] = useState(null)
+  const [createNameExists, setCreateNameExists] = useState(false)
+  const [createNameCheckedValue, setCreateNameCheckedValue] = useState('')
+  const [createOrgCheckedValue, setCreateOrgCheckedValue] = useState('')
+  const [createNameAvailable, setCreateNameAvailable] = useState(null)
+  const [createChecking, setCreateChecking] = useState(false)
+  const [createCheckError, setCreateCheckError] = useState('')
   const [createBusy, setCreateBusy] = useState(false)
   const [createError, setCreateError] = useState('')
   const [createNotice, setCreateNotice] = useState('')
+  const createDebounceRef = useRef(null)
+  const createNameCheckRequestRef = useRef(0)
+  const NAME_VALID_RE = /^[A-Za-z0-9 -]*$/
+  const [lockedIds, setLockedIds] = useState(() => new Set())
+  const [lockConfirm, setLockConfirm] = useState(null)
+  const [lockBusy, setLockBusy] = useState(false)
+  const [lockError, setLockError] = useState(null)
+  const canLockOpportunities = useMemo(() => {
+    const roles = getRoles(user)
+    return roles.includes('ADMIN') || roles.includes('OWNER')
+  }, [user])
+  const isAdminOrOwner = canLockOpportunities
 
-  const loadDashboard = useCallback(async (forceRefresh = false) => {
+  const loadDashboard = useCallback(async (forceRefresh = false, requestedPage = 1) => {
+    const parsedRequestedPage = Number(requestedPage)
+    const safeRequestedPage =
+      Number.isInteger(parsedRequestedPage) && parsedRequestedPage > 0 ? parsedRequestedPage : 1
     try {
       setIdsLoading(true)
       setIdsError(null)
       if (forceRefresh) clearOpportunityIdsCache()
-      const rows = await fetchOpportunityIds({ bypassCache: forceRefresh })
+      const rows = await fetchOpportunityIds({
+        bypassCache: forceRefresh,
+        cacheKey: String(user?.id ?? user?.uid ?? user?.email ?? 'anonymous'),
+        isAdmin: isAdminOrOwner,
+        includeAllForAdmin: true,
+      })
       const baseRows = rows.map(r => mapApiIdRowToOpportunity(r))
+      const lockedFromApi = new Set(
+        baseRows
+          .filter((row) => row.is_active === false)
+          .map((row) => row.id),
+      )
       console.log('[List Refreshed]', {
         refreshKey,
         opportunityCount: baseRows.length,
+        page: safeRequestedPage,
       })
       console.log('[Dashboard Summary API]', baseRows.map(o => ({
         id: o.id,
@@ -433,44 +605,55 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
         total: o.percentage,
       })))
       setOpportunities(baseRows)
+      setLockedIds(lockedFromApi)
       setIdsLoading(false)
     } catch (e) {
       setOpportunities([])
       setIdsError(e instanceof Error ? e.message : 'Failed to load opportunities')
       setIdsLoading(false)
     }
-  }, [])
+  }, [isAdminOrOwner, user])
 
   useEffect(() => {
-    loadDashboard(refreshKey > 0)
-  }, [loadDashboard, refreshKey])
+    loadDashboard(refreshKey > 0 || shouldForceRefresh, initialPage)
+  }, [loadDashboard, refreshKey, shouldForceRefresh, initialPage])
 
   useEffect(() => {
     if (!createNotice) return
-    const t = window.setTimeout(() => setCreateNotice(''), 2800)
+    const t = window.setTimeout(() => setCreateNotice(''), 4000)
     return () => window.clearTimeout(t)
   }, [createNotice])
 
-  const [page, setPage] = useState(1)
-  const PAGE_SIZE = 10
+  const [page, setPage] = useState(initialPage)
   const [oppSearch, setOppSearch] = useState('')
 
+  const setAndPersistPage = useCallback((nextPageOrUpdater) => {
+    setPage((prevPage) => {
+      const rawNext = typeof nextPageOrUpdater === 'function'
+        ? nextPageOrUpdater(prevPage)
+        : nextPageOrUpdater
+      const parsedNext = Number(rawNext)
+      if (!Number.isInteger(parsedNext) || parsedNext <= 0) return prevPage
+      persistKnowledgeAssistPage(parsedNext)
+      return parsedNext
+    })
+  }, [])
+
   const completedCount = useMemo(
-    () => opportunities.filter(o => isOpportunityCompleted(o)).length,
+    () => opportunities.filter(o => isOpportunityFullyAnsweredFromRow(o)).length,
     [opportunities],
   )
 
-  /** Still needs review: not completed (submitted / 100% / all human answers) — excludes mistaken `review` rows after submit. */
   const readyForReviewCount = useMemo(
-    () => opportunities.filter(o => o.status === 'review' && !isOpportunityCompleted(o)).length,
+    () => opportunities.filter(o => isOpportunityReadyForReviewFromApi(o)).length,
     [opportunities],
   )
 
   const filtered = useMemo(() => {
     const byStatus = opportunities.filter(o => {
       if (filter === 'all') return true
-      if (filter === 'review') return o.status === 'review' && !isOpportunityCompleted(o)
-      if (filter === 'completed') return isOpportunityCompleted(o)
+      if (filter === 'review') return isOpportunityReadyForReviewFromApi(o)
+      if (filter === 'completed') return isOpportunityFullyAnsweredFromRow(o)
       return true
     })
     const q = String(oppSearch ?? '').trim().toLowerCase()
@@ -483,45 +666,197 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
     })
   }, [filter, opportunities, oppSearch])
 
-  // Reset to page 1 whenever the active filter or search changes
-  useEffect(() => { setPage(1) }, [filter, oppSearch])
+  // Reset to page 1 only after an actual filter/search change (not on mount/restore).
+  useEffect(() => {
+    const prev = prevFilterSearchRef.current
+    prevFilterSearchRef.current = { filter, oppSearch }
+    if (!prev) return
+    if (prev.filter === filter && prev.oppSearch === oppSearch) return
+    setAndPersistPage(1)
+  }, [filter, oppSearch, setAndPersistPage])
+
+  useEffect(() => {
+    if (didApplyInitialRestoreRef.current) return
+    didApplyInitialRestoreRef.current = true
+    if (!shouldRestorePage) return
+    if (page === initialPage) return
+    setAndPersistPage(initialPage)
+  }, [initialPage, page, setAndPersistPage, shouldRestorePage])
+
+  useEffect(() => {
+    persistKnowledgeAssistPage(page)
+  }, [page])
+
+  useEffect(() => {
+    const nextSearch = stripLegacyPageSearch(location.search)
+    const shouldUpdateSearch = nextSearch !== location.search
+    const statePage = Number(location.state?.knowledgeAssistPage)
+    const shouldUpdateState = !Number.isInteger(statePage) || statePage !== page
+    if (!shouldUpdateSearch && !shouldUpdateState) return
+
+    const forceRefresh = location.state?.forceRefresh === true
+    navigate(
+      { pathname: location.pathname, search: nextSearch },
+      {
+        replace: true,
+        state: forceRefresh ? { knowledgeAssistPage: page, forceRefresh: true } : { knowledgeAssistPage: page },
+      },
+    )
+  }, [location.pathname, location.search, location.state, navigate, page])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const pageSlice  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  const openCreateModal = () => {
-    console.log('[Create Opportunity Clicked]')
-    setCreateModalOpen(true)
+  const resetCreateModal = () => {
+    setCreateOrgName('')
+    setCreateName('')
+    setCreateCharErr(null)
+    setCreateNameExists(false)
+    setCreateNameCheckedValue('')
+    setCreateOrgCheckedValue('')
+    setCreateNameAvailable(null)
+    setCreateChecking(false)
+    setCreateCheckError('')
     setCreateError('')
+    clearTimeout(createDebounceRef.current)
+  }
+
+  const openCreateModal = () => {
+    resetCreateModal()
+    setCreateModalOpen(true)
   }
 
   const closeCreateModal = () => {
     if (createBusy) return
     setCreateModalOpen(false)
-    setCreateError('')
+    resetCreateModal()
   }
 
-  const submitCreateOpportunity = async () => {
-    if (createBusy) return
-    const name = String(createName ?? '').trim()
-    if (!name) {
-      setCreateError('Opportunity Name is required.')
+  const runCreateNameAvailabilityCheck = useCallback(async (rawName, rawOrgName) => {
+    const trimmed = String(rawName ?? '').trim()
+    const trimmedOrg = String(rawOrgName ?? '').trim()
+    if (!trimmed || !trimmedOrg) {
+      setCreateChecking(false)
+      setCreateNameExists(false)
+      setCreateNameCheckedValue('')
+      setCreateOrgCheckedValue('')
+      setCreateNameAvailable(null)
+      setCreateCheckError('')
+      return null
+    }
+    const requestId = createNameCheckRequestRef.current + 1
+    createNameCheckRequestRef.current = requestId
+    setCreateChecking(true)
+    setCreateCheckError('')
+    try {
+      const exists = await checkNameExists({ name: trimmed, organization_name: trimmedOrg })
+      if (createNameCheckRequestRef.current !== requestId) return null
+      setCreateNameExists(exists)
+      setCreateNameCheckedValue(trimmed)
+      setCreateOrgCheckedValue(trimmedOrg)
+      setCreateNameAvailable(!exists)
+      setCreateCheckError('')
+      return exists
+    } catch {
+      if (createNameCheckRequestRef.current !== requestId) return null
+      setCreateNameExists(false)
+      setCreateNameCheckedValue('')
+      setCreateOrgCheckedValue('')
+      setCreateNameAvailable(null)
+      setCreateCheckError('Unable to verify name availability. Please try again.')
+      return null
+    } finally {
+      if (createNameCheckRequestRef.current === requestId) setCreateChecking(false)
+    }
+  }, [])
+
+  const handleCreateNameChange = (e) => {
+    const val = e.target.value
+    setCreateName(val)
+    setCreateError('')
+    createNameCheckRequestRef.current += 1
+    if (!NAME_VALID_RE.test(val)) {
+      setCreateCharErr('Only letters, numbers, hyphens, and spaces are allowed.')
+      setCreateNameExists(false)
+      setCreateNameCheckedValue('')
+      setCreateOrgCheckedValue('')
+      setCreateNameAvailable(null)
+      setCreateChecking(false)
+      clearTimeout(createDebounceRef.current)
       return
     }
-    const payload = { name }
-    console.log('[Create Opportunity Payload]', payload)
+    setCreateCharErr(null)
+    setCreateNameExists(false)
+    setCreateNameCheckedValue('')
+    setCreateOrgCheckedValue('')
+    setCreateNameAvailable(null)
+    setCreateChecking(false)
+    setCreateCheckError('')
+  }
+
+  const handleCreateNameBlur = () => {
+    if (createCharErr || createBusy) return
+    runCreateNameAvailabilityCheck(createName, createOrgName)
+  }
+
+  const handleCreateOrgNameChange = (e) => {
+    setCreateOrgName(e.target.value)
+    setCreateError('')
+    setCreateCheckError('')
+    setCreateNameExists(false)
+    setCreateNameCheckedValue('')
+    setCreateNameAvailable(null)
+    setCreateChecking(false)
+    createNameCheckRequestRef.current += 1
+  }
+
+  useEffect(() => {
+    clearTimeout(createDebounceRef.current)
+    if (createBusy || createCharErr) return
+    const trimmedName = createName.trim()
+    const trimmedOrg = createOrgName.trim()
+    if (!trimmedName || !trimmedOrg) {
+      setCreateChecking(false)
+      setCreateNameExists(false)
+      setCreateNameCheckedValue('')
+      setCreateOrgCheckedValue('')
+      setCreateNameAvailable(null)
+      setCreateCheckError('')
+      return
+    }
+    createDebounceRef.current = window.setTimeout(() => {
+      runCreateNameAvailabilityCheck(trimmedName, trimmedOrg)
+    }, 350)
+    return () => window.clearTimeout(createDebounceRef.current)
+  }, [createName, createOrgName, createBusy, createCharErr, runCreateNameAvailabilityCheck])
+
+  const submitCreateOpportunity = async () => {
+    if (createBusy || createChecking || createCharErr || createNameExists) return
+    const orgName = String(createOrgName ?? '').trim()
+    const name = String(createName ?? '').trim()
+    if (!orgName) { setCreateError('Organization Name is required.'); return }
+    if (!name) { setCreateError('Opportunity Name is required.'); return }
+    const nameExists = createNameCheckedValue === name && createOrgCheckedValue === orgName
+      ? createNameExists
+      : await runCreateNameAvailabilityCheck(name, orgName)
+    if (nameExists === null) {
+      setCreateError('Unable to verify name availability. Please try again.')
+      return
+    }
+    if (nameExists) {
+      setCreateError('This name already exists or has a pending request.')
+      return
+    }
     setCreateBusy(true)
     setCreateError('')
     try {
-      const res = await createOpportunity(payload)
-      console.log('[Create Opportunity Success]', res.raw)
+      await createOpportunityRequest({ name, organization_name: orgName })
       setCreateModalOpen(false)
-      setCreateName('')
-      setCreateNotice('Opportunity created successfully')
-      await loadDashboard(true)
-      console.log('[Opportunity List Refreshed]')
+      resetCreateModal()
+      setCreateNotice('Opportunity requested successfully!')
+      loadDashboard(true)
     } catch (e) {
-      setCreateError(e instanceof Error ? e.message : 'Failed to create opportunity')
+      setCreateError(e?.message || 'Failed to submit request.')
     } finally {
       setCreateBusy(false)
     }
@@ -532,7 +867,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
       <style>{SK_STYLE_TAG}</style>
 
       {/* Hero */}
-      <div style={{ position: 'relative', padding: '32px 24px 0', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', padding: '32px 24px 0' }}>
         <div style={{ position: 'absolute', top: -100, left: '50%', transform: 'translateX(-50%)', width: 900, height: 450, background: `radial-gradient(ellipse at 50% 0%,rgba(var(--tint),0.15) 0%,rgba(var(--tint3),0.10) 35%,rgba(var(--tint2),0.08) 58%,transparent 75%)`, pointerEvents: 'none' }} />
         <div style={{ position: 'relative', maxWidth: 1100, margin: '0 auto' }}>
 
@@ -557,49 +892,30 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 0, maxWidth: 720, lineHeight: 1.55 }}>
                 Aggregated insights and real-time tracking for Relanto Forge strategic accounts. Use the filters below to drill down into specific pipeline health metrics.
               </div>
-              {createNotice ? (
-                <div
-                  role="status"
-                  aria-live="polite"
-                  style={{
-                    marginTop: 12,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: '#166534',
-                    background: '#ECFDF3',
-                    border: '1px solid #BBF7D0',
-                  }}
-                >
-                  <span aria-hidden>✓</span>
-                  {createNotice}
-                </div>
-              ) : null}
+
             </div>
-            <button
-              type="button"
-              onClick={openCreateModal}
-              style={{
-                padding: '12px 20px',
-                borderRadius: 12,
-                border: 'none',
-                background: SI_ORANGE,
-                color: '#fff',
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: 'pointer',
-                fontFamily: 'var(--font)',
-                boxShadow: '0 4px 16px rgba(232,83,46,.3)',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              Create opportunity
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+              {/* Admin Requests button removed — access via profile dropdown Admin Panel */}
+              <button
+                type="button"
+                onClick={openCreateModal}
+                style={{
+                  padding: '12px 20px',
+                  borderRadius: 12,
+                  border: 'none',
+                  background: SI_ORANGE,
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font)',
+                  boxShadow: '0 4px 16px rgba(232,83,46,.3)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Create opportunity
+              </button>
+            </div>
           </div>
           <div style={{ height: 26 }} aria-hidden />
 
@@ -666,32 +982,6 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               </span>
             </div>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
-            <div style={{ display: 'flex', gap: 5 }}>
-              {['all', 'review', 'completed'].map(f => {
-                const tone = f === 'all'
-                  ? { border: `rgba(27,38,79,.35)`, bg: 'rgba(27,38,79,.08)', text: SI_NAVY }
-                  : f === 'review'
-                    ? { border: 'rgba(232,83,46,.35)', bg: 'rgba(232,83,46,.08)', text: SI_ORANGE }
-                    : { border: 'rgba(27,38,79,.32)', bg: 'rgba(27,38,79,.07)', text: SI_NAVY }
-                return (
-                  <button key={f} type="button" onClick={() => setFilter(f)} style={{
-                    padding: '6px 14px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                    border: filter === f ? `1px solid ${tone.border}` : '1px solid var(--border)',
-                    background: filter === f ? tone.bg : 'transparent',
-                    color: filter === f ? tone.text : 'var(--text2)',
-                    transition: 'all .15s', fontFamily: 'var(--font)',
-                  }}>
-                    {f === 'all'
-                      ? `All (${opportunities.length})`
-                      : f === 'review'
-                        ? `Ready (${readyForReviewCount})`
-                        : `Completed (${completedCount})`}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
         </div>
 
         {/* Search — filters the paginated table (name, ID, project line) */}
@@ -731,27 +1021,6 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
                 outline: 'none',
               }}
             />
-            {oppSearch.trim() !== '' && (
-              <button
-                type="button"
-                onClick={() => setOppSearch('')}
-                aria-label="Clear search"
-                style={{
-                  flexShrink: 0,
-                  padding: '2px 6px',
-                  border: 'none',
-                  borderRadius: 6,
-                  background: 'rgba(27,38,79,.08)',
-                  color: 'var(--text2)',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontFamily: 'var(--font)',
-                }}
-              >
-                Clear
-              </button>
-            )}
           </div>
         </div>
 
@@ -765,7 +1034,11 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
           position: 'relative',
         }}>
           <div style={{ position: 'absolute', inset: 0, borderRadius: 20, background: `linear-gradient(135deg,rgba(var(--tint),.04) 0%,rgba(var(--tint3),.02) 50%,transparent 70%)`, pointerEvents: 'none' }} />
-          <table style={{ width: '100%', borderCollapse: 'collapse', position: 'relative', zIndex: 1 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', position: 'relative', zIndex: 1 }}>
+            <colgroup>
+              <col style={{ width: '46%' }} />
+              <col style={{ width: '54%' }} />
+            </colgroup>
             <thead>
               <tr style={{ background: 'var(--bg3)', borderBottom: '1px solid var(--border)' }}>
                 {['Opportunity detail', 'Intelligence coverage (AI vs Human)'].map(h => (
@@ -817,7 +1090,14 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
                     key={o.id}
                     o={o}
                     last={i === pageSlice.length - 1}
-                    onOpen={() => onOpenOpp(o.id, o.name || o.id)}
+                    onOpen={() => onOpenOpp(o.id, o.name || o.id, page, o.is_active === false)}
+                    isLocked={lockedIds.has(o.id)}
+                    canLockOpportunity={canLockOpportunities}
+                    onLockClick={(opp) => {
+                      if (!canLockOpportunities) return
+                      setLockConfirm(opp)
+                      setLockError(null)
+                    }}
                   />
                 ))
               )}
@@ -840,7 +1120,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               <button
                 type="button"
                 disabled={page === 1}
-                onClick={() => setPage(p => p - 1)}
+                onClick={() => setAndPersistPage(p => p - 1)}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 5,
                   padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600,
@@ -869,7 +1149,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
                     <button
                       key={n}
                       type="button"
-                      onClick={() => setPage(n)}
+                      onClick={() => setAndPersistPage(n)}
                       style={{
                         minWidth: 30, height: 30, borderRadius: 7, fontSize: 11, fontWeight: n === page ? 800 : 500,
                         border: n === page ? `1px solid rgba(27,38,79,.35)` : '1px solid var(--border)',
@@ -885,7 +1165,7 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               <button
                 type="button"
                 disabled={page === totalPages}
-                onClick={() => setPage(p => p + 1)}
+                onClick={() => setAndPersistPage(p => p + 1)}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 5,
                   padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600,
@@ -935,29 +1215,58 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               Create Opportunity
             </div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: SI_NAVY, marginBottom: 6 }}>
-              Name
+              Organization Name <span style={{ color: SI_ORANGE }}>*</span>
             </label>
             <input
-              value={createName}
-              onChange={(e) => setCreateName(e.target.value)}
-              placeholder="Enter Opportunity Name"
+              value={createOrgName}
+              onChange={handleCreateOrgNameChange}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitCreateOpportunity() }}
+              placeholder="Eg: Organization Name"
               disabled={createBusy}
+              autoComplete="off"
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
                 padding: '10px 12px',
                 borderRadius: 8,
-                border: '1px solid var(--border)',
-                marginBottom: 10,
+                border: `1px solid var(--border)`,
                 fontSize: 13,
                 fontFamily: 'var(--font)',
+                outline: 'none',
+                marginBottom: 14,
               }}
             />
-            {createError ? (
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#b91c1c', marginBottom: 10 }}>
-                {createError}
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: SI_NAVY, marginBottom: 6 }}>
+              Opportunity Name <span style={{ color: SI_ORANGE }}>*</span>
+            </label>
+            <input
+              value={createName}
+              onChange={handleCreateNameChange}
+              onBlur={handleCreateNameBlur}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitCreateOpportunity() }}
+              placeholder="Eg. Opportunity Name"
+              disabled={createBusy}
+              autoComplete="off"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '10px 12px',
+                borderRadius: 8,
+                border: `1px solid ${createCharErr || createNameExists ? '#FECACA' : 'var(--border)'}`,
+                fontSize: 13,
+                fontFamily: 'var(--font)',
+                outline: 'none',
+              }}
+            />
+            {(createCharErr || createNameExists || createError || createCheckError) ? (
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#b91c1c', marginTop: 5, marginBottom: 4 }}>
+                {createCharErr || (createNameExists ? 'Name is not available.' : (createError || createCheckError))}
               </div>
-            ) : null}
+            ) : createChecking ? (
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 5, marginBottom: 4 }}>Checking availability…</div>
+            ) : createNameAvailable && createNameCheckedValue === createName.trim() ? (
+              <div style={{ fontSize: 11, color: '#059669', marginTop: 5, marginBottom: 4 }}>Name is available.</div>
+            ) : <div style={{ marginBottom: 10 }} />}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
               <button
                 type="button"
@@ -980,30 +1289,140 @@ export default function Landing({ onOpenOpp, onCreateNewOpp, refreshKey = 0, onO
               <button
                 type="button"
                 onClick={submitCreateOpportunity}
-                disabled={createBusy}
+                disabled={createBusy || createChecking || !!createCharErr || createNameExists || !createName.trim() || !createOrgName.trim()}
                 style={{
                   padding: '8px 14px',
                   borderRadius: 8,
                   border: 'none',
-                  background: SI_ORANGE,
+                  background: (createBusy || createChecking || createCharErr || createNameExists || !createName.trim() || !createOrgName.trim()) ? '#94a3b8' : SI_ORANGE,
                   color: '#fff',
                   fontSize: 12,
                   fontWeight: 700,
                   fontFamily: 'var(--font)',
-                  cursor: createBusy ? 'not-allowed' : 'pointer',
+                  cursor: (createBusy || createChecking || createCharErr || createNameExists || !createName.trim() || !createOrgName.trim()) ? 'not-allowed' : 'pointer',
                 }}
               >
-                {createBusy ? 'Creating...' : 'Create'}
+                {createBusy ? 'Submitting…' : 'Submit request'}
               </button>
             </div>
           </div>
         </div>
       ) : null}
+
+      {/* Lock Confirmation Dialog */}
+      {canLockOpportunities && lockConfirm && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 300,
+            background: 'rgba(15,23,42,.45)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget && !lockBusy) { setLockConfirm(null); setLockError(null) } }}
+        >
+          <div style={{
+            background: '#fff', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420,
+            boxShadow: '0 20px 60px rgba(15,23,42,.18)',
+            fontFamily: 'var(--font, "Plus Jakarta Sans", sans-serif)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                background: 'rgba(220,38,38,.08)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#dc2626',
+              }}>
+                <LockIcon size={20} locked />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: SI_NAVY }}>Lock Opportunity</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>This action will restrict access</p>
+              </div>
+            </div>
+
+            <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.6, margin: '0 0 8px' }}>
+              Are you sure you want to lock <strong style={{ color: SI_NAVY }}>{lockConfirm.name || lockConfirm.id}</strong>?
+            </p>
+            <p style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5, margin: '0 0 20px' }}>
+              Locked opportunities cannot be opened or modified by team members.
+            </p>
+
+            {lockError && (
+              <div style={{ marginBottom: 14, padding: '8px 12px', borderRadius: 8, background: 'rgba(220,38,38,.06)', border: '1px solid rgba(220,38,38,.15)', fontSize: 12, color: '#dc2626', fontWeight: 600 }}>
+                {lockError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                disabled={lockBusy}
+                onClick={() => { setLockConfirm(null); setLockError(null) }}
+                style={{
+                  padding: '9px 20px', borderRadius: 8, border: '1px solid #e2e8f0',
+                  background: '#f8fafc', color: '#64748b', fontWeight: 600, fontSize: 13,
+                  cursor: lockBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={lockBusy}
+                onClick={async () => {
+                  if (!canLockOpportunities) {
+                    setLockError('Only admin or owner can lock opportunities.')
+                    return
+                  }
+                  setLockBusy(true)
+                  setLockError(null)
+                  try {
+                    await lockOpportunity(lockConfirm.id)
+                    setLockedIds(prev => new Set([...prev, lockConfirm.id]))
+                    setLockConfirm(null)
+                  } catch (e) {
+                    setLockError(e?.message || 'Failed to lock opportunity.')
+                  } finally {
+                    setLockBusy(false)
+                  }
+                }}
+                style={{
+                  padding: '9px 22px', borderRadius: 8, border: 'none',
+                  background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 13,
+                  cursor: lockBusy ? 'not-allowed' : 'pointer',
+                  opacity: lockBusy ? 0.7 : 1, fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', gap: 7,
+                }}
+              >
+                <LockIcon size={13} locked />
+                {lockBusy ? 'Locking…' : 'Lock Opportunity'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {createNotice && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)',
+            background: '#166534', color: '#fff', padding: '12px 22px', borderRadius: 10,
+            fontSize: 13, fontWeight: 700, boxShadow: '0 8px 24px rgba(15,23,42,.25)',
+            zIndex: 2100, pointerEvents: 'none', whiteSpace: 'nowrap',
+            fontFamily: 'var(--font, "Plus Jakarta Sans", sans-serif)',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}
+        >
+          <span style={{ fontSize: 15 }}>✓</span>
+          {createNotice}
+        </div>
+      )}
     </div>
   )
 }
 
-function TableRow({ o, last, onOpen }) {
+function TableRow({ o, last, onOpen, isLocked, canLockOpportunity, onLockClick }) {
   const [hov, setHov] = useState(false)
   const aiCount = Number(o.ai_count) || 0
   const humanCount = Number(o.human_count) || 0
@@ -1013,20 +1432,58 @@ function TableRow({ o, last, onOpen }) {
   const humanPercent = Math.max(0, Math.min(100, Number(o.human_percentage) || 0))
   const aiBarW = Math.max(0, Math.min(totalPercent, aiPercent))
   const humanBarW = Math.max(0, Math.min(totalPercent - aiBarW, humanPercent))
-  const project = o.projectLine || 'Strategic initiative'
+  const orgDisplay = o.organizationName || o.projectLine || ''
   const formatPct = (n) => `${Number(n || 0).toFixed(2).replace(/\.?0+$/, '')}%`
+  const canShowLockIcon = canLockOpportunity && isOpportunityFullyAnsweredFromRow(o)
 
   return (
     <tr
       onClick={onOpen}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
-      style={{ cursor: 'pointer', transition: 'background .12s', background: hov ? 'rgba(27,38,79,.04)' : 'transparent' }}
+      style={{
+        cursor: 'pointer',
+        transition: 'background .12s',
+        background: hov ? (isLocked ? 'rgba(220,38,38,.03)' : 'rgba(27,38,79,.04)') : 'transparent',
+        opacity: isLocked ? 0.7 : 1,
+      }}
     >
       <td style={{ padding: '16px 18px', borderBottom: last ? 'none' : '1px solid var(--border)', verticalAlign: 'top', maxWidth: 320 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: hov ? SI_NAVY : 'var(--text0)', letterSpacing: '-.02em' }}>
-          {o.name}
-          <span style={{ fontWeight: 600, color: 'var(--text2)' }}> – {project}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: hov && !isLocked ? SI_NAVY : 'var(--text0)', letterSpacing: '-.02em' }}>
+              {o.name}
+              {orgDisplay && <span style={{ fontWeight: 600, color: 'var(--text2)' }}> – {orgDisplay}</span>}
+            </div>
+            {o.id && (
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginTop: 3, letterSpacing: '.01em' }}>
+                {o.id}
+              </div>
+            )}
+          </div>
+          {canShowLockIcon && (
+            <button
+              type="button"
+              title={isLocked ? 'Opportunity is locked' : 'Lock this opportunity'}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!isLocked && canShowLockIcon) onLockClick?.(o)
+              }}
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 30, height: 30, borderRadius: 7, flexShrink: 0,
+                border: 'none',
+                background: isLocked ? 'rgba(220,38,38,.1)' : 'rgba(27,38,79,.06)',
+                color: isLocked ? '#dc2626' : 'rgba(27,38,79,.45)',
+                cursor: isLocked || !canShowLockIcon ? 'default' : 'pointer',
+                transition: 'all .15s',
+              }}
+              onMouseEnter={e => { if (!isLocked && canShowLockIcon) { e.currentTarget.style.background = 'rgba(27,38,79,.12)'; e.currentTarget.style.color = SI_NAVY } }}
+              onMouseLeave={e => { if (!isLocked && canShowLockIcon) { e.currentTarget.style.background = 'rgba(27,38,79,.06)'; e.currentTarget.style.color = 'rgba(27,38,79,.45)' } }}
+            >
+              <LockIcon size={14} locked={isLocked} />
+            </button>
+          )}
         </div>
         {o.conflictMessage && (
           <div style={{
@@ -1040,8 +1497,15 @@ function TableRow({ o, last, onOpen }) {
         )}
       </td>
       <td style={{ padding: '16px 18px', borderBottom: last ? 'none' : '1px solid var(--border)', verticalAlign: 'middle', minWidth: 220 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 180px', minWidth: 160 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) 68px',
+            columnGap: 14,
+            alignItems: 'center',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
             <div style={{ height: 10, borderRadius: 6, overflow: 'hidden', display: 'flex', background: 'var(--bg4)' }}>
               <div style={{ width: `${aiBarW}%`, background: SI_NAVY }} />
               <div style={{ width: `${humanBarW}%`, background: SI_ORANGE }} />
@@ -1054,7 +1518,7 @@ function TableRow({ o, last, onOpen }) {
               Total Questions: {totalQuestions}
             </div>
           </div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: SI_NAVY, letterSpacing: '-0.3px', whiteSpace: 'nowrap' }}>
+          <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 800, color: SI_NAVY, letterSpacing: '-0.3px', whiteSpace: 'nowrap' }}>
             {formatPct(totalPercent)}<span style={{ fontSize: 8, fontWeight: 700, color: 'var(--text3)', marginLeft: 3, letterSpacing: '.04em' }}>TOTAL</span>
           </div>
         </div>

@@ -1,3 +1,5 @@
+import gdriveLogo from '../assets/gdrive-logo.png'
+
 export function ZoomIcon({ size = 16 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" fill="none" style={{ flexShrink: 0 }}>
@@ -10,16 +12,13 @@ export function ZoomIcon({ size = 16 }) {
 
 export function GDriveIcon({ size = 16 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 87.3 78" fill="none" style={{ flexShrink: 0 }}>
-      <path d="M6.6 66.85L3.3 61.35 29.1 18.15h24.6L6.6 66.85z" fill="#0066DA"/>
-      <path d="M29.1 18.15L53.7 18.15 84 66.85H59.4L29.1 18.15z" fill="#FBBC04"/>
-      <path d="M84 66.85H59.4L53.7 56.55 41.1 36.15 53.7 18.15 84 66.85z" fill="#FBBC04"/>
-      <path d="M6.6 66.85L29.1 18.15 41.1 36.15 18.6 66.85H6.6z" fill="#00AC47"/>
-      <path d="M29.1 18.15L41.1 36.15 53.7 18.15H29.1z" fill="#EA4335"/>
-      <path d="M6.6 66.85H18.6L41.1 36.15 29.1 18.15 3.3 61.35 6.6 66.85z" fill="#00832D"/>
-      <path d="M59.4 66.85H84L53.7 18.15 41.1 36.15 53.7 56.55 59.4 66.85z" fill="#FBBC04"/>
-      <path d="M6.6 66.85H59.4L53.7 56.55H18.6L6.6 66.85z" fill="#4285F4"/>
-    </svg>
+    <img
+      src={gdriveLogo}
+      alt="Google Drive"
+      width={size}
+      height={size}
+      style={{ flexShrink: 0, display: 'block', objectFit: 'contain' }}
+    />
   )
 }
 
@@ -58,13 +57,24 @@ export function AIKnowledgeIcon({ size = 16 }) {
   )
 }
 
+export function OneDriveIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" style={{ flexShrink: 0 }}>
+      <path d="M28.6 18.4a9.6 9.6 0 0 1 9 6.3A7.2 7.2 0 0 1 40.8 38H24.6a7.2 7.2 0 0 1-1.8-14.2 9.6 9.6 0 0 1 5.8-5.4z" fill="#0078D4"/>
+      <path d="M20.4 20.6a8.4 8.4 0 0 0-8.4 8.4c0 .3 0 .6.03.9A6 6 0 0 0 13.2 41h11.4a7.2 7.2 0 0 1-1.8-14.2 8.4 8.4 0 0 0-2.4-6.2z" fill="#0058A1"/>
+      <path d="M28.6 18.4a9.6 9.6 0 0 0-8.2 2.2 8.4 8.4 0 0 1 2.4 6.2A7.2 7.2 0 0 1 24.6 38h16.2A7.2 7.2 0 0 0 37.6 24.7a9.6 9.6 0 0 0-9-6.3z" fill="#1490DF"/>
+    </svg>
+  )
+}
+
 export function SourceIcon({ type, size = 14 }) {
   switch (type) {
-    case 'zoom':   return <ZoomIcon size={size} />
-    case 'gdrive': return <GDriveIcon size={size} />
-    case 'gmail':  return <GmailIcon size={size} />
-    case 'slack':  return <SlackIcon size={size} />
-    case 'ai':     return <AIKnowledgeIcon size={size} />
-    default:       return <span style={{ fontSize: size - 2, lineHeight: 1 }}>—</span>
+    case 'zoom':     return <ZoomIcon size={size} />
+    case 'gdrive':   return <GDriveIcon size={size} />
+    case 'gmail':    return <GmailIcon size={size} />
+    case 'slack':    return <SlackIcon size={size} />
+    case 'onedrive': return <OneDriveIcon size={size} />
+    case 'ai':       return <AIKnowledgeIcon size={size} />
+    default:         return <span style={{ fontSize: size - 2, lineHeight: 1 }}>—</span>
   }
 }

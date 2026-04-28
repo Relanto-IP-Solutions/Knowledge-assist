@@ -4,6 +4,7 @@ import GmailOpportunityCard from './GmailOpportunityCard'
 import DriveOpportunityCard from './DriveOpportunityCard'
 import SlackOpportunityCard from './SlackOpportunityCard'
 import ZoomOpportunityCard from './ZoomOpportunityCard'
+import OneDriveOpportunityCard from './OneDriveOpportunityCard'
 
 /* ── design tokens ─────────────────────────────────────────────── */
 const NAVY   = '#1B264F'
@@ -11,7 +12,7 @@ const ORANGE = '#E8532E'
 
 
 /* ── SourcesPage ─────────────────────────────────────────────────── */
-export default function SourcesPage({ opportunityId, opportunityName, onContinue, onBack }) {
+export default function SourcesPage({ opportunityId, opportunityName, onContinue, onBack, isOpportunityLocked = false }) {
   // Backend id used for all API calls (Zoom, answers, etc.)
   const apiOppId = toApiOpportunityId(opportunityId)
 
@@ -19,10 +20,11 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
   // Per-service active map — updated only by the card that just connected/disconnected.
   // No API calls are made here. Each card self-manages its own status.
   const [activeServices, setActiveServices] = useState({
-    drive: false,
-    gmail: false,
-    slack: false,
-    zoom:  false,
+    drive:    false,
+    gmail:    false,
+    slack:    false,
+    zoom:     false,
+    onedrive: false,
   })
 
   // Called by each card when its connection state changes.
@@ -35,7 +37,16 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
   }, [])
 
   const totalConnected = Object.values(activeServices).filter(Boolean).length
-  const totalSources   = 4 // Drive, Gmail, Slack, Zoom
+  const totalSources   = 5 // Drive, Gmail, Slack, Zoom, OneDrive
+
+  const [copiedOid, setCopiedOid] = useState(false)
+  const handleCopyOid = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(apiOppId)
+      setCopiedOid(true)
+      setTimeout(() => setCopiedOid(false), 1800)
+    } catch { /* clipboard unavailable */ }
+  }, [apiOppId])
 
   return (
     <div style={{
@@ -107,22 +118,101 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
 
       {/* ── Body ────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, maxWidth: 980, width: '100%', margin: '0 auto', padding: '28px 24px 48px', boxSizing: 'border-box' }}>
+        {/* Project-id call-out — single-band variant. Earlier iterations
+            were too loud (megaphone icon + tall card with rail). Users
+            said it felt over-emphasised, so this version compresses
+            everything onto one horizontal strip: a soft orange tint, a
+            small inline info icon, the OID inline as a monospace pill,
+            and a compact Copy button on the right. Visible enough that
+            the id is unmissable, quiet enough to sit above the connector
+            list without dominating it. */}
         <div style={{
-          marginBottom: 14,
-          padding: '10px 12px',
-          borderRadius: 10,
-          border: '1px solid rgba(27,38,79,.16)',
-          background: 'rgba(27,38,79,.04)',
-          color: NAVY,
+          marginBottom: 18,
           display: 'flex',
-          alignItems: 'flex-start',
-          gap: 8,
+          alignItems: 'center',
+          gap: 10,
+          padding: '8px 12px',
+          borderRadius: 8,
+          border: `1px solid ${ORANGE}40`,
+          background: `${ORANGE}0D`,
+          color: NAVY,
         }}>
-          <span aria-hidden style={{ fontSize: 13, lineHeight: 1.3 }}>i</span>
-          <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.5 }}>
-            Use opportunity ID <strong>{apiOppId}</strong> for any conversation, prompts, or follow-up requests tied to this opportunity.
-          </p>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={ORANGE} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="16" x2="12" y2="12"/>
+            <line x1="12" y1="8" x2="12.01" y2="8"/>
+          </svg>
+
+          <span style={{ fontSize: 12, lineHeight: 1.5, flex: 1, minWidth: 0 }}>
+            Use opportunity ID{' '}
+            <code style={{
+              padding: '2px 8px',
+              borderRadius: 4,
+              background: NAVY,
+              border: `1px solid ${NAVY}`,
+              color: '#fff',
+              fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+              fontSize: 11.5,
+              fontWeight: 800,
+              letterSpacing: '.02em',
+            }}>{apiOppId}</code>
+            {' '}in any prompt, conversation, or follow-up tied to this opportunity.
+          </span>
+
+          <button
+            type="button"
+            onClick={handleCopyOid}
+            style={{
+              flexShrink: 0,
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '4px 10px',
+              borderRadius: 5,
+              border: `1px solid ${ORANGE}66`,
+              background: copiedOid ? ORANGE : '#fff',
+              color: copiedOid ? '#fff' : ORANGE,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '.02em',
+              cursor: 'pointer',
+              fontFamily: 'var(--font)',
+              transition: 'background .15s, color .15s',
+            }}
+            onMouseEnter={e => { if (!copiedOid) { e.currentTarget.style.background = ORANGE; e.currentTarget.style.color = '#fff' } }}
+            onMouseLeave={e => { if (!copiedOid) { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = ORANGE } }}
+          >
+            {copiedOid ? (
+              <>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                Copied
+              </>
+            ) : (
+              <>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                Copy
+              </>
+            )}
+          </button>
         </div>
+        {isOpportunityLocked ? (
+          <div style={{
+            marginBottom: 14,
+            padding: '10px 12px',
+            borderRadius: 10,
+            border: '1px solid rgba(185,28,28,.24)',
+            background: 'rgba(254,242,242,.95)',
+            color: '#991B1B',
+            fontSize: 11.5,
+            fontWeight: 700,
+            lineHeight: 1.5,
+          }}>
+            This opportunity is locked (`is_active = false`). You can view connectors and answers, but editing is disabled.
+          </div>
+        ) : null}
 
         {/* ── Source connector cards ───────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -133,6 +223,8 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
             border: '1.5px solid rgba(27,38,79,.09)',
             boxShadow: '0 1px 6px rgba(15,23,42,.04)',
             overflow: 'hidden', transition: 'box-shadow .2s, border-color .2s',
+            pointerEvents: isOpportunityLocked ? 'none' : 'auto',
+            opacity: isOpportunityLocked ? 0.7 : 1,
           }}>
             <DriveOpportunityCard
               opportunityId={apiOppId}
@@ -147,6 +239,8 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
             border: '1.5px solid rgba(27,38,79,.09)',
             boxShadow: '0 1px 6px rgba(15,23,42,.04)',
             overflow: 'hidden', transition: 'box-shadow .2s, border-color .2s',
+            pointerEvents: isOpportunityLocked ? 'none' : 'auto',
+            opacity: isOpportunityLocked ? 0.7 : 1,
           }}>
             <GmailOpportunityCard
               opportunityId={apiOppId}
@@ -160,6 +254,8 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
             border: '1.5px solid rgba(27,38,79,.09)',
             boxShadow: '0 1px 6px rgba(15,23,42,.04)',
             overflow: 'hidden', transition: 'box-shadow .2s, border-color .2s',
+            pointerEvents: isOpportunityLocked ? 'none' : 'auto',
+            opacity: isOpportunityLocked ? 0.7 : 1,
           }}>
             <SlackOpportunityCard
               opportunityId={apiOppId}
@@ -173,10 +269,27 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
             border: '1.5px solid rgba(27,38,79,.09)',
             boxShadow: '0 1px 6px rgba(15,23,42,.04)',
             overflow: 'hidden', transition: 'box-shadow .2s, border-color .2s',
+            pointerEvents: isOpportunityLocked ? 'none' : 'auto',
+            opacity: isOpportunityLocked ? 0.7 : 1,
           }}>
             <ZoomOpportunityCard
               opportunityId={apiOppId}
               onStatusChange={(active) => handleStatusChange('zoom', active)}
+            />
+          </div>
+
+          {/* OneDrive */}
+          <div style={{
+            background: '#fff', borderRadius: 16,
+            border: '1.5px solid rgba(27,38,79,.09)',
+            boxShadow: '0 1px 6px rgba(15,23,42,.04)',
+            overflow: 'hidden', transition: 'box-shadow .2s, border-color .2s',
+            pointerEvents: isOpportunityLocked ? 'none' : 'auto',
+            opacity: isOpportunityLocked ? 0.7 : 1,
+          }}>
+            <OneDriveOpportunityCard
+              opportunityId={apiOppId}
+              onStatusChange={(active) => handleStatusChange('onedrive', active)}
             />
           </div>
         </div>
@@ -192,16 +305,20 @@ export default function SourcesPage({ opportunityId, opportunityName, onContinue
               : 'No sources connected yet. You can always connect them later.'}
           </p>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" onClick={onContinue}
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 7,
                 padding: '10px 14px', borderRadius: 9,
-                border: '1px solid rgba(27,38,79,.2)', background: 'transparent', color: 'var(--text2)',
-                fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font)', transition: 'all .12s',
+                border: '1px solid rgba(27,38,79,.16)', background: '#EEF2F7', color: 'rgba(27,38,79,.45)',
+                fontSize: 13, fontWeight: 600, cursor: 'not-allowed', fontFamily: 'var(--font)',
+                opacity: 0.95,
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(27,38,79,.05)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-            >Skip for now</button>
+            >
+              Skip for now
+            </button>
             <button type="button" onClick={onContinue}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,

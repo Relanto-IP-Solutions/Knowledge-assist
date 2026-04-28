@@ -3,8 +3,11 @@
  * Reference: GET /auth/google/url, GET /auth/slack/url (+ user_email); Zoom often auto-linked — optional /auth/zoom/url.
  */
 
-import { api } from './apiClient'
+import { api, API_BASE } from './apiClient'
 import { traced } from './connectorTrace'
+
+/** Full backend URL for OAuth redirect URIs (always needs real host, not proxy). */
+const BACKEND_BASE = String(import.meta.env.VITE_API_BASE || 'http://localhost:8000').replace(/\/$/, '')
 
 /** Set before redirecting to provider; App reads this to reopen the create-opportunity screen (no query on redirect_uri). */
 export const OAUTH_RETURN_CREATE_OPP_KEY = 'pzf_after_oauth_page'
@@ -43,8 +46,7 @@ export function getGmailBackendRedirectUri() {
   if (explicit != null && String(explicit).trim() !== '') {
     return String(explicit).trim()
   }
-  const apiBase = String(import.meta.env.VITE_API_BASE || 'http://localhost:8000').replace(/\/$/, '')
-  return `${apiBase}/integrations/gmail/callback`
+  return `${BACKEND_BASE}/integrations/gmail/callback`
 }
 
 /**
@@ -56,8 +58,7 @@ export function getDriveOAuthRedirectUri() {
   if (explicit != null && String(explicit).trim() !== '') {
     return String(explicit).trim()
   }
-  const apiBase = String(import.meta.env.VITE_API_BASE || 'http://localhost:8000').replace(/\/$/, '')
-  return `${apiBase}/auth/google/callback`
+  return `${BACKEND_BASE}/auth/google/callback`
 }
 
 /**
@@ -114,6 +115,18 @@ export async function getGoogleOAuthUrl(redirectUri) {
 }
 
 /**
+ * GET /auth/google/url?provider=drive&user_email=&redirect_uri=
+ * Returns { auth_url, already_connected }.
+ * If already_connected is true or auth_url is null, skip OAuth and connect directly.
+ */
+export async function getDriveAuthUrl(userEmail, oid, redirectUri) {
+  const { data } = await api.get('/auth/google/url', {
+    params: { provider: 'drive', user_email: userEmail, oid, redirect_uri: redirectUri },
+  })
+  return data
+}
+
+/**
  * Gmail OAuth URL — backend uses the same Google OAuth endpoint.
  * @param {string} redirectUri
  */
@@ -121,6 +134,28 @@ export async function getGmailOAuthUrl(redirectUri) {
   return fetchAuthUrlJson('/auth/google/url', {
     redirect_uri: redirectUri,
   })
+}
+
+/**
+ * GET /auth/google/url?provider=gmail&oid=&redirect_uri=
+ *
+ * Used by the per-opportunity Gmail re-auth path on Sources when the stored
+ * refresh token is revoked. Mirrors {@link getDriveAuthUrl} so the OAuth
+ * flow targets the **generic** backend callback (`/auth/google/callback`)
+ * which doesn't require an HMAC-signed gmail-specific state — the simple
+ * `provider:oid` state from this endpoint is what that callback validates.
+ * After exchange, the backend redirects to `/projects/<oid>?provider=gmail`
+ * which the frontend forwards to `/sources/<oid>`.
+ *
+ * @param {string} oid
+ * @param {string} redirectUri — should be {VITE_API_BASE}/auth/google/callback
+ * @returns {Promise<{ auth_url: string | null, already_connected?: boolean }>}
+ */
+export async function getGmailReauthAuthUrl(oid, redirectUri) {
+  const { data } = await api.get('/auth/google/url', {
+    params: { provider: 'gmail', oid, redirect_uri: redirectUri },
+  })
+  return data
 }
 
 /**
@@ -349,14 +384,18 @@ export async function fetchDriveConnectInfo(oid, options = {}) {
  * Falls back to GET /metrics/drive/{oid}.
  * @param {string} oid
  * @param {string} [userEmail]
+ * @param {{ signal?: AbortSignal }} [options] — pass an AbortSignal to cancel slow/hanging requests.
  */
-export async function fetchDriveMetrics(oid, userEmail) {
+export async function fetchDriveMetrics(oid, userEmail, options = {}) {
   return traced('fetchDriveMetrics', async () => {
     const params = {}
     if (userEmail && String(userEmail).trim()) {
       params.user_email = String(userEmail).trim()
     }
-    const opts = { params: Object.keys(params).length ? params : undefined }
+    const opts = {
+      params: Object.keys(params).length ? params : undefined,
+      ...(options.signal ? { signal: options.signal } : {}),
+    }
     let data
     try {
       ;({ data } = await api.get(`/integrations/drive/metrics/${encodeURIComponent(oid)}`, opts))
@@ -904,6 +943,144 @@ export async function exchangeSlackOAuthCallback(code, redirectUri, userEmail) {
     code,
     redirect_uri: redirectUri,
     user_email: userEmail,
+  })
+  return data
+}
+
+// ── OneDrive connector API ───────────────────────────────────────────
+
+/**
+ * `redirect_uri` for GET /auth/microsoft/url — backend Microsoft OAuth callback.
+ * Override with `VITE_ONEDRIVE_REDIRECT_URI`. Defaults to `{VITE_API_BASE}/oauth/microsoft/callback`.
+ */
+export function getOneDriveOAuthRedirectUri() {
+  const explicit = import.meta.env.VITE_ONEDRIVE_REDIRECT_URI
+  if (explicit != null && String(explicit).trim() !== '') return String(explicit).trim()
+  return `${BACKEND_BASE}/oauth/microsoft/callback`
+}
+
+const _oneDriveMetricsCache = new Map()
+
+function _oneDriveSsKey(oid) { return `pzf_onedrive_metrics_${oid}` }
+
+function _getOneDriveStorage() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) return window.localStorage
+  } catch { /**/ }
+  return null
+}
+
+/** Dual-write so the previous "Active" status survives hard reloads (localStorage) while still
+ * working in private windows where localStorage may be limited (sessionStorage). */
+function _writeOneDriveStorage(oid, data) {
+  const storage = _getOneDriveStorage()
+  if (storage) {
+    try { storage.setItem(_oneDriveSsKey(oid), JSON.stringify(data)) } catch { /**/ }
+  }
+  try { sessionStorage.setItem(_oneDriveSsKey(oid), JSON.stringify(data)) } catch { /**/ }
+}
+
+function _readOneDriveStorage(oid) {
+  const storage = _getOneDriveStorage()
+  if (storage) {
+    try {
+      const raw = storage.getItem(_oneDriveSsKey(oid))
+      if (raw) return JSON.parse(raw)
+    } catch { /**/ }
+  }
+  try {
+    const raw = sessionStorage.getItem(_oneDriveSsKey(oid))
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+export function getCachedOneDriveMetrics(oid) {
+  if (!_oneDriveMetricsCache.has(oid)) {
+    const stored = _readOneDriveStorage(oid)
+    if (stored) _oneDriveMetricsCache.set(oid, stored)
+  }
+  return _oneDriveMetricsCache.get(oid) ?? null
+}
+
+/**
+ * GET /auth/microsoft/url?redirect_uri=&user_email=&oid=
+ * Returns { auth_url } if OAuth is needed, or null auth_url if user is already connected.
+ */
+export async function getMicrosoftOAuthUrl(redirectUri, userEmail, oid) {
+  const { data } = await api.get('/auth/microsoft/url', {
+    params: { redirect_uri: redirectUri, user_email: userEmail, oid },
+  })
+  return data
+}
+
+/**
+ * POST /integrations/onedrive/connect/{oid}?user_email=
+ * Syncs OneDrive files for this opportunity.
+ */
+export async function connectOneDrive(oid, userEmail) {
+  const oidStr = String(oid ?? '').trim()
+  if (!oidStr) throw new Error('Opportunity id is required')
+  const { data } = await api.post(
+    `/integrations/onedrive/connect/${encodeURIComponent(oidStr)}`,
+    {},
+    { params: { user_email: userEmail } },
+  )
+  // Only cache when the response carries the metrics shape (total_files /
+  // last_synced_at). The OneDrive connect endpoint returns a thin status
+  // payload ({status, folder_id, sync_started}) — caching that would
+  // overwrite the real metrics cache with 0-file stubs and force users to
+  // hit Resync to recover. The follow-up fetchOneDriveMetrics call inside
+  // runConnectAndMetrics will populate the cache with real values.
+  if (
+    data
+    && typeof data === 'object'
+    && (Object.prototype.hasOwnProperty.call(data, 'total_files')
+      || Object.prototype.hasOwnProperty.call(data, 'last_synced_at'))
+  ) {
+    _oneDriveMetricsCache.set(oidStr, data)
+    _writeOneDriveStorage(oidStr, data)
+  }
+  return data
+}
+
+/**
+ * GET /integrations/onedrive/authorize-info/{oid}?user_email=
+ * Returns { has_onedrive_connection: bool, ... } for pre-sync status check.
+ */
+export async function getOneDriveAuthorizeInfo(oid, userEmail) {
+  const { data } = await api.get(`/integrations/onedrive/authorize-info/${encodeURIComponent(oid)}`, {
+    params: { user_email: userEmail },
+  })
+  return data
+}
+
+/**
+ * GET /integrations/onedrive/metrics/{oid}
+ * Returns OneDrive ingestion metrics for one opportunity.
+ * @param {string} oid
+ * @param {{ signal?: AbortSignal }} [options] — pass an AbortSignal to cancel slow/hanging requests.
+ */
+export async function fetchOneDriveMetrics(oid, options = {}) {
+  const opts = options.signal ? { signal: options.signal } : undefined
+  const { data } = await api.get(`/integrations/onedrive/metrics/${encodeURIComponent(oid)}`, opts)
+  _oneDriveMetricsCache.set(oid, data)
+  _writeOneDriveStorage(oid, data)
+  return data
+}
+
+/**
+ * POST /integrations/slack/orchestrate/{oid}
+ * Creates a Slack channel and invites the specified team members.
+ * @param {string} oid
+ * @param {string} customChannelName
+ * @param {string[]} teamEmails
+ */
+export async function orchestrateSlack(oid, customChannelName, teamEmails) {
+  const oidStr = String(oid ?? '').trim()
+  if (!oidStr) throw new Error('Opportunity id is required')
+  const { data } = await api.post(`/integrations/slack/orchestrate/${encodeURIComponent(oidStr)}`, {
+    custom_channel_name: customChannelName,
+    team_emails: teamEmails,
   })
   return data
 }

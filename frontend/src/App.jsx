@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react'
-import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom'
 import Topbar from './components/Topbar'
 import Landing from './components/Landing'
 import QAPage from './components/QAPage'
 import SourcesPage from './components/SourcesPage'
 import GmailResultPage from './components/GmailResultPage'
 import CreateOpportunityPage from './components/CreateOpportunityPage'
+import AdminRequestsPage from './components/AdminRequestsPage'
+import TeamBuilderPage from './components/TeamBuilderPage'
 import LoginWithTheme from './components/Login'
-import { subscribeAuth, signOutUser } from './services/authService'
+import { subscribeAuth, signOutUser, forceRegisterCurrentUser } from './services/authService'
 import {
   OAUTH_RETURN_CREATE_OPP_KEY,
   OAUTH_OPP_ID_KEY,
@@ -25,9 +27,103 @@ export const MODULES = [
   { id: 'market', label: 'Market Intelligence', icon: null, enabled: true },
 ]
 
+const KNOWLEDGE_ASSIST_PAGE_SESSION_KEY = 'knowledgeAssist:lastPage'
+const KNOWLEDGE_ASSIST_FRESH_LOGIN_RESET_KEY = 'knowledgeAssist:freshLoginReset'
+
+function getStoredKnowledgeAssistPage() {
+  try {
+    const raw = sessionStorage.getItem(KNOWLEDGE_ASSIST_PAGE_SESSION_KEY)
+    const parsed = Number(raw)
+    if (Number.isInteger(parsed) && parsed > 0) return parsed
+    return null
+  } catch {
+    return null
+  }
+}
+
+function setStoredKnowledgeAssistPage(page) {
+  const parsed = Number(page)
+  if (!Number.isInteger(parsed) || parsed <= 0) return
+  try {
+    sessionStorage.setItem(KNOWLEDGE_ASSIST_PAGE_SESSION_KEY, String(parsed))
+  } catch {
+    /* noop */
+  }
+}
+
+function markKnowledgeAssistFreshLoginReset() {
+  try {
+    sessionStorage.setItem(KNOWLEDGE_ASSIST_FRESH_LOGIN_RESET_KEY, '1')
+  } catch {
+    /* noop */
+  }
+}
+
+function clearPostLoginSessionCache() {
+  try {
+    sessionStorage.removeItem(OAUTH_RETURN_CREATE_OPP_KEY)
+    sessionStorage.removeItem(OAUTH_OPP_ID_KEY)
+    sessionStorage.removeItem(GMAIL_RESUME_POLL_OID_KEY)
+    sessionStorage.removeItem(GMAIL_CONNECTOR_EMAIL_SESSION_KEY)
+  } catch {
+    /* noop */
+  }
+}
+
+function clearKnowledgeAssistQaLocalCache() {
+  try {
+    const qaProgressPrefix = 'knowledgeAssist:qaProgress:v1:'
+    const acceptedPrefix = 'accepted_'
+    const keysToRemove = []
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i)
+      if (!key) continue
+      if (key.startsWith(qaProgressPrefix) || key.startsWith(acceptedPrefix)) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key))
+  } catch {
+    /* noop */
+  }
+}
+
+function parsePositivePage(value) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+}
+
+function getKnowledgeAssistPageFromSearch(search) {
+  try {
+    const params = new URLSearchParams(String(search ?? ''))
+    return parsePositivePage(params.get('kaPage'))
+  } catch {
+    return null
+  }
+}
+
 function SourcesRoute({ user }) {
-  const { oid } = useParams()
+  const { opportunityId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  const isOpportunityLocked = location.state?.opportunityLocked === true
+  const searchPage = getKnowledgeAssistPageFromSearch(location.search)
+  const statePage = parsePositivePage(location.state?.knowledgeAssistPage)
+  const storedPage = getStoredKnowledgeAssistPage()
+  const knowledgeAssistPage = searchPage ?? statePage ?? storedPage
+  const knowledgeAssistNavState = Number.isFinite(Number(knowledgeAssistPage))
+    ? { knowledgeAssistPage: Number(knowledgeAssistPage), forceRefresh: true }
+    : { forceRefresh: true }
+  const safeKnowledgeAssistPage = Number(knowledgeAssistPage)
+  const knowledgeAssistBackTarget =
+    Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
+      ? { pathname: '/homepage', state: { knowledgeAssistPage: safeKnowledgeAssistPage, forceRefresh: true } }
+      : { pathname: '/homepage' }
+
+  useEffect(() => {
+    if (!Number.isInteger(safeKnowledgeAssistPage) || safeKnowledgeAssistPage <= 0) return
+    setStoredKnowledgeAssistPage(safeKnowledgeAssistPage)
+  }, [safeKnowledgeAssistPage])
 
   // Popup lands here after per-opportunity Gmail connect OAuth.
   useEffect(() => {
@@ -36,55 +132,168 @@ function SourcesRoute({ user }) {
     if (params.get('gmail_connect') !== 'success') return
     try {
       window.opener.postMessage(
-        { type: 'gmail_oauth_result', gmailConnect: 'success', oid },
+        { type: 'gmail_oauth_result', gmailConnect: 'success', oid: opportunityId },
         window.location.origin,
       )
     } catch {
       /* noop */
     }
     window.close()
-  }, [oid])
+  }, [opportunityId])
 
   return (
     <SourcesPage
-      opportunityId={oid}
-      opportunityName={oid}
+      opportunityId={opportunityId}
+      opportunityName={opportunityId}
+      isOpportunityLocked={isOpportunityLocked}
       userEmail={user?.email || ''}
-      onContinue={() => navigate('/qa/' + oid)}
-      onBack={() => navigate('/')}
+      onContinue={() => navigate(
+        '/qa/' + opportunityId,
+        {
+          state: {
+            ...(location.state ?? {}),
+            ...(Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
+              ? { knowledgeAssistPage: safeKnowledgeAssistPage }
+              : {}),
+            opportunityLocked: isOpportunityLocked,
+          },
+        },
+      )}
+      onBack={() => {
+        if (Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0) {
+          setStoredKnowledgeAssistPage(safeKnowledgeAssistPage)
+        }
+        navigate(knowledgeAssistBackTarget, { state: knowledgeAssistNavState })
+      }}
     />
   )
 }
 
-function QARoute({ onReviewSaved }) {
+function LegacySourcesRedirect() {
   const { oid } = useParams()
+  return <Navigate to={`/data-connectors/${oid}`} replace />
+}
+
+/**
+ * Backend's generic Google OAuth callback (`{API_BASE}/auth/google/callback`)
+ * redirects to `{frontend}/projects/<oid>?provider=...` after a successful
+ * code exchange (see backend/main.py). Drive and the new Gmail re-auth flow
+ * both rely on that bounce. We don't have a "projects" page in this app, so
+ * forward the user straight to `/sources/<oid>` (which itself redirects to
+ * the data-connectors view). Preserving the query string lets downstream
+ * components observe the OAuth result if they care.
+ */
+function PostOAuthProjectRedirect() {
+  const { oid } = useParams()
+  const location = useLocation()
+  const search = location.search || ''
+  return <Navigate to={`/sources/${oid}${search}`} replace />
+}
+
+function QARoute({ onReviewSaved }) {
+  const { opportunityId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  const isOpportunityLocked = location.state?.opportunityLocked === true
+  const searchPage = getKnowledgeAssistPageFromSearch(location.search)
+  const statePage = parsePositivePage(location.state?.knowledgeAssistPage)
+  const storedPage = getStoredKnowledgeAssistPage()
+  const knowledgeAssistPage = searchPage ?? statePage ?? storedPage
+  const knowledgeAssistNavState = Number.isFinite(Number(knowledgeAssistPage))
+    ? { knowledgeAssistPage: Number(knowledgeAssistPage), forceRefresh: true }
+    : { forceRefresh: true }
+  const safeKnowledgeAssistPage = Number(knowledgeAssistPage)
+  const knowledgeAssistBackTarget =
+    Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
+      ? { pathname: '/homepage', state: { knowledgeAssistPage: safeKnowledgeAssistPage, forceRefresh: true } }
+      : { pathname: '/homepage' }
+
+  useEffect(() => {
+    if (!Number.isInteger(safeKnowledgeAssistPage) || safeKnowledgeAssistPage <= 0) return
+    setStoredKnowledgeAssistPage(safeKnowledgeAssistPage)
+  }, [safeKnowledgeAssistPage])
   return (
     <QAPage
-      oppId={oid}
-      onBack={() => navigate('/')}
+      oppId={opportunityId}
+      isOpportunityLocked={isOpportunityLocked}
+      onBack={() => {
+        if (Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0) {
+          setStoredKnowledgeAssistPage(safeKnowledgeAssistPage)
+        }
+        navigate(knowledgeAssistBackTarget, { state: knowledgeAssistNavState })
+      }}
+      onBackToDataConnectors={() => navigate(
+        '/data-connectors/' + opportunityId,
+        {
+          state: {
+            ...(location.state ?? {}),
+            ...(Number.isInteger(safeKnowledgeAssistPage) && safeKnowledgeAssistPage > 0
+              ? { knowledgeAssistPage: safeKnowledgeAssistPage }
+              : {}),
+            opportunityLocked: isOpportunityLocked,
+          },
+        },
+      )}
       onReviewSaved={onReviewSaved}
     />
   )
 }
 
-function CreateRoute({ user }) {
-  const navigate = useNavigate()
+function CreateRoute({ user, onBackToKnowledgeAssist, onCreated }) {
   return (
     <CreateOpportunityPage
       user={user}
-      onBack={() => navigate('/')}
-      onCreated={(id) => navigate('/sources/' + id)}
+      onBack={onBackToKnowledgeAssist}
+      onCreated={onCreated}
     />
   )
 }
 
+function getRoles(user) {
+  const roles = Array.isArray(user?.roles_assigned) ? user.roles_assigned : []
+  return roles.map((role) => String(role || '').trim().toUpperCase()).filter(Boolean)
+}
+
+function isAdminUser(user) {
+  return getRoles(user).includes('ADMIN')
+}
+
+function ProtectedRoute({ user, children }) {
+  const location = useLocation()
+  if (!user) return <Navigate to="/login" replace state={{ from: location }} />
+  return children
+}
+
+function PublicOnlyRoute({ user, children }) {
+  if (user) {
+    return <Navigate to="/homepage" replace />
+  }
+  return children
+}
+
+function RoleGuard({ user, allow = [], children }) {
+  const allowed = allow.map((role) => String(role || '').trim().toUpperCase()).filter(Boolean)
+  const hasAccess = allowed.length === 0 || getRoles(user).some((role) => allowed.includes(role))
+  if (!hasAccess) return <Navigate to="/homepage" replace />
+  return children
+}
+
 export default function App() {
   const navigate = useNavigate()
+  const hasHandledInitialAuthRef = useRef(false)
+  const previousAuthUidRef = useRef(null)
+  const registerPingedUidRef = useRef(null)
   const [user, setUser] = useState(null)
   const [authReady, setAuthReady] = useState(false)
   const [activeModule, setActiveModule] = useState('sales')
   const [landingRefreshKey, setLandingRefreshKey] = useState(0)
+  const isAdmin = isAdminUser(user)
+  const getKnowledgeAssistNavState = () => {
+    const page = getStoredKnowledgeAssistPage()
+    return Number.isInteger(page) && page > 0
+      ? { knowledgeAssistPage: page, forceRefresh: true }
+      : { forceRefresh: true }
+  }
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'relanto')
@@ -92,10 +301,33 @@ export default function App() {
 
   useEffect(() => {
     return subscribeAuth((nextUser) => {
+      const nextUid = nextUser?.uid ?? null
+      const isFreshLogin = hasHandledInitialAuthRef.current && !previousAuthUidRef.current && !!nextUid
+      if (isFreshLogin) {
+        clearPostLoginSessionCache()
+        clearKnowledgeAssistQaLocalCache()
+        setStoredKnowledgeAssistPage(1)
+        markKnowledgeAssistFreshLoginReset()
+        navigate(
+          { pathname: '/homepage' },
+          { replace: true, state: { knowledgeAssistPage: 1, forceRefresh: true } },
+        )
+      }
+      previousAuthUidRef.current = nextUid
+      hasHandledInitialAuthRef.current = true
       setUser(nextUser)
       setAuthReady(true)
     })
-  }, [])
+  }, [navigate])
+
+  useEffect(() => {
+    if (!authReady || !user?.uid) return
+    if (registerPingedUidRef.current === user.uid) return
+    registerPingedUidRef.current = user.uid
+    forceRegisterCurrentUser().catch(() => {
+      /* noop: auth subscriber already has fallback handling */
+    })
+  }, [authReady, user?.uid])
 
   const bumpDashboardRefresh = () => setLandingRefreshKey(k => k + 1)
 
@@ -111,8 +343,8 @@ export default function App() {
         const oid = sessionStorage.getItem(OAUTH_OPP_ID_KEY)
         sessionStorage.removeItem(OAUTH_RETURN_CREATE_OPP_KEY)
         sessionStorage.removeItem(OAUTH_OPP_ID_KEY)
-        if (oid) navigate('/sources/' + oid)
-        else navigate('/')
+        if (oid) navigate('/data-connectors/' + oid)
+        else navigate('/homepage', { state: getKnowledgeAssistNavState() })
       }
     } catch {
       /* noop */
@@ -128,7 +360,7 @@ export default function App() {
 
       if (msg.gmailDiscover) {
         bumpDashboardRefresh()
-        navigate('/')
+        navigate('/homepage', { state: getKnowledgeAssistNavState() })
       }
 
       if (msg.gmailConnect && msg.oid) {
@@ -157,7 +389,7 @@ export default function App() {
           /* noop */
         }
 
-        navigate('/sources/' + msg.oid)
+        navigate('/data-connectors/' + msg.oid)
       }
     }
     window.addEventListener('message', handler)
@@ -167,19 +399,33 @@ export default function App() {
   const handleLogin = (loggedInUser, module) => {
     setUser(loggedInUser)
     if (module) setActiveModule(module)
-    navigate('/')
+    // Fresh sign-in should always start the dashboard table at page 1.
+    clearPostLoginSessionCache()
+    clearKnowledgeAssistQaLocalCache()
+    setStoredKnowledgeAssistPage(1)
+    markKnowledgeAssistFreshLoginReset()
+    navigate(
+      { pathname: '/homepage' },
+      { replace: true, state: { knowledgeAssistPage: 1, forceRefresh: true } },
+    )
   }
 
   const handleLogout = async () => {
     await signOutUser()
     setUser(null)
-    navigate('/')
+    // Reset landing pagination context on sign-out so next sign-in starts fresh.
+    clearKnowledgeAssistQaLocalCache()
+    setStoredKnowledgeAssistPage(1)
+    navigate(
+      { pathname: '/homepage' },
+      { replace: true, state: { knowledgeAssistPage: 1, forceRefresh: true } },
+    )
   }
 
   const switchModule = (mod) => {
     if (!mod.enabled) return
     setActiveModule(mod.id)
-    navigate('/')
+    navigate('/homepage', { state: getKnowledgeAssistNavState() })
   }
 
   if (!authReady) {
@@ -196,44 +442,140 @@ export default function App() {
           fontSize: 14,
         }}
       >
-        Signing in...
+        Loading...
       </div>
     )
   }
 
-  if (!user) {
-    return <LoginWithTheme onLogin={handleLogin} theme="relanto" />
-  }
-
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      <Topbar
-        activeModule={activeModule}
-        onLogoClick={() => navigate('/')}
-        onSwitchModule={switchModule}
-        user={user}
-        onLogout={handleLogout}
-      />
+      {user && (
+        <Topbar
+          activeModule={activeModule}
+          onLogoClick={() => navigate('/homepage', { state: getKnowledgeAssistNavState() })}
+          onSwitchModule={switchModule}
+          user={user}
+          isAdmin={isAdmin}
+          onLogout={handleLogout}
+          onNavigate={(path) => navigate(path)}
+        />
+      )}
 
       {activeModule === 'sales' && (
         <Routes>
           <Route
-            path="/"
+            path="/login"
             element={
-              <Landing
-                key={landingRefreshKey}
-                onOpenOpp={(id) => navigate('/sources/' + id)}
-                userEmail={user?.email || ''}
-                refreshKey={landingRefreshKey}
-                onOpportunitiesRefresh={bumpDashboardRefresh}
-              />
+              <PublicOnlyRoute user={user}>
+                <LoginWithTheme onLogin={handleLogin} theme="relanto" />
+              </PublicOnlyRoute>
             }
           />
-          <Route path="/sources/:oid" element={<SourcesRoute user={user} />} />
-          <Route path="/qa/:oid" element={<QARoute onReviewSaved={bumpDashboardRefresh} />} />
-          <Route path="/create" element={<CreateRoute user={user} />} />
-          <Route path="/gmail-result" element={<GmailResultPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route
+            path="/homepage"
+            element={
+              <ProtectedRoute user={user}>
+                <Landing
+                  key={landingRefreshKey}
+                  user={user}
+                  onOpenOpp={(id, _name, page, isOpportunityLocked = false) => {
+                    const parsedPage = Number(page)
+                    if (Number.isInteger(parsedPage) && parsedPage > 0) {
+                      setStoredKnowledgeAssistPage(parsedPage)
+                    }
+                    navigate(
+                      '/data-connectors/' + id,
+                      {
+                      state: {
+                        ...(Number.isInteger(parsedPage) && parsedPage > 0
+                          ? { knowledgeAssistPage: parsedPage }
+                          : {}),
+                        opportunityLocked: Boolean(isOpportunityLocked),
+                      },
+                      },
+                    )
+                  }}
+                  userEmail={user?.email || ''}
+                  refreshKey={landingRefreshKey}
+                  onOpportunitiesRefresh={bumpDashboardRefresh}
+                  onAdminPanel={isAdmin ? () => navigate('/admin/requests') : undefined}
+                />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/" element={<Navigate to={user ? '/homepage' : '/login'} replace />} />
+          <Route
+            path="/knowledge-assist"
+            element={<Navigate to={user ? '/homepage' : '/login'} replace />}
+          />
+          <Route
+            path="/data-connectors/:opportunityId"
+            element={
+              <ProtectedRoute user={user}>
+                <SourcesRoute user={user} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sources/:oid"
+            element={
+              <ProtectedRoute user={user}>
+                <LegacySourcesRedirect />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/qa/:opportunityId"
+            element={
+              <ProtectedRoute user={user}>
+                <QARoute onReviewSaved={bumpDashboardRefresh} />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="/projects/:oid" element={<PostOAuthProjectRedirect />} />
+
+          <Route
+            path="/create"
+            element={
+              <ProtectedRoute user={user}>
+                <CreateRoute user={user} onBackToKnowledgeAssist={() => navigate('/homepage', { state: getKnowledgeAssistNavState() })} onCreated={bumpDashboardRefresh} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/requests"
+            element={
+              <ProtectedRoute user={user}>
+                <RoleGuard user={user} allow={['ADMIN']}>
+                  <AdminRequestsPage user={user} onBack={() => navigate('/')} />
+                </RoleGuard>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/team-builder"
+            element={
+              <ProtectedRoute user={user}>
+                <RoleGuard user={user} allow={['ADMIN']}>
+                  <TeamBuilderPage onBack={() => navigate('/admin/requests')} />
+                </RoleGuard>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/taskbuilder"
+            element={<Navigate to="/admin/team-builder" replace />}
+          />
+          <Route
+            path="/gmail-result"
+            element={
+              <ProtectedRoute user={user}>
+                <GmailResultPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to={user ? '/homepage' : '/login'} replace />} />
         </Routes>
       )}
 

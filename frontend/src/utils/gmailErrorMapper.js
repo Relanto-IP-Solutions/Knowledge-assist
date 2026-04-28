@@ -3,6 +3,32 @@
  * Spec: always show backend detail clearly for 400/404 errors.
  */
 
+export const WORKSPACE_POLICY_ERROR_MSG =
+  "It looks like your company's Google security settings are blocking this sync. Please contact your IT administrator to trust this application in the Google Admin Console."
+
+export function isWorkspacePolicyError(error) {
+  const status = error?.response?.status
+  const detail = String(error?.response?.data?.detail ?? error?.response?.data?.message ?? error?.message ?? '').toLowerCase()
+  return status === 403 && (detail.includes('workspace') || detail.includes('domain policy'))
+}
+
+/**
+ * Detects the "refresh token expired/revoked" condition the backend
+ * surfaces as `HTTPException(400, "Failed to refresh Gmail credentials: ...invalid_grant...")`.
+ * When this is true the Gmail card should re-trigger the OAuth popup
+ * instead of just rendering the error.
+ */
+export function isInvalidGrantError(error) {
+  const status = error?.response?.status
+  const detail = String(error?.response?.data?.detail ?? error?.response?.data?.message ?? error?.message ?? '').toLowerCase()
+  if (status !== 400 && status !== 401) return false
+  return (
+    detail.includes('invalid_grant')
+    || detail.includes('expired or revoked')
+    || detail.includes('failed to refresh')
+  )
+}
+
 export function mapGmailError(error) {
   const status    = error?.response?.status
   const detail    = error?.response?.data?.detail ?? error?.response?.data?.message ?? error?.message ?? ''
@@ -20,8 +46,10 @@ export function mapGmailError(error) {
   // 401 — not authenticated / token missing
   if (status === 401) return 'This mailbox is not authorized yet. Please complete Google authorization.'
 
-  // 403 — wrong account / scope (prefer backend detail for OAuth mismatch)
+  // 403 — workspace/domain policy block or wrong account / scope
   if (status === 403) {
+    if (detailStr.includes('workspace') || detailStr.includes('domain policy'))
+      return WORKSPACE_POLICY_ERROR_MSG
     if (detailStr.includes('mismatch') || detailStr.includes('different'))
       return String(detail).trim() || 'You logged in with a different Google account than the selected mailbox. Sign in with the selected mailbox.'
     if (detailStr.includes('scope'))

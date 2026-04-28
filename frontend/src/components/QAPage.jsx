@@ -31,6 +31,7 @@ import {
   validateRequiredReviewQuestions,
   validateReviewSelectionsForSubmit,
 } from '../utils/opportunityReviewMeta'
+import { isAnswerOverrideAgainstAny } from '../utils/overrideDetection'
 import { OpportunityAnswersSkeleton } from './OpportunityAnswersSkeleton'
 
 /** Preserve GET /answers UUIDs; do not remap through studio piclist. */
@@ -47,6 +48,83 @@ import {
 
 const SI_NAVY = 'var(--si-navy, #1B264F)'
 const SI_ORANGE = 'var(--si-orange, #E8532E)'
+const QA_PROGRESS_STORAGE_PREFIX = 'knowledgeAssist:qaProgress:v1'
+
+function getQaProgressStorageKey(oppId) {
+  const key = String(oppId ?? '').trim()
+  if (!key) return ''
+  return `${QA_PROGRESS_STORAGE_PREFIX}:${key}`
+}
+
+function readQaProgress(oppId) {
+  const storageKey = getQaProgressStorageKey(oppId)
+  if (!storageKey) return null
+  try {
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function persistQaProgress(oppId, payload) {
+  const storageKey = getQaProgressStorageKey(oppId)
+  if (!storageKey) return
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(payload))
+  } catch {
+    /* noop */
+  }
+}
+
+// ── Per-opportunity accepted-answers persistence ──────────────────────────────
+// Key format: accepted_<opportunity_id>
+// Value:      { [question_id]: true }  (only accepted/overridden questions)
+// This is intentionally separate from the broader qaProgress snapshot so it can
+// be read, written, and merged with the API response without touching other state.
+
+function getAcceptedStorageKey(oppId) {
+  const key = String(oppId ?? '').trim()
+  if (!key) return ''
+  return `accepted_${key}`
+}
+
+function readAcceptedAnswers(oppId) {
+  const storageKey = getAcceptedStorageKey(oppId)
+  if (!storageKey) return {}
+  try {
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed
+  } catch {
+    return {}
+  }
+}
+
+function writeAcceptedAnswers(oppId, acceptedMap) {
+  const storageKey = getAcceptedStorageKey(oppId)
+  if (!storageKey) return
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(acceptedMap))
+  } catch {
+    /* noop */
+  }
+}
+
+function buildAcceptedMapFromState(qState) {
+  const acceptedMap = {}
+  for (const [qid, state] of Object.entries(qState || {})) {
+    if (state?.status === 'accepted' || state?.status === 'overridden') {
+      acceptedMap[String(qid)] = true
+    }
+  }
+  return acceptedMap
+}
 
 /** isValidAnswer — checks answer_value only, never answer_type. */
 function isValidAnswer(value) {
@@ -112,6 +190,31 @@ function toDisplayAnswerText(value) {
   return raw
 }
 
+function getAiComparableCandidates(question, row, backendValue) {
+  const out = []
+  const pushIfAny = (value) => {
+    const display = String(resolveSelectionToDisplayValue(question, value) ?? '').trim()
+    if (display) out.push(display)
+  }
+  pushIfAny(backendValue)
+  // Some rows are seeded with answer_id UUIDs while backend baseline text lives in answer_value.
+  // Include ids as AI-equivalent candidates so unchanged accepts are not misclassified as user edits.
+  pushIfAny(row?.answer_id)
+  const conflicts = Array.isArray(row?.conflicts) ? row.conflicts : []
+  for (const conflict of conflicts) {
+    pushIfAny(conflict?.answer_value ?? conflict?.answer ?? conflict?.value)
+    pushIfAny(conflict?.answer_id)
+  }
+  return out
+}
+
+function isOverrideAgainstBackend(question, row, currentValue, backendValue) {
+  const answerType = normalizeAnswerType(question)
+  const options = reviewAnswerOptions(question)
+  const aiCandidates = getAiComparableCandidates(question, row, backendValue)
+  return isAnswerOverrideAgainstAny(currentValue, aiCandidates, { answerType, options })
+}
+
 function getConflictFallbackAnswerFromRow(row) {
   const list = Array.isArray(row?.conflicts) ? row.conflicts : []
   for (const c of list) {
@@ -119,6 +222,49 @@ function getConflictFallbackAnswerFromRow(row) {
     if (isValidAnswer(raw)) return toDisplayAnswerText(raw)
   }
   return ''
+}
+
+function normalizeConflictCompareText(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+}
+
+function resolveConflictSelectionIdFromRow(row, chosen, chosenText) {
+  if (!row || typeof row !== 'object') return null
+  const textNorm = normalizeConflictCompareText(chosenText)
+  const chosenRole = String(chosen?.role ?? '').trim().toLowerCase()
+  const chosenConflictIndex = Number(chosen?.conflictIndex)
+
+  if (chosenRole === 'primary') {
+    const primaryId = String(row?.answer_id ?? '').trim()
+    if (primaryId) return primaryId
+  }
+
+  const conflicts = Array.isArray(row?.conflicts) ? row.conflicts : []
+  if (Number.isFinite(chosenConflictIndex) && chosenConflictIndex > 0) {
+    const byIndex = conflicts[chosenConflictIndex - 1]
+    const byIndexId = String(byIndex?.answer_id ?? '').trim()
+    if (byIndexId) return byIndexId
+  }
+
+  if (textNorm && conflicts.length > 0) {
+    const byText = conflicts.find(c => {
+      const raw = c?.answer_value ?? c?.answer ?? c?.value ?? ''
+      return normalizeConflictCompareText(raw) === textNorm
+    })
+    const byTextId = String(byText?.answer_id ?? '').trim()
+    if (byTextId) return byTextId
+  }
+
+  const primaryAnswerNorm = normalizeConflictCompareText(row?.answer_value ?? row?.answer ?? '')
+  if (textNorm && primaryAnswerNorm && textNorm === primaryAnswerNorm) {
+    const primaryId = String(row?.answer_id ?? '').trim()
+    if (primaryId) return primaryId
+  }
+
+  return null
 }
 
 function getEffectiveDisplayAnswer({
@@ -170,6 +316,29 @@ function getAnswerLabelFromSelection(question, selectedId) {
   return String(hit.text ?? hit.id ?? sid).trim()
 }
 
+function normalizePickSelectionPayload(question, pick) {
+  const selectedObj = pick != null && typeof pick === 'object' && !Array.isArray(pick) ? pick : null
+  const rawId = String(selectedObj?.answer_id ?? pick ?? '').trim()
+  const rawValue = String(selectedObj?.answer_value ?? '').trim()
+  if (!rawId && !rawValue) return { answer_id: '', answer_value: '' }
+  const opts = reviewAnswerOptions(question)
+  const hit = opts.find(o => {
+    const id = String(o?.id ?? '').trim()
+    const text = String(o?.text ?? '').trim()
+    return (
+      (rawId && (id === rawId || text === rawId)) ||
+      (rawValue && (text === rawValue || id === rawValue))
+    )
+  })
+  const answer_id = String(hit?.id ?? rawId).trim()
+  let answer_value = String(hit?.text ?? rawValue).trim()
+  if (!answer_value && answer_id) answer_value = getAnswerLabelFromSelection(question, answer_id)
+  if (answer_value && answer_id && answer_value === answer_id && hit?.text) {
+    answer_value = String(hit.text).trim()
+  }
+  return { answer_id, answer_value }
+}
+
 function resolveSelectionToDisplayValue(question, selection) {
   if (selection == null) return ''
   if (Array.isArray(selection)) {
@@ -200,11 +369,18 @@ function questionCompletionKey(q) {
   return ''
 }
 
+function isQuestionServerLocked(question, qStateEntry) {
+  return (
+    qStateEntry?.serverLocked === true ||
+    String(question?.status ?? '').trim().toLowerCase() === 'active'
+  )
+}
+
 export function isQuestionComplete(question, qStateEntry) {
   const qid = questionCompletionKey(question)
   const status = String(qStateEntry?.status ?? '').trim().toLowerCase()
   // Backend-submitted/locked rows are not editable; treat them as complete for gating Submit.
-  if (qStateEntry?.serverLocked === true || String(question?.status ?? '').trim().toLowerCase() === 'active') {
+  if (isQuestionServerLocked(question, qStateEntry)) {
     console.log('[Completion]', { qid, status, complete: true, reason: 'server-locked' })
     return true
   }
@@ -437,6 +613,7 @@ function initQAState(oppId) {
           status: q.status,
           override: q.override || '',
           editedAnswer: '',
+          acceptedAnswerValue: '',
           answerSource: 'ai',
           feedback: null,
           feedbackText: '',
@@ -453,6 +630,7 @@ const DEFAULT_API_Q_STATE = {
   status: 'pending',
   override: '',
   editedAnswer: '',
+  acceptedAnswerValue: '',
   answerSource: 'ai',
   userCleared: false,
   feedback: null,
@@ -470,6 +648,55 @@ function isBackendAnswerActive(row) {
   return String(row?.status ?? '').trim().toLowerCase() === 'active'
 }
 
+function normalizeBooleanLike(value) {
+  if (value === true || value === false) return value
+  const t = String(value ?? '').trim().toLowerCase()
+  if (t === 'true' || t === '1' || t === 'yes') return true
+  if (t === 'false' || t === '0' || t === 'no') return false
+  return null
+}
+
+/** Submitted opportunity only: filter rows using GET /answers `is_user_override` on the payload. */
+function shouldIncludeAnswerBySubmittedPayloadFilter(row, filterId) {
+  if (filterId === 'ai') return normalizeBooleanLike(row?.is_user_override) !== true
+  if (filterId === 'human') return normalizeBooleanLike(row?.is_user_override) === true
+  return true
+}
+
+function feedbackVoteFromAnswerRow(row) {
+  const candidates = [
+    row?.feedback,
+    row?.feedback_type,
+    row?.feedbackType,
+    row?.rating,
+    row?.score,
+  ]
+  for (const raw of candidates) {
+    if (raw == null || raw === '') continue
+    const n = Number(raw)
+    if (Number.isFinite(n)) {
+      const rounded = Math.round(n)
+      if (rounded >= 1 && rounded <= 5) return rounded
+    }
+  }
+  return null
+}
+
+function feedbackTextFromAnswerRow(row) {
+  const candidates = [
+    row?.feedback_text,
+    row?.feedbackText,
+    row?.comments,
+    row?.feedback_comment,
+    row?.feedbackComment,
+  ]
+  for (const raw of candidates) {
+    const t = String(raw ?? '').trim()
+    if (t) return t
+  }
+  return ''
+}
+
 /**
  * Batch-accept pending rows using merged MCQ selections and in-progress sentence edits.
  * Does not POST — returns the next `qState` snapshot and how many rows changed.
@@ -483,21 +710,6 @@ export function applyAcceptAllToQState(prevQState, {
   const next = { ...prevQState }
   let changed = 0
   const toCleanString = value => String(value ?? '').trim()
-  const normalize = value => String(value ?? '').trim().toLowerCase()
-  const selectionDiffersFromBackend = (question, selection, backend) => {
-    const selRaw = toCleanString(selection)
-    if (!selRaw) return false
-    const backRaw = toCleanString(backend)
-    if (!backRaw) return true
-
-    // Compare display labels first (id vs label normalization).
-    const selLabel = toCleanString(resolveSelectionToDisplayValue(question, selection))
-    const backLabel = toCleanString(resolveSelectionToDisplayValue(question, backend))
-    if (selLabel && backLabel && normalize(selLabel) === normalize(backLabel)) return false
-
-    // Fallback: raw compare (e.g. backend already returns an id).
-    return normalize(selRaw) !== normalize(backRaw)
-  }
 
   for (const a of apiAnswers) {
     const qidKey = String(a.question_id)
@@ -551,30 +763,33 @@ export function applyAcceptAllToQState(prevQState, {
     const accepted = isValidAnswer(finalValue)
     const backendText = toDisplayAnswerText(backendValue)
     const finalText = draftAnswer || toDisplayAnswerText(finalValue)
-    const normalizedBackend = normalize(backendText)
-    const normalizedFinal = normalize(finalText)
-    const normalizedDraft = normalize(draftAnswer)
     const hasManualOverride = toCleanString(cur.override) !== ''
     const hasManualDraft =
-      normalizedDraft !== '' &&
-      (normalizedBackend === '' || normalizedDraft !== normalizedBackend)
+      draftAnswer !== '' &&
+      isOverrideAgainstBackend(rq, a, draftAnswer, backendText)
     /**
      * IMPORTANT:
      * `apiSelections` is pre-seeded from backend payload for many unopened sections so those rows can submit.
      * That seeded selection is NOT a user edit. During Accept All, only real manual draft/override deltas
      * should flip the source to `user`; otherwise unopened AI answers get mislabeled as edited.
-     * `hasSelectionEdit` uses `selectionDiffersFromBackend` so a seeded value that still matches the backend
+     * `hasSelectionEdit` uses value comparison against backend AI so a seeded value that still matches
      * does not count as a user edit.
      */
     const hasSelectionValue = toCleanString(selectionValue) !== ''
-    const backendSelectionComparable =
-      a?.answer_id != null && String(a.answer_id).trim() !== ''
-        ? a.answer_id
-        : a?.answer_value
     const hasSelectionEdit =
       hasSelectionValue &&
-      selectionDiffersFromBackend(rq, selectionValue, backendSelectionComparable)
-    const answerSource = hasManualOverride || hasManualDraft || hasSelectionEdit ? 'user' : 'ai'
+      isOverrideAgainstBackend(
+        rq,
+        a,
+        resolveSelectionToDisplayValue(rq, selectionValue),
+        backendText,
+      )
+    const finalDiffersFromBackend =
+      finalText !== '' &&
+      isOverrideAgainstBackend(rq, a, finalText, backendText)
+    const answerSource = hasManualOverride || hasManualDraft || hasSelectionEdit || finalDiffersFromBackend
+      ? 'user'
+      : 'ai'
     console.log('[Accept All]', {
       qid: qidKey,
       draftAnswer: draftAnswer || null,
@@ -601,11 +816,22 @@ export function applyAcceptAllToQState(prevQState, {
       continue
     }
 
+    /**
+     * For AI-accepted answers, store the resolved display text of the AI answer (from row.answer_value)
+     * rather than whatever `finalText` contains — which may be a raw UUID from a pre-seeded apiSelections
+     * entry for an unopened section. Without this, the QuestionCard label comparison fails and the card
+     * incorrectly shows "ACCEPTED EDITED RESPONSE" instead of "ACCEPTED AI RESPONSE" on first open.
+     */
+    const aiCommittedText = answerSource === 'ai'
+      ? (toDisplayAnswerText(resolveSelectionToDisplayValue(rq, a?.answer_value)) || toDisplayAnswerText(a?.answer_value) || finalText)
+      : finalText
+
     next[qidKey] = {
       ...cur,
       status: 'accepted',
       override: '',
       editedAnswer: answerSource === 'user' ? finalText : '',
+      acceptedAnswerValue: aiCommittedText,
       answerSource,
       userCleared: false,
       complete: true,
@@ -616,7 +842,7 @@ export function applyAcceptAllToQState(prevQState, {
   return { next, changed }
 }
 
-export default function QAPage({ oppId, onBack, onReviewSaved }) {
+export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReviewSaved, isOpportunityLocked = false }) {
   const [apiOppName, setApiOppName] = useState(null)
   const sections = allSections[oppId] || []
   const apiFeatureOn = useOpportunityAnswersApi()
@@ -714,6 +940,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
     if (apiQData?.questions?.length) return apiQData.questions
     return []
   }, [apiData?.answers, apiQData?.questions, questionTextById, apiOid])
+
   const reviewQuestionById = useMemo(() => {
     const out = new Map()
     for (const q of reviewQuestions || []) {
@@ -763,6 +990,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
   })
   const [qState, setQState] = useState(() => initQAState(oppId))
   const [searchQuery, setSearchQuery] = useState('')
+  const [answerFilter, setAnswerFilter] = useState('all')
   const [submitNotice, setSubmitNotice] = useState(null)
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false)
   const [showSubmitSuccess, setShowSubmitSuccess] = useState(false)
@@ -779,6 +1007,23 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
   const [showConflicts, setShowConflicts] = useState(false)
   const [resolvedConflicts, setResolvedConflicts] = useState({})
   const isSubmitting = submitBusy
+  const isOpportunityReadOnly = Boolean(isOpportunityLocked)
+
+  // reviewQuestionsWithAccepted: enriches each question with is_accepted flag derived from
+  // qState (which is kept in sync with accepted_<oppId> in localStorage).
+  // Use this list when you need to know which questions have been accepted in the current session.
+  const reviewQuestionsWithAccepted = useMemo(() => {
+    return reviewQuestions.map(q => {
+      const qid = String(q?.question_id ?? '')
+      if (!qid) return q
+      const status = qState?.[qid]?.status
+      return {
+        ...q,
+        is_accepted: status === 'accepted' || status === 'overridden',
+      }
+    })
+  }, [reviewQuestions, qState])
+
   /**
    * Seed per-question review state from GET /answers once per bundle load (`oppId` reset clears the ref).
    * Local `status` is QA workflow only — never inferred from API row `active` (that flag is lifecycle/POST, not “accepted”).
@@ -786,10 +1031,26 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
   const apiReviewStateSeededRef = useRef(false)
 
   useEffect(() => {
-    setApiSelections({})
     apiReviewStateSeededRef.current = false
-    /** Fresh opportunity — review status must start pending until Accept / Accept all (not from GET /answers). */
-    setQState(initQAState(oppId))
+    const saved = readQaProgress(oppId)
+    /** Fresh opportunity starts pending, but existing progress should be restored when available. */
+    if (!saved) {
+      setActiveSec(null)
+      setApiSelections({})
+      setQState(initQAState(oppId))
+      return
+    }
+    setActiveSec(saved.activeSec != null ? String(saved.activeSec) : null)
+    setQState(
+      saved.qState && typeof saved.qState === 'object' && !Array.isArray(saved.qState)
+        ? { ...initQAState(oppId), ...saved.qState }
+        : initQAState(oppId),
+    )
+    setApiSelections(
+      saved.apiSelections && typeof saved.apiSelections === 'object' && !Array.isArray(saved.apiSelections)
+        ? saved.apiSelections
+        : {},
+    )
   }, [oppId])
 
   useEffect(() => {
@@ -839,6 +1100,40 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
     })
   }, [reviewQuestions, apiQData?.questions, apiData?.answers])
 
+  // Hydrate accepted status from accepted_<oppId> when API answers load.
+  // Merges stored accepted question IDs into qState without overwriting already-accepted rows.
+  // Adds is_accepted semantics: any question found in localStorage is treated as accepted.
+  useEffect(() => {
+    if (!apiData?.answers?.length) return
+    const storedAccepted = readAcceptedAnswers(oppId)
+    const storedQids = Object.keys(storedAccepted)
+    if (!storedQids.length) return
+    setQState(prev => {
+      let changed = false
+      const next = { ...prev }
+      for (const qid of storedQids) {
+        const cur = next[qid]
+        // Skip if already accepted/overridden or server-locked (do not regress state).
+        if (cur?.status === 'accepted' || cur?.status === 'overridden' || cur?.serverLocked) continue
+        const row = apiData.answers.find(a => String(a.question_id) === qid)
+        if (!row) continue
+        const fallbackValue = String(
+          cur?.editedAnswer || cur?.override || row.answer_value || '',
+        ).trim()
+        next[qid] = {
+          ...(cur || DEFAULT_API_Q_STATE),
+          status: 'accepted',
+          complete: true,
+          acceptedAnswerValue: fallbackValue,
+          userCleared: false,
+          is_accepted: true,
+        }
+        changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [oppId, apiData?.answers])
+
   const useApiLayout =
     apiFeatureOn &&
     apiData &&
@@ -872,10 +1167,20 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
     })
   }, [apiOid, apiLoading, apiError])
 
-  const apiGrouped = useMemo(
-    () => (apiData?.answers?.length ? groupAnswersByQaCatalog(apiData.answers) : null),
-    [apiData?.answers],
-  )
+  const apiGrouped = useMemo(() => {
+    if (!(apiData?.answers?.length)) return null
+    try {
+      return groupAnswersByQaCatalog(apiData.answers)
+    } catch (error) {
+      console.error('[QA Grouping Error]', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return {
+        sections: [],
+        uncategorized: Array.isArray(apiData.answers) ? apiData.answers : [],
+      }
+    }
+  }, [apiData?.answers])
   const apiQuestionCardModelsById = useMemo(() => {
     const out = new Map()
     for (const a of apiData?.answers || []) {
@@ -987,6 +1292,15 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
   }, [])
   const updateQDraft = useCallback((qid, value) => {
     const text = String(value ?? '').trim()
+    const qidKey = String(qid)
+    const row = apiData?.answers?.find(a => String(a.question_id) === qidKey)
+    const rq = reviewQuestions.find(r => String(r.question_id) === qidKey)
+    const backendDisplay = String(
+      resolveSelectionToDisplayValue(rq, row?.answer_value ?? row?.answer ?? '') || getConflictFallbackAnswerFromRow(row),
+    ).trim()
+    const draftIsOverride =
+      text !== '' &&
+      (backendDisplay === '' || isOverrideAgainstBackend(rq, row, text, backendDisplay))
     setQState(prev => {
       const cur = prev[qid] || DEFAULT_API_Q_STATE
       // Fix Part 4: do NOT overwrite accepted/overridden state with a draft value.
@@ -998,7 +1312,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
       const next = {
         ...cur,
         editedAnswer: value ?? '',
-        answerSource: text ? 'user' : cur.answerSource ?? 'ai',
+        answerSource: text ? (draftIsOverride ? 'user' : 'ai') : 'ai',
         complete: isValidAnswer(text),
         status: cur.status || 'pending',
       }
@@ -1008,7 +1322,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
       })
       return { ...prev, [qid]: next }
     })
-  }, [])
+  }, [apiData?.answers, reviewQuestions])
 
   const setAlignedApiSelection = useCallback((qid, nextSel) => {
     setApiSelections(prev => {
@@ -1028,6 +1342,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
     const qidKey = String(qid)
     const row = apiData?.answers?.find(a => String(a.question_id) === qidKey)
     if (isBackendAnswerActive(row)) return
+    const rq = reviewQuestions.find(r => String(r.question_id) === qidKey)
 
     const manualValueFromExtra =
       typeof extra === 'string'
@@ -1036,13 +1351,15 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
 
     const hasAssistSelection = Boolean(
       typeof extra === 'object' && extra != null && extra?.assistSelection?.mode === 'pick'
-        ? String(extra?.assistSelection?.pick ?? '').trim()
+        ? (() => {
+            const normalized = normalizePickSelectionPayload(rq, extra?.assistSelection?.pick)
+            return Boolean(normalized.answer_id || normalized.answer_value)
+          })()
         : typeof extra === 'object' && extra != null && Array.isArray(extra?.assistSelection?.multi) &&
             extra?.assistSelection?.multi?.some(x => String(x ?? '').trim() !== ''),
     )
 
     // Resolve selection side-effects (apiSelections) outside of setQState
-    const rq = reviewQuestions.find(r => String(r.question_id) === qidKey)
     let selectedValueForApi = selectionRecordGet(apiSelections, qid)
     let selectedLabel = ''
 
@@ -1062,10 +1379,12 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
           }
         }
       } else if (mode === 'pick') {
-        if (pick != null && String(pick).trim() !== '') {
-          selectedLabel = getAnswerLabelFromSelection(rq, pick) || String(pick).trim()
-          setAlignedApiSelection(qid, String(pick).trim())
-          selectedValueForApi = String(pick).trim()
+        const normalizedPick = normalizePickSelectionPayload(rq, pick)
+        if (normalizedPick.answer_id || normalizedPick.answer_value) {
+          selectedLabel = normalizedPick.answer_value || getAnswerLabelFromSelection(rq, normalizedPick.answer_id)
+          const apiValue = normalizedPick.answer_id || normalizedPick.answer_value
+          setAlignedApiSelection(qid, apiValue)
+          selectedValueForApi = apiValue
         }
       }
     }
@@ -1113,23 +1432,29 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
       const backendAnswerText = toDisplayAnswerText(
         resolveSelectionToDisplayValue(rq, row?.answer_value),
       )
-      const normalize = value => String(value ?? '').trim().toLowerCase()
-      const normalizedBackend = normalize(backendAnswerText)
-      const normalizedFinal = normalize(finalAnswerText)
-      const normalizedManual = normalize(manualValueFromExtra)
-      const normalizedSelected = normalize(selectedLabel)
-      const normalizedDraft = normalize(current.editedAnswer)
+      // QuestionCard sends `manualValue` only when user actually changed the AI recommendation.
+      // Pure "accept current AI selection" should stay AI even if display formatting differs.
+      const acceptFromUneditedAssistSelection =
+        hasAssistSelection &&
+        manualValueFromExtra === '' &&
+        !hasManualEdited &&
+        !hasManualOverride
       const hasManualValue =
-        normalizedManual !== '' &&
-        (normalizedBackend === '' || normalizedManual !== normalizedBackend)
+        manualValueFromExtra !== ''
       const hasManualSelection =
-        normalizedSelected !== '' &&
-        (normalizedBackend === '' || normalizedSelected !== normalizedBackend)
+        !acceptFromUneditedAssistSelection &&
+        selectedLabel !== '' &&
+        isOverrideAgainstBackend(rq, row, selectedLabel, backendAnswerText)
       const hasManualDraft =
-        normalizedDraft !== '' &&
-        (normalizedBackend === '' || normalizedDraft !== normalizedBackend)
+        String(current.editedAnswer ?? '').trim() !== '' &&
+        !acceptFromUneditedAssistSelection &&
+        isOverrideAgainstBackend(rq, row, current.editedAnswer, backendAnswerText)
+      const finalDiffersFromBackend =
+        finalAnswerText !== '' &&
+        !acceptFromUneditedAssistSelection &&
+        isOverrideAgainstBackend(rq, row, finalAnswerText, backendAnswerText)
       const answerSource =
-        hasManualOverride || hasManualValue || hasManualSelection || hasManualDraft
+        hasManualOverride || hasManualValue || hasManualSelection || hasManualDraft || finalDiffersFromBackend
           ? 'user'
           : 'ai'
 
@@ -1162,7 +1487,9 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
         ...prev,
         [qidKey]: {
           ...current,
+          // Persist accepted value in acceptedAnswerValue; keep editedAnswer only for true user edits.
           editedAnswer: answerSource === 'user' ? finalAnswerText : '',
+          acceptedAnswerValue: finalAnswerText,
           answerSource,
           status: 'accepted',
           complete: true,
@@ -1174,22 +1501,49 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
     })
   }, [apiData?.answers, reviewQuestions, apiSelections, setAlignedApiSelection])
   const undoQ = (qid) => {
-    if (qState[qid]?.serverLocked) return
-    updateQ(qid, { status: 'pending', override: '', editedAnswer: '', answerSource: 'ai', userCleared: false, conflictResolved: false, conflictAnswerId: null })
-    setApiSelections(prev => {
-      const next = { ...prev }
-      delete next[qid]
-      return next
+    const qidKey = String(qid)
+    const current = qState[qidKey] || DEFAULT_API_Q_STATE
+    if (current?.serverLocked) return
+
+    const row = apiData?.answers?.find(a => String(a.question_id) === qidKey)
+    const hasPureAiAnswer = answerRowQualifiesForPureAiAccept(row)
+    const currentEdited = String(current.editedAnswer ?? '').trim()
+    const preserveUserDraftOnUndo =
+      currentEdited !== '' && (current.answerSource === 'user' || !hasPureAiAnswer)
+
+    updateQ(qid, {
+      status: 'pending',
+      override: '',
+      editedAnswer: preserveUserDraftOnUndo ? current.editedAnswer : '',
+      acceptedAnswerValue: '',
+      answerSource: preserveUserDraftOnUndo ? 'user' : 'ai',
+      userCleared: false,
+      conflictResolved: false,
+      conflictAnswerId: null,
     })
   }
   const saveOverride = (qid, text) => {
     if (qState[qid]?.serverLocked) return
     const t = String(text || '').trim()
     if (!t) {
-      updateQ(qid, { status: 'pending', override: '', editedAnswer: '', answerSource: 'ai', userCleared: true })
+      updateQ(qid, { status: 'pending', override: '', editedAnswer: '', acceptedAnswerValue: '', answerSource: 'ai', userCleared: true })
       return
     }
-    updateQ(qid, { status: 'overridden', override: text, editedAnswer: text, answerSource: 'user', userCleared: false })
+    const qidKey = String(qid)
+    const row = apiData?.answers?.find(a => String(a.question_id) === qidKey)
+    const rq = reviewQuestions.find(r => String(r.question_id) === qidKey)
+    const backendDisplay = String(
+      resolveSelectionToDisplayValue(rq, row?.answer_value ?? row?.answer ?? '') || getConflictFallbackAnswerFromRow(row),
+    ).trim()
+    const overrideMatchesBackend =
+      backendDisplay !== '' &&
+      !isOverrideAgainstBackend(rq, row, t, backendDisplay)
+    updateQ(
+      qid,
+      overrideMatchesBackend
+        ? { status: 'accepted', override: '', editedAnswer: '', acceptedAnswerValue: backendDisplay || t, answerSource: 'ai', userCleared: false }
+        : { status: 'overridden', override: text, editedAnswer: text, acceptedAnswerValue: t, answerSource: 'user', userCleared: false },
+    )
     /**
      * Conflict override: keep apiSelections pinned to the resolved conflict branch id
      * (so POST can send conflict_answer_id), while override_value carries the user-chosen label.
@@ -1203,10 +1557,11 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
   }
   const editOverride = (qid) => {
     if (qState[qid]?.serverLocked) return
-    updateQ(qid, { status: 'pending' })
+    updateQ(qid, { status: 'pending', acceptedAnswerValue: '' })
   }
   const saveEdit = (qid, text) => {
     if (qState[qid]?.serverLocked) return
+    const qidKey = String(qid)
     if (apiData?.answers?.length) {
       const row = apiData.answers.find(a => a.question_id === qid)
       if (isBackendAnswerActive(row)) return
@@ -1214,36 +1569,79 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
     }
     const t = String(text || '').trim()
     if (!t) {
-      updateQ(qid, { editedAnswer: '', override: '', status: 'pending', answerSource: 'ai', userCleared: true })
+      updateQ(qid, { editedAnswer: '', override: '', acceptedAnswerValue: '', status: 'pending', answerSource: 'ai', userCleared: true })
       return
     }
     /**
      * Save changes should NOT auto-accept:
      * keep user text as a pending draft until the reviewer explicitly clicks Accept.
      */
-    updateQ(qid, { editedAnswer: text, answerSource: 'user', status: 'pending', userCleared: false })
+    const row = apiData?.answers?.find(a => String(a.question_id) === qidKey)
+    const rq = reviewQuestions.find(r => String(r.question_id) === qidKey)
+    const backendDisplay = String(
+      resolveSelectionToDisplayValue(rq, row?.answer_value ?? row?.answer ?? '') || getConflictFallbackAnswerFromRow(row),
+    ).trim()
+    updateQ(qid, {
+      editedAnswer: text,
+      acceptedAnswerValue: '',
+      answerSource: 'user',
+      status: 'pending',
+      userCleared: false,
+    })
     if (t) setAlignedApiSelection(qid, t)
   }
-  const saveFeedback = (qid, vote, text) => updateQ(qid, { feedback: vote, feedbackText: text || '' })
+  const saveFeedback = (qid, vote, text) => {
+    if (qState[qid]?.serverLocked) return
+    const existing = qState[qid]?.feedback
+    if (existing != null && existing !== '') return
+    updateQ(qid, { feedback: vote, feedbackText: text || '' })
+  }
   const resolveConflict = (qid, chosen) => {
     if (qState[qid]?.serverLocked) return
+    const qidKey = String(qid)
     const isObj = chosen != null && typeof chosen === 'object' && !Array.isArray(chosen)
     const text = isObj ? String(chosen.answer ?? '').trim() : String(chosen ?? '').trim()
+    const row = apiData?.answers?.find(a => String(a.question_id) === qidKey)
+    const rq = reviewQuestions.find(r => String(r.question_id) === qidKey)
     let id =
       isObj && chosen.answer_id != null && String(chosen.answer_id).trim() !== ''
         ? String(chosen.answer_id).trim()
         : null
     if (!id && text) {
-      const rq = reviewQuestions.find(r => r.question_id === qid)
       if (rq) {
         const opts = reviewAnswerOptions(rq)
         const hit = opts.find(
-          o => String(o.text).trim() === text || String(o.id) === text,
+          o =>
+            String(o.id ?? '').trim() === text ||
+            normalizeConflictCompareText(o?.text) === normalizeConflictCompareText(text),
         )
         if (hit) id = String(hit.id)
       }
     }
-    updateQ(qid, { editedAnswer: text, answerSource: 'user', conflictResolved: true, conflictAnswerId: id, status: 'accepted', userCleared: false, override: '' })
+    if (!id) {
+      id = resolveConflictSelectionIdFromRow(row, chosen, text)
+    }
+    const backendDisplay = String(
+      resolveSelectionToDisplayValue(rq, row?.answer_value ?? row?.answer ?? '') || getConflictFallbackAnswerFromRow(row),
+    ).trim()
+    const selectedFromConflictOptions = isObj
+    const answerSource = selectedFromConflictOptions
+      ? 'ai'
+      : (
+          text && isOverrideAgainstBackend(rq, row, text, backendDisplay)
+            ? 'user'
+            : 'ai'
+        )
+    // Picking a conflict option should only set the draft answer; acceptance is explicit (Accept / Accept all).
+    updateQ(qid, {
+      editedAnswer: text,
+      answerSource,
+      conflictResolved: true,
+      conflictAnswerId: id,
+      status: 'pending',
+      userCleared: false,
+      override: '',
+    })
     if (id) setAlignedApiSelection(qid, id)
     else if (text) setAlignedApiSelection(qid, text)
   }
@@ -1251,6 +1649,10 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
   const handleAssistSelectionDraft = useCallback((qid, draft) => {
     if (!draft) return
     setApiSelections(prev => {
+      const st = String(qState[String(qid)]?.status ?? '').trim().toLowerCase()
+      // Do not churn selection state for finalized cards; this causes visible
+      // accept/undo jitter when child effects emit stale draft snapshots.
+      if (st === 'accepted' || st === 'overridden') return prev
       const nextMulti = draft.mode === 'multi'
         ? (Array.isArray(draft.value) ? [...draft.value] : [])
         : null
@@ -1266,7 +1668,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
       if (nextPick != null && String(cur ?? '') === nextPick) return prev
       return { ...prev, [qid]: nextPick ?? '' }
     })
-  }, [])
+  }, [qState])
 
   const apiUnresolvedConflictCount = useMemo(() => {
     if (!useApiLayout || !apiData?.answers?.length) return 0
@@ -1332,8 +1734,9 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
   )
 
   const handleResolveConflicts = useCallback(() => {
+    if (isOpportunityReadOnly) return
     setShowConflicts(true)
-  }, [])
+  }, [isOpportunityReadOnly])
 
   const handleSelectConflict = useCallback((qid, value) => {
     setResolvedConflicts(prev => ({
@@ -1343,6 +1746,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
   }, [])
 
   const applyResolvedConflicts = useCallback(() => {
+    if (isOpportunityReadOnly) return
     for (const a of conflictedQuestions) {
       const qid = a.question_id
       const selected = resolvedConflicts[qid]
@@ -1350,7 +1754,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
       resolveConflict(qid, selected)
     }
     setShowConflicts(false)
-  }, [conflictedQuestions, resolvedConflicts, resolveConflict])
+  }, [conflictedQuestions, resolvedConflicts, resolveConflict, isOpportunityReadOnly])
 
   /** Resolved vs total questions that require conflict clarification (for Resolve conflicts button bar). */
   const conflictResolutionProgress = useMemo(() => {
@@ -1430,6 +1834,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
   ])
 
   const openBulkResolve = useCallback(() => {
+    if (isOpportunityReadOnly) return
     const unresolved = useApiLayout ? apiUnresolvedConflictCount : demoUnresolvedConflictCount
     const editable = useApiLayout ? apiEditableConflictCount : demoEditableConflictCount
     if (editable === 0) return
@@ -1437,7 +1842,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
     setBulkConflictSessionTotal(unresolved > 0 ? unresolved : editable)
     setBulkConflictIndex(0)
     setBulkResolveOpen(true)
-  }, [useApiLayout, apiUnresolvedConflictCount, demoUnresolvedConflictCount, apiEditableConflictCount, demoEditableConflictCount])
+  }, [useApiLayout, apiUnresolvedConflictCount, demoUnresolvedConflictCount, apiEditableConflictCount, demoEditableConflictCount, isOpportunityReadOnly])
 
   useEffect(() => {
     if (!bulkResolveOpen) return
@@ -1493,11 +1898,12 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
         const qid = String(a.question_id)
         tq++
         const st = qState[qid]?.status ?? 'pending'
-        if (st !== 'pending') aq++
-        if (st === 'accepted' || st === 'overridden') finalized++
+        const serverLocked = isQuestionServerLocked(a, qState[qid])
+        if (st !== 'pending' || serverLocked) aq++
+        if (st === 'accepted' || st === 'overridden' || serverLocked) finalized++
         if (!backendPendingQids.has(qid)) continue
         submitTq++
-        if (st === 'accepted' || st === 'overridden') submitFinalized++
+        if (st === 'accepted' || st === 'overridden' || serverLocked) submitFinalized++
         if (apiAnswerNeedsConflictClarify(a) && !qState[qid]?.conflictResolved) submitUc++
       }
       const ready = submitTq > 0 && submitUc === 0 && submitFinalized === submitTq
@@ -1516,8 +1922,9 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
         sig.qs.forEach(q => {
           tq++
           const st = qState[q.id]?.status ?? 'pending'
-          if (st !== 'pending') aq++
-          if (st === 'accepted' || st === 'overridden') finalized++
+          const serverLocked = isQuestionServerLocked(q, qState[q.id])
+          if (st !== 'pending' || serverLocked) aq++
+          if (st === 'accepted' || st === 'overridden' || serverLocked) finalized++
           if (q.conflicts?.length >= 2 && !qState[q.id]?.conflictResolved) uc++
         })
       }))
@@ -1605,6 +2012,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
   }, [activeSec, sectionComplete, pendingSectionQids])
 
   const handleAcceptAll = useCallback(() => {
+    if (isOpportunityReadOnly) return
     if (apiFeatureOn && apiData?.answers?.length && useApiLayout) {
       console.log('[Accept All Start]', {
         totalQuestions: apiData?.answers?.length ?? 0,
@@ -1679,9 +2087,11 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
     apiSelections,
     apiQData?.questions,
     sections,
+    isOpportunityReadOnly,
   ])
 
   const openSubmitModal = () => {
+    if (isOpportunityReadOnly) return
     if (isSubmitting) return
     setSubmitConfirmValidation('')
     setSubmitConfirmMissing([])
@@ -1701,15 +2111,44 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
   }
 
   const handleSaveNextClick = useCallback(() => {
-    if (!sectionComplete) return
+    if (isOpportunityReadOnly) return
+    const acceptedMap = buildAcceptedMapFromState(qState)
+    persistQaProgress(oppId, {
+      activeSec,
+      qState,
+      apiSelections,
+      updatedAt: Date.now(),
+    })
+    writeAcceptedAnswers(oppId, acceptedMap)
+    // Surface the persistence so users know their progress was captured before
+    // we change sections. Without this the section flip looks like the only
+    // effect of the click, which is what made the save feel "lost".
+    setSubmitNotice(`Saved ${Object.keys(acceptedMap).length} answers`)
+    setTimeout(() => setSubmitNotice(null), 1800)
     handleSaveNextSection()
-  }, [sectionComplete, handleSaveNextSection])
+  }, [handleSaveNextSection, isOpportunityReadOnly, oppId, activeSec, qState, apiSelections])
+
+  const handleSaveClick = useCallback(() => {
+    if (isOpportunityReadOnly) return
+    const acceptedMap = buildAcceptedMapFromState(qState)
+    persistQaProgress(oppId, {
+      activeSec,
+      qState,
+      apiSelections,
+      updatedAt: Date.now(),
+    })
+    writeAcceptedAnswers(oppId, acceptedMap)
+    setSubmitNotice('Saved')
+    setTimeout(() => setSubmitNotice(null), 1800)
+  }, [isOpportunityReadOnly, oppId, activeSec, qState, apiSelections])
 
   const handleSubmitClick = useCallback(() => {
+    if (isOpportunityReadOnly) return
     openSubmitModal()
-  }, [openSubmitModal])
+  }, [openSubmitModal, isOpportunityReadOnly])
 
   const confirmSubmit = async () => {
+    if (isOpportunityReadOnly) return
     if (isSubmitting) return
     const totalStart = performance.now()
     console.log('[Submit] Started at:', new Date().toISOString())
@@ -1870,6 +2309,16 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
         return
       }
 
+      // Final section has no "Save & next"; persist explicitly when user confirms submit.
+      const acceptedMap = buildAcceptedMapFromState(qState)
+      persistQaProgress(oppId, {
+        activeSec,
+        qState,
+        apiSelections,
+        updatedAt: Date.now(),
+      })
+      writeAcceptedAnswers(oppId, acceptedMap)
+
       setSubmitConfirmOpen(false)
       setSubmitBusy(true)
       try {
@@ -2002,6 +2451,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
           <QuestionCard
             q={qModel}
             oppId={oppId}
+            readOnly={isOpportunityReadOnly}
             qState={qState[String(a.question_id)] || DEFAULT_API_Q_STATE}
             onAccept={acceptQ}
             onUndo={undoQ}
@@ -2038,6 +2488,31 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
   const sectionQs = activeSectionData
     ? activeSectionData.signals.filter(s => s.type === 'ai').flatMap(s => s.qs)
     : []
+  const activeApiAnswers = useMemo(() => {
+    if (!useApiLayout || !apiGrouped) return []
+    if (activeSec === 'uncategorized') {
+      return Array.isArray(apiGrouped.uncategorized) ? apiGrouped.uncategorized : []
+    }
+    const active = apiGrouped.sections.find(s => s.id === activeSec)
+    if (!active) return []
+    return (Array.isArray(active.subsections) ? active.subsections : []).flatMap(sub =>
+      Array.isArray(sub.answers) ? sub.answers : [],
+    )
+  }, [useApiLayout, apiGrouped, activeSec])
+  const isOpportunityAlreadySubmitted = useMemo(() => {
+    if (!useApiLayout || !apiData?.answers?.length) return false
+    return apiData.answers.every((a) => isQuestionServerLocked(a, qState[String(a.question_id)]))
+  }, [useApiLayout, apiData?.answers, qState])
+  const filteredActiveApiAnswers = useMemo(() => {
+    if (!isOpportunityAlreadySubmitted) return activeApiAnswers
+    return activeApiAnswers.filter((answerRow) =>
+      shouldIncludeAnswerBySubmittedPayloadFilter(answerRow, answerFilter),
+    )
+  }, [activeApiAnswers, answerFilter, isOpportunityAlreadySubmitted])
+
+  useEffect(() => {
+    if (!isOpportunityAlreadySubmitted) setAnswerFilter('all')
+  }, [isOpportunityAlreadySubmitted])
 
   useEffect(() => {
     if (!apiFeatureOn || !apiData?.answers?.length) return
@@ -2047,11 +2522,23 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
       if (!apiReviewStateSeededRef.current) {
         for (const a of apiData.answers) {
           const qid = String(a.question_id)
+          const payloadFeedbackVote = feedbackVoteFromAnswerRow(a)
+          const payloadFeedbackText = feedbackTextFromAnswerRow(a)
+          // CRITICAL: preserve qState restored from localStorage (qaProgress_<oid>).
+          // Effect 1033 (oppId-keyed) runs on mount and rehydrates accepted /
+          // overridden / editedAnswer / override fields. This seed effect runs
+          // when apiData?.answers arrives — without spreading `restored` first,
+          // we'd unconditionally reset every slot to status:'pending' and the
+          // user's "Save & next" persistence would silently disappear after any
+          // reload. Status falls back to 'pending' only when nothing is restored.
+          const restored = prev[qid]
           next[qid] = {
             ...DEFAULT_API_Q_STATE,
+            ...(restored || {}),
             serverLocked: isBackendAnswerActive(a),
-            // Never map API `active` → local `accepted`; “active” is row lifecycle, not QA review completion.
-            status: 'pending',
+            status: restored?.status || 'pending',
+            feedback: restored?.feedback ?? payloadFeedbackVote,
+            feedbackText: restored?.feedbackText ?? payloadFeedbackText,
           }
           changed = true
         }
@@ -2061,17 +2548,25 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
       for (const a of apiData.answers) {
         const qid = String(a.question_id)
         const isLocked = isBackendAnswerActive(a)
+        const payloadFeedbackVote = feedbackVoteFromAnswerRow(a)
+        const payloadFeedbackText = feedbackTextFromAnswerRow(a)
         if (!next[qid]) {
           next[qid] = {
             ...DEFAULT_API_Q_STATE,
             serverLocked: isLocked,
             status: 'pending',
+            feedback: payloadFeedbackVote,
+            feedbackText: payloadFeedbackText,
           }
           changed = true
           continue
         }
         if (next[qid].serverLocked !== isLocked) {
           next[qid] = { ...next[qid], serverLocked: isLocked }
+          changed = true
+        }
+        if ((next[qid].feedback == null || next[qid].feedback === '') && payloadFeedbackVote != null) {
+          next[qid] = { ...next[qid], feedback: payloadFeedbackVote, feedbackText: payloadFeedbackText }
           changed = true
         }
       }
@@ -2132,16 +2627,45 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
     boxSizing: 'border-box',
   }
 
-  const showPrimarySubmit =
-    showSectionNav && (reviewSectionOrder.length === 1 || isLastReviewSection)
-  const showSaveNext = showSectionNav && hasNextReviewSection
+  const currentSessionNumber = activeSectionIdx >= 0 ? activeSectionIdx + 1 : 1
+  const totalSessions = reviewSectionOrder.length
+  const hasFourOrMoreSessions = totalSessions >= 4
+  // Sessions 1–(N-1): show Save & Next; last session: show Submit.
+  // For ≥4-session opportunities the 4th session (idx 3) is always the submit session
+  // regardless of how many more sections follow (matching the original requirement).
+  // For <4-session opportunities the last section is always the submit session.
+  const isPreSubmitSession = totalSessions > 1 && activeSectionIdx >= 0 && (
+    hasFourOrMoreSessions ? activeSectionIdx < 3 : !isLastReviewSection
+  )
+  const isFinalSubmitSession = activeSectionIdx >= 0 && (
+    hasFourOrMoreSessions ? activeSectionIdx >= 3 : (totalSessions === 1 || isLastReviewSection)
+  )
+
+  const { acceptedAnswersCount, totalQuestionsCount } = useMemo(() => {
+    let accepted = 0
+    const total = allQuestionsForCompletion.length
+    for (const q of allQuestionsForCompletion) {
+      const qid = questionCompletionKey(q)
+      if (!qid) continue
+      if (isQuestionComplete(q, qState?.[qid])) accepted++
+    }
+    return { acceptedAnswersCount: accepted, totalQuestionsCount: total }
+  }, [allQuestionsForCompletion, qState])
+
+  const isSubmitEnabled = totalQuestionsCount > 0 && acceptedAnswersCount === totalQuestionsCount
+  const showSaveNext = showSectionNav && isPreSubmitSession && !isOpportunityAlreadySubmitted
+  const showSubmitButton = (showSectionNav && isFinalSubmitSession) || isOpportunityAlreadySubmitted
+  const showSaveOnFinalSection = showSectionNav && isFinalSubmitSession && !isOpportunityAlreadySubmitted
   console.log('[Main Submit Render]', {
     isSubmitting,
     label: isSubmitting ? 'Submitting...' : 'Submit',
   })
   console.log('[Button Render]', {
-    submitDisabled: !allQuestionsComplete,
-    saveDisabled: !sectionComplete,
+    submitDisabled: !isSubmitEnabled,
+    saveDisabled: false,
+    currentSessionNumber,
+    acceptedAnswersCount,
+    totalQuestionsCount,
   })
 
   const qaContentMax = { maxWidth: 960, margin: 0, width: '100%', boxSizing: 'border-box' }
@@ -2208,7 +2732,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                     n +
                     sub.answers.filter(a => {
                       const st = qState[String(a.question_id)]?.status ?? 'pending'
-                      return st === 'accepted' || st === 'overridden'
+                      return st === 'accepted' || st === 'overridden' || isQuestionServerLocked(a, qState[String(a.question_id)])
                     }).length,
                   0,
                 )
@@ -2266,7 +2790,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                 const uc = apiGrouped.uncategorized
                 const uRev = uc.filter(a => {
                   const st = qState[String(a.question_id)]?.status ?? 'pending'
-                  return st === 'accepted' || st === 'overridden'
+                  return st === 'accepted' || st === 'overridden' || isQuestionServerLocked(a, qState[String(a.question_id)])
                 }).length
                 const ucConflictRows = uc.filter(a => apiAnswerNeedsConflictClarify(a))
                 const ucConflictTotal = ucConflictRows.length
@@ -2314,7 +2838,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
               const total = qs.length
               const reviewed = qs.filter(q => {
                 const st = qState[q.id]?.status ?? 'pending'
-                return st === 'accepted' || st === 'overridden'
+                return st === 'accepted' || st === 'overridden' || isQuestionServerLocked(q, qState[q.id])
               }).length
               const isActive = sec.id === activeSec
               const RowIcon = SECTION_ROW_ICON[sec.id] || IconCompass
@@ -2379,6 +2903,10 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
             <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 200px' }}>
               <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font)', color: 'var(--text3)', fontSize: 11, fontWeight: 500 }}>
                 Knowledge Assist
+              </button>
+              <span style={{ color: 'var(--border)', userSelect: 'none' }}>&gt;</span>
+              <button type="button" onClick={onBackToDataConnectors} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font)', color: 'var(--text3)', fontSize: 11, fontWeight: 500 }}>
+                Data Connectors
               </button>
               <span style={{ color: 'var(--border)', userSelect: 'none' }}>&gt;</span>
               <span style={{ color: 'var(--text2)', fontWeight: 600 }}>{resolvedOppName}</span>
@@ -2496,8 +3024,57 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
             <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.4px', color: SI_NAVY, lineHeight: 1.2 }}>{resolvedOppName}</div>
             <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 500, fontFamily: 'ui-monospace, monospace', marginTop: 2 }}>{oppId}</div>
           </div>
+          {useApiLayout && isOpportunityAlreadySubmitted && (apiData?.answers?.length ?? 0) > 0 ? (
+            <div style={{ ...qaContentMax, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              {[
+                { id: 'all', label: 'All answers' },
+                { id: 'ai', label: 'AI answers' },
+                { id: 'human', label: 'Human answers' },
+              ].map((opt) => {
+                const active = answerFilter === opt.id
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setAnswerFilter(opt.id)}
+                    style={{
+                      padding: '5px 10px',
+                      borderRadius: 999,
+                      border: active ? `1px solid ${SI_ORANGE}` : '1px solid rgba(27,38,79,.16)',
+                      background: active ? 'rgba(232,83,46,.10)' : 'rgba(255,255,255,.84)',
+                      color: active ? SI_ORANGE : 'var(--text2)',
+                      fontSize: 11,
+                      fontWeight: active ? 700 : 600,
+                      cursor: 'pointer',
+                      fontFamily: 'var(--font)',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
 
           <div style={{ ...qaContentMax }}>
+          {isOpportunityReadOnly ? (
+            <div
+              role="status"
+              style={{
+                marginBottom: 6,
+                padding: '8px 12px',
+                borderRadius: 6,
+                background: '#FEF2F2',
+                border: '1px solid #FECACA',
+                color: '#991B1B',
+                fontSize: 12,
+                fontWeight: 700,
+                lineHeight: 1.4,
+              }}
+            >
+              This opportunity is locked. You can review answers, but editing and submission are disabled.
+            </div>
+          ) : null}
           {!submitReady && totalQ > 0 && (unresolvedConflicts > 0 || pendingFinalize > 0) ? (
             <div
               role="alert"
@@ -2574,7 +3151,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
           <div style={{ ...qaContentMax, paddingBottom: 12 }}>
             {apiFeatureOn && apiLoading && (
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: SI_NAVY, marginBottom: 8 }}>Loading answers and questions…</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: SI_NAVY, marginBottom: 8 }}>Loading questions and answers…</div>
                 <OpportunityAnswersSkeleton count={4} />
               </div>
             )}
@@ -2588,7 +3165,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                 color: 'var(--text2)',
                 fontSize: 14,
               }}>
-                No answers returned for this opportunity.
+                We're generating answers for this opportunity. They'll be ready shortly—please check back in around 15 minutes.
               </div>
             )}
 
@@ -2646,16 +3223,28 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                   </div>
                 )}
                 {activeSec === 'uncategorized' ? (
-                  (Array.isArray(apiGrouped.uncategorized) ? apiGrouped.uncategorized : []).map(renderApiQuestionCard)
+                  filteredActiveApiAnswers.map(renderApiQuestionCard)
                 ) : (
                   (() => {
-                    const active = apiGrouped.sections.find(s => s.id === activeSec)
-                    if (!active) return null
-                    return (Array.isArray(active.subsections) ? active.subsections : []).flatMap(sub =>
-                      Array.isArray(sub.answers) && sub.answers.length ? sub.answers.map(renderApiQuestionCard) : []
-                    )
+                    if (activeApiAnswers.length === 0) return null
+                    return filteredActiveApiAnswers.map(renderApiQuestionCard)
                   })()
                 )}
+                {isOpportunityAlreadySubmitted && activeApiAnswers.length > 0 && filteredActiveApiAnswers.length === 0 ? (
+                  <div
+                    style={{
+                      border: '1px dashed var(--border)',
+                      borderRadius: 10,
+                      padding: '16px 14px',
+                      background: 'var(--bg2)',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: 'var(--text3)',
+                    }}
+                  >
+                    No questions match the selected answer filter.
+                  </div>
+                ) : null}
               </>
             )}
 
@@ -2666,6 +3255,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                     <QuestionCard
                       q={q}
                       oppId={oppId}
+                      readOnly={isOpportunityReadOnly}
                       qState={qState[q.id] || { status: q.status, override: '', editedAnswer: '', answerSource: 'ai', feedback: null, feedbackText: '', notes: '', conflictResolved: false, serverLocked: false }}
                       onAccept={acceptQ}
                       onUndo={undoQ}
@@ -2716,7 +3306,7 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                   <button
                     type="button"
                     onClick={handleAcceptAll}
-                    disabled={submitBusy}
+                    disabled={submitBusy || isOpportunityAlreadySubmitted || isOpportunityReadOnly}
                     title="Accept every pending question using your current MCQ selections and sentence edits. Does not send to the server — use Submit for that."
                     style={{
                       ...footBarBtnBase,
@@ -2724,6 +3314,8 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                       background: 'var(--bg2)',
                       color: SI_NAVY,
                       boxShadow: 'none',
+                      opacity: submitBusy || isOpportunityAlreadySubmitted || isOpportunityReadOnly ? 0.7 : 1,
+                      cursor: submitBusy || isOpportunityAlreadySubmitted || isOpportunityReadOnly ? 'not-allowed' : 'pointer',
                     }}
                   >
                     Accept all answers
@@ -2733,27 +3325,47 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                   <button
                     type="button"
                     onClick={handleSaveNextClick}
-                    disabled={!sectionComplete}
+                    disabled={isOpportunityReadOnly}
                     style={{
                       ...footBarBtnBase,
                       border: 'none',
-                      background: sectionComplete ? SI_ORANGE : 'var(--bg3)',
-                      color: sectionComplete ? '#fff' : 'var(--text3)',
-                      boxShadow: sectionComplete ? '0 2px 10px rgba(232,83,46,.28)' : 'none',
-                      cursor: sectionComplete ? 'pointer' : 'not-allowed',
-                      opacity: sectionComplete ? 1 : 0.7,
+                      background: !isOpportunityReadOnly ? SI_ORANGE : 'var(--bg3)',
+                      color: !isOpportunityReadOnly ? '#fff' : 'var(--text3)',
+                      boxShadow: !isOpportunityReadOnly ? '0 2px 10px rgba(232,83,46,.28)' : 'none',
+                      cursor: !isOpportunityReadOnly ? 'pointer' : 'not-allowed',
+                      opacity: !isOpportunityReadOnly ? 1 : 0.7,
                     }}
                   >
                     Save &amp; next
                   </button>
                 )}
-                {showPrimarySubmit && (
+                {showSaveOnFinalSection && (
+                  <button
+                    type="button"
+                    onClick={handleSaveClick}
+                    disabled={isOpportunityReadOnly}
+                    style={{
+                      ...footBarBtnBase,
+                      border: '1px solid rgba(27,38,79,.22)',
+                      background: 'var(--bg2)',
+                      color: SI_NAVY,
+                      boxShadow: 'none',
+                      opacity: !isOpportunityReadOnly ? 1 : 0.7,
+                      cursor: !isOpportunityReadOnly ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    Save
+                  </button>
+                )}
+                {showSubmitButton && (
                   <button
                     type="button"
                     onClick={handleSubmitClick}
-                    disabled={isSubmitting}
+                    disabled={!isSubmitEnabled || isSubmitting || isOpportunityAlreadySubmitted || isOpportunityReadOnly}
                     title={
-                      !allQuestionsComplete
+                      isOpportunityAlreadySubmitted
+                        ? 'Responses are already submitted'
+                        : !isSubmitEnabled
                         ? unresolvedConflicts > 0
                           ? 'Resolve all conflicts before submitting'
                           : 'Accept or override every question before submitting'
@@ -2762,11 +3374,11 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                     style={{
                       ...footBarBtnBase,
                       border: 'none',
-                      opacity: allQuestionsComplete && !isSubmitting ? 1 : 0.7,
-                      cursor: allQuestionsComplete && !isSubmitting ? 'pointer' : 'not-allowed',
-                      background: allQuestionsComplete && !isSubmitting ? SI_ORANGE : 'var(--bg3)',
-                      color: allQuestionsComplete && !isSubmitting ? '#fff' : 'var(--text3)',
-                      boxShadow: allQuestionsComplete && !isSubmitting ? '0 2px 10px rgba(232,83,46,.28)' : 'none',
+                      opacity: isSubmitEnabled && !isSubmitting && !isOpportunityAlreadySubmitted && !isOpportunityReadOnly ? 1 : 0.7,
+                      cursor: isSubmitEnabled && !isSubmitting && !isOpportunityAlreadySubmitted && !isOpportunityReadOnly ? 'pointer' : 'not-allowed',
+                      background: isSubmitEnabled && !isSubmitting && !isOpportunityAlreadySubmitted && !isOpportunityReadOnly ? SI_ORANGE : 'var(--bg3)',
+                      color: isSubmitEnabled && !isSubmitting && !isOpportunityAlreadySubmitted && !isOpportunityReadOnly ? '#fff' : 'var(--text3)',
+                      boxShadow: isSubmitEnabled && !isSubmitting && !isOpportunityAlreadySubmitted && !isOpportunityReadOnly ? '0 2px 10px rgba(232,83,46,.28)' : 'none',
                     }}
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit'}
@@ -2785,15 +3397,15 @@ export default function QAPage({ oppId, onBack, onReviewSaved }) {
                 <button
                   type="button"
                   onClick={openBulkResolve}
-                  disabled={bulkResolveConflictCount === 0}
-                  title={bulkResolveConflictCount === 0 ? 'No conflicts to resolve' : undefined}
+                  disabled={bulkResolveConflictCount === 0 || isOpportunityReadOnly}
+                  title={bulkResolveConflictCount === 0 || isOpportunityReadOnly ? 'No conflicts to resolve' : undefined}
                   style={{
                     ...footBarBtnBase,
-                    opacity: bulkResolveConflictCount === 0 ? 0.5 : 1,
-                    cursor: bulkResolveConflictCount === 0 ? 'not-allowed' : 'pointer',
-                    border: `1px solid ${bulkResolveConflictCount > 0 ? '#DC2626' : 'var(--border)'}`,
-                    color: bulkResolveConflictCount > 0 ? '#DC2626' : 'var(--text2)',
-                    background: bulkResolveConflictCount > 0 ? 'rgba(220,38,38,.06)' : 'var(--bg3)',
+                    opacity: bulkResolveConflictCount === 0 || isOpportunityReadOnly ? 0.5 : 1,
+                    cursor: bulkResolveConflictCount === 0 || isOpportunityReadOnly ? 'not-allowed' : 'pointer',
+                    border: `1px solid ${bulkResolveConflictCount > 0 && !isOpportunityReadOnly ? '#DC2626' : 'var(--border)'}`,
+                    color: bulkResolveConflictCount > 0 && !isOpportunityReadOnly ? '#DC2626' : 'var(--text2)',
+                    background: bulkResolveConflictCount > 0 && !isOpportunityReadOnly ? 'rgba(220,38,38,.06)' : 'var(--bg3)',
                   }}
                 >
                   Resolve conflicts{bulkResolveConflictCount > 0 ? ` (${bulkResolveConflictCount})` : ''}
