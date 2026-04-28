@@ -789,7 +789,7 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
                 No emails found for this project
               </div>
               <div style={{ fontSize: 11.5, color: '#92400E', lineHeight: 1.55, marginBottom: 8 }}>
-                We searched <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`subject:${oid} OR body:${oid}`}</code> in your mailbox and got no matches. Send or receive emails that include <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{oid}</code> in the subject or body, then click <strong>Resync</strong>.
+                No email thread for this project id was found yet. Send or receive emails that include <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{oid}</code> in the subject, then click <strong>Resync</strong>. We search using <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`subject:${oid}`}</code>.
               </div>
               <button type="button" onClick={handleCopyOid}
                 style={{
