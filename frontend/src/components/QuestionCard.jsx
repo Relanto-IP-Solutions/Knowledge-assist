@@ -995,18 +995,26 @@ export function QuestionCard({
       manualComparedToAiIsOverride ||
       (!hasBackendAI && assistUserHasAnyResponse)
     )
+  /**
+   * Submitted/locked rows must keep a stable heading across filter toggles.
+   * Derive directly from payload `is_user_override` when available so transient local draft
+   * state cannot relabel AI responses as edited (or vice versa).
+   */
+  const payloadOverrideForSubmitted = normalizePayloadBooleanLike(q?.is_user_override)
   const reviewHeading =
-    isAcceptedLike
-      ? acceptedByAi
-        ? 'ACCEPTED AI RESPONSE'
-        : acceptedByUser
-          ? 'ACCEPTED USER RESPONSE'
-          : 'ACCEPTED RESPONSE'
-      : pendingHasUserEdits
-        ? 'EDITED RESPONSE'
-        : hasBackendAI
-          ? 'AI RECOMMENDED RESPONSE'
-          : 'NO EXTRACTED ANSWER'
+    isSubmittedLocked && payloadOverrideForSubmitted != null
+      ? (payloadOverrideForSubmitted ? 'EDITED RESPONSE' : (hasBackendAI ? 'AI RECOMMENDED RESPONSE' : 'NO EXTRACTED ANSWER'))
+      : isAcceptedLike
+        ? acceptedByAi
+          ? 'ACCEPTED AI RESPONSE'
+          : acceptedByUser
+            ? 'ACCEPTED USER RESPONSE'
+            : 'ACCEPTED RESPONSE'
+        : pendingHasUserEdits
+          ? 'EDITED RESPONSE'
+          : hasBackendAI
+            ? 'AI RECOMMENDED RESPONSE'
+            : 'NO EXTRACTED ANSWER'
   const acceptBtnLabel =
     userHasEdited ? 'Accept Answer' : hasBackendAI ? 'Accept AI Answer' : 'Accept Answer'
   const isAccepted = st === 'accepted'

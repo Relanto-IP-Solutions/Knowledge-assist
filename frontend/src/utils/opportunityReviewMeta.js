@@ -124,9 +124,11 @@ export function resolveConflictIdForPost(rawRow, q, opportunityId) {
 
   if (!hasConflict) return null
 
-  if (fromRaw) return fromRaw
-  if (fromQ) return fromQ
-  if (oid && qid) return inferConflictGroupId(oid, qid)
+  // Only return real (backend-provided) conflict_ids, never synthetic/inferred ones.
+  // Synthetic ids (e.g. `{oid}:{qid}:conflict`) cause backend POST failures because
+  // the `conflicts` table does not contain them.
+  if (fromRaw && !isFrontendInferredConflictGroupId(fromRaw, oid, qid)) return fromRaw
+  if (fromQ && !isFrontendInferredConflictGroupId(fromQ, oid, qid)) return fromQ
   return null
 }
 
@@ -146,6 +148,15 @@ export function validatePostConflictIds(updates, rawAnswerRows) {
     if (!qid) continue
     const row = byQ.get(qid)
     if (!row || !hasExtractedAnswerConflicts(row)) continue
+    // Skip enforcement when the row's conflict_id is a frontend-inferred synthetic id
+    // (e.g. `{oid}:{qid}:conflict`). These don't exist in the backend `conflicts` table,
+    // so requiring them in the POST would always fail.
+    const rowCid = row?.conflict_id != null ? String(row.conflict_id).trim() : ''
+    if (rowCid && isFrontendInferredConflictGroupId(rowCid, null, qid)) continue
+    // Also skip if the row has no real conflict_id at all (only conflicts[] array)
+    if (!rowCid && Array.isArray(row?.conflicts) && row.conflicts.length > 0) continue
+    // User-entered overrides are submitted with conflict_id: null intentionally; do not require it
+    if (u?.is_user_override === true) continue
     const cid = u?.conflict_id
     if (cid == null || String(cid).trim() === '') bad.push(qid)
   }
@@ -777,10 +788,16 @@ export function validateReviewSelectionsForSubmit(questions, apiSelections, qSta
 
     const rawRow = rawByQ.get(postMapQidKey(qid)) || {}
     /**
-     * Only treat as a conflict if the **GET /answers row** indicates it (conflicts[] and/or conflict_id).
-     * Some question catalog rows carry a `conflict` object for other purposes; that must not block submit.
+     * Only treat as a conflict if the **GET /answers row** has a real (non-synthetic) conflict_id
+     * AND actual competing answer texts. Rows with only a frontend-inferred conflict_id
+     * (e.g. `{oid}:{qid}:conflict`) should not block submission.
      */
+    const rawConflictIdStr = rawRow?.conflict_id != null ? String(rawRow.conflict_id).trim() : ''
+    const hasRealConflictId =
+      rawConflictIdStr !== '' &&
+      !isFrontendInferredConflictGroupId(rawConflictIdStr, opportunityId, qid)
     const hasBackendConflict =
+      hasRealConflictId &&
       hasExtractedAnswerConflicts(rawRow) &&
       (
         // Only enforce conflict resolution when there are actual competing answer texts.
@@ -834,6 +851,25 @@ export function validateReviewSelectionsForSubmit(questions, apiSelections, qSta
     if (multi) {
       let ids = Array.isArray(sel) ? sel.filter(x => x != null && String(x).trim() !== '') : []
       /**
+       * Conflict-array rows (conflicts[] present, no group conflict_id) are classified as
+       * multi here because conflictId is null and n >= 2. The user resolves them by picking
+       * one option (stored as a string in apiSelections) or by entering a manual answer.
+       * Both are valid — treat a non-array string sel as a single valid selection.
+       */
+      if (ids.length === 0 && typeof sel === 'string' && sel.trim() !== '') ids = [sel.trim()]
+      /**
+       * Also accept a pinned conflict answer id (set when the user resolves the conflict modal)
+       * or a manually entered answer (editedAnswer) — both mean the user has provided a response.
+       */
+      if (ids.length === 0) {
+        const caid = String(st?.conflictAnswerId ?? '').trim()
+        if (caid) ids = [caid]
+      }
+      if (ids.length === 0) {
+        const editedV = String(st?.editedAnswer ?? '').trim()
+        if (editedV) continue
+      }
+      /**
        * Merged map can be empty after id alignment or key quirks even when GET /answers + review `q`
        * still carry `selected_answer_ids` / list `answer_value` — same fallbacks as
        * {@link mergeApiSelectionsForSubmit}.
@@ -855,6 +891,10 @@ export function validateReviewSelectionsForSubmit(questions, apiSelections, qSta
               ? rawRow.answer_value.map(x => String(x).trim()).filter(Boolean)
               : []
         if (list.length) ids = list.map(String)
+      }
+      // Final fallback: a raw backend answer_id counts as a submitted answer
+      if (ids.length === 0 && rawRow.answer_id != null && String(rawRow.answer_id).trim() !== '') {
+        ids = [String(rawRow.answer_id).trim()]
       }
       if (ids.length === 0) errorsByQid[qid] = 'Choose at least one option'
       continue
@@ -1071,7 +1111,10 @@ export function mergeApiSelectionsForSubmit(questions, apiSelections, answersRow
     if (qKey == null) continue
     backfillFromAcceptedState(q, out, qState || {})
     const row = byQ.get(postMapQidKey(qKey))
-    const conflictId = Boolean(q.conflict?.conflict_id)
+    const conflictId =
+      q?.conflict?.conflict_id != null && String(q.conflict.conflict_id).trim() !== ''
+        ? String(q.conflict.conflict_id).trim()
+        : null
     const opts = reviewAnswerOptions(q)
     const n = opts.length
     const pick = isReviewPicklistRadiosMode(q, n, conflictId)
@@ -2444,7 +2487,10 @@ export function applyPostIdAlignmentToSelections(questions, selections, question
     if (qKey == null) continue
     const k = String(qKey)
     if (!Object.prototype.hasOwnProperty.call(out, k)) continue
-    const conflictId = Boolean(q.conflict?.conflict_id)
+    const conflictId =
+      q?.conflict?.conflict_id != null && String(q.conflict.conflict_id).trim() !== ''
+        ? String(q.conflict.conflict_id).trim()
+        : null
     const opts = reviewAnswerOptions(q)
     const n = opts.length
     const pick = isReviewPicklistRadiosMode(q, n, conflictId)
@@ -2776,6 +2822,77 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
     const isReviewedNonOverrideState =
       (st?.status != null && st.status !== 'pending' && st.status !== 'overridden') ||
       (st?.status == null && rawStatus === 'active')
+
+    /**
+     * Rows that carry `conflicts[]` but no backend group `conflict_id`:
+     * - AI-selected conflict option → `conflict_id` = selected option's `answer_id`
+     * - User text override         → `conflict_id: null, is_user_override: true`
+     *
+     * These rows must be handled here before the plain pick/multi/text branches, which
+     * would otherwise send `conflict_id: null` without `is_user_override`, causing the
+     * backend to reject with "conflict_id not found".
+     */
+    if (!conflictId && Array.isArray(rawRowForQ?.conflicts) && rawRowForQ.conflicts.length > 0) {
+      const conflictsArr = rawRowForQ.conflicts
+      const isUserOverrideForConflict =
+        st?.status === 'overridden' ||
+        (String(st?.answerSource ?? '').trim().toLowerCase() === 'user' &&
+          String(st?.editedAnswer ?? '').trim() !== '')
+
+      if (isUserOverrideForConflict) {
+        // User manually entered an answer — conflict_id is not required
+        const userText = String(st?.editedAnswer ?? st?.override ?? '').trim()
+        if (userText) {
+          push({
+            q_id: qid,
+            answer_id:
+              rawRowForQ?.answer_id != null && String(rawRowForQ.answer_id).trim() !== ''
+                ? String(rawRowForQ.answer_id).trim()
+                : null,
+            conflict_id: null,
+            conflict_answer_id: null,
+            is_user_override: true,
+            override_value: userText,
+          })
+        }
+        continue
+      }
+
+      // AI-selected conflict option: use the selected option's answer_id as conflict_id
+      const pinnedCaid =
+        st?.conflictAnswerId != null && String(st.conflictAnswerId).trim() !== ''
+          ? String(st.conflictAnswerId).trim()
+          : null
+      const selStrForConflict = pickSelectionString(sel)
+
+      let selectedConflictAnswerId = null
+      if (pinnedCaid) {
+        // Prefer the conflict answer id pinned by the UI when the user resolved the modal
+        selectedConflictAnswerId = pinnedCaid
+      } else if (selStrForConflict) {
+        // Match the selection string against conflict options by id or display value
+        const hit = conflictsArr.find(
+          c =>
+            String(c.answer_id ?? '').trim() === selStrForConflict ||
+            String(c.answer_value ?? '').trim() === selStrForConflict,
+        )
+        selectedConflictAnswerId = hit?.answer_id ? String(hit.answer_id).trim() : null
+      }
+
+      if (selectedConflictAnswerId) {
+        push({
+          q_id: qid,
+          conflict_id: selectedConflictAnswerId,
+          conflict_answer_id: selectedConflictAnswerId,
+          is_user_override: false,
+        })
+      }
+      // If no conflict option was selected and no user override, skip.
+      // Upstream validation (validateReviewSelectionsForSubmit) should have already
+      // blocked submission for unresolved conflict rows.
+      continue
+    }
+
     if (!conflictId && isReviewedNonOverrideState && nowSelEmpty) {
       const at = normalizeAnswerType(q)
       if (at === 'multi_select') {

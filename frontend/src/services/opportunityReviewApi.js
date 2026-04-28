@@ -162,13 +162,14 @@ function sanitizeOneAnswerUpdate(raw) {
     out.answer_id = aidNorm.value
   }
 
-  if (conflictId != null) out.conflict_id = conflictId
-  if (conflictAnswerId != null) out.conflict_answer_id = conflictAnswerId
-
   const hasConflictPair = Boolean(
     conflictId != null && String(conflictId).trim() !== '' &&
     conflictAnswerId != null && String(conflictAnswerId).trim() !== ''
   )
+  if (hasConflictPair) {
+    out.conflict_id = conflictId
+    out.conflict_answer_id = conflictAnswerId
+  }
 
   /**
    * Backend rule: `override_value` is required whenever `is_user_override` is true.

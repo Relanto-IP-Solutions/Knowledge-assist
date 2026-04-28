@@ -725,10 +725,48 @@ function normalizeBooleanLike(value) {
   return null
 }
 
-/** Submitted opportunity only: filter rows using GET /answers `is_user_override` on the payload. */
-function shouldIncludeAnswerBySubmittedPayloadFilter(row, filterId) {
-  if (filterId === 'ai') return normalizeBooleanLike(row?.is_user_override) !== true
-  if (filterId === 'human') return normalizeBooleanLike(row?.is_user_override) === true
+/**
+ * Submitted opportunity filter must reflect the currently shown accepted label.
+ * Prefer payload `is_user_override`, but fall back to local accepted value vs backend AI comparison.
+ */
+function shouldIncludeAnswerBySubmittedPayloadFilter({
+  row,
+  filterId,
+  qStateEntry,
+  reviewQuestion,
+}) {
+  const payloadOverride = normalizeBooleanLike(row?.is_user_override)
+  let isHumanAnswer = payloadOverride === true
+
+  if (payloadOverride == null) {
+    const fallbackQuestion =
+      reviewQuestion ||
+      opportunityAnswerRowToReviewQuestion(row || {}, {
+        questionText: row?.question_text,
+      })
+    const acceptedValue = String(
+      qStateEntry?.acceptedAnswerValue ||
+      qStateEntry?.override ||
+      qStateEntry?.editedAnswer ||
+      '',
+    ).trim()
+    const backendValue = String(
+      resolveSelectionToDisplayValue(
+        fallbackQuestion,
+        row?.answer_value ?? row?.answer ?? '',
+      ) || '',
+    ).trim()
+    const localUserSource = String(qStateEntry?.answerSource ?? '').trim().toLowerCase() === 'user'
+    const overriddenStatus = String(qStateEntry?.status ?? '').trim().toLowerCase() === 'overridden'
+    const acceptedLooksEdited =
+      acceptedValue !== '' &&
+      isOverrideAgainstBackend(fallbackQuestion, row, acceptedValue, backendValue)
+
+    isHumanAnswer = localUserSource || overriddenStatus || acceptedLooksEdited
+  }
+
+  if (filterId === 'ai') return !isHumanAnswer
+  if (filterId === 'human') return isHumanAnswer
   return true
 }
 
@@ -1246,6 +1284,10 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
       for (const qid of allAcceptedQids) {
         const cur = next[qid]
         const row = apiData.answers.find(a => String(a.question_id) === qid)
+        // Respect explicit user undo/clear actions in this session.
+        // Without this guard, a stale accepted_<oppId> snapshot can immediately
+        // rehydrate the question back to accepted after Undo.
+        if (cur?.userCleared === true) continue
         // For already-accepted rows: do not regress any fields, but DO repair a missing
         // conflictResolved flag (can be false when the row was persisted by an older code path
         // that didn't write this field, or when localStorage was partially cleared).
@@ -1743,7 +1785,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
       editedAnswer: restoredDraftValue,
       acceptedAnswerValue: '',
       answerSource: restoredAnswerSource,
-      userCleared: false,
+      userCleared: true,
       conflictResolved: current.conflictResolved,
       conflictAnswerId: current.conflictAnswerId ?? null,
     })
@@ -2848,10 +2890,17 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
   }, [useApiLayout, apiData?.answers, qState])
   const filteredActiveApiAnswers = useMemo(() => {
     if (!isOpportunityAlreadySubmitted) return activeApiAnswers
-    return activeApiAnswers.filter((answerRow) =>
-      shouldIncludeAnswerBySubmittedPayloadFilter(answerRow, answerFilter),
-    )
-  }, [activeApiAnswers, answerFilter, isOpportunityAlreadySubmitted])
+    return activeApiAnswers.filter((answerRow) => {
+      const qid = String(answerRow?.question_id ?? '')
+      const reviewQuestion = reviewQuestionById.get(qid) || null
+      return shouldIncludeAnswerBySubmittedPayloadFilter({
+        row: answerRow,
+        filterId: answerFilter,
+        qStateEntry: qState[qid],
+        reviewQuestion,
+      })
+    })
+  }, [activeApiAnswers, answerFilter, isOpportunityAlreadySubmitted, reviewQuestionById, qState])
 
   useEffect(() => {
     if (!isOpportunityAlreadySubmitted) setAnswerFilter('all')
@@ -3818,12 +3867,8 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
             : null
         }
         omitPrimaryRecommendation={!bulkResolveIncludeResolved}
-        onPrev={bulkConflictIndex > 0 ? () => setBulkConflictIndex(i => Math.max(0, i - 1)) : undefined}
-        onNext={
-          bulkConflictIndex < bulkConflictCandidates.length - 1
-            ? () => setBulkConflictIndex(i => Math.min(bulkConflictCandidates.length - 1, i + 1))
-            : undefined
-        }
+        onPrev={() => setBulkConflictIndex(i => Math.max(0, i - 1))}
+        onNext={() => setBulkConflictIndex(i => Math.min(bulkConflictCandidates.length - 1, i + 1))}
         hasPrev={bulkConflictIndex > 0}
         hasNext={bulkConflictIndex < bulkConflictCandidates.length - 1}
         onConfirm={(chosen) => {
