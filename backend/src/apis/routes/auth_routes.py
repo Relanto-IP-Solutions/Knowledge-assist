@@ -308,22 +308,28 @@ async def microsoft_oauth_browser_callback(
             status_code=403,
         )
 
-    forwarded_proto = request.headers.get("x-forwarded-proto")
-    path = request.url.path
-    if forwarded_proto:
+    settings = get_settings()
+    oauth_base = (settings.app.oauth_callback_base_url or "").strip().rstrip("/")
+    
+    if oauth_base:
+        # Production: use explicit base URL from environment
+        redirect_uri = f"{oauth_base}/oauth/microsoft/callback"
+    else:
+        # Local dev fallback: compute from request headers
+        forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        path = request.url.path
         if not path.startswith("/api/"):
             path = f"/api{path}"
-        scheme = forwarded_proto
-    else:
-        scheme = request.url.scheme
-    redirect_uri = f"{scheme}://{request.url.netloc}{path}"
+        redirect_uri = f"{forwarded_proto}://{request.url.netloc}{path}"
+    
+    logger.info("Microsoft OAuth redirect_uri: {}", redirect_uri)
+    
     try:
         await oauth_service.exchange_microsoft_code(code, redirect_uri, db, user_email)
     except ValueError as exc:
         logger.warning("Microsoft OAuth exchange failed: {}", exc)
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
-    settings = get_settings()
     frontend_base = (settings.app.frontend_app_url or "").strip().rstrip("/")
     if normalized_oid:
         return RedirectResponse(
@@ -358,15 +364,22 @@ async def slack_oauth_browser_callback(
             },
             status_code=400,
         )
-    forwarded_proto = request.headers.get("x-forwarded-proto")
-    path = request.url.path
-    if forwarded_proto:
+    settings = get_settings()
+    oauth_base = (settings.app.oauth_callback_base_url or "").strip().rstrip("/")
+    
+    if oauth_base:
+        # Production: use explicit base URL from environment
+        redirect_uri = f"{oauth_base}/oauth/slack/callback"
+    else:
+        # Local dev fallback: compute from request headers
+        forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        path = request.url.path
         if not path.startswith("/api/"):
             path = f"/api{path}"
-        scheme = forwarded_proto
-    else:
-        scheme = request.url.scheme
-    redirect_uri = f"{scheme}://{request.url.netloc}{path}"
+        redirect_uri = f"{forwarded_proto}://{request.url.netloc}{path}"
+    
+    logger.info("Slack OAuth redirect_uri: {}", redirect_uri)
+    
     try:
         result = await oauth_service.exchange_slack_code(code, redirect_uri, db, user_email)
         return JSONResponse({"ok": True, **result})
