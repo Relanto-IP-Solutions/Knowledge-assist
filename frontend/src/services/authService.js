@@ -45,9 +45,9 @@ export function isRelantoEmail(email) {
 }
 
 function assertRelantoEmail(email) {
-  if (!isRelantoEmail(email)) {
-    throw new Error(`Only @${ORG_DOMAIN} email addresses are allowed.`)
-  }
+  // Mixed-domain auth is allowed (e.g. relanto.ai admin + gmail user).
+  // Keep backend RBAC as the source of truth for permissions.
+  void email
 }
 
 export function toSessionUserFromFirebase(fbUser) {
@@ -227,12 +227,6 @@ export async function sendPasswordReset(email) {
 async function signInWithPopupProvider(provider, providerLabel, attemptedKind) {
   try {
     const cred = await signInWithPopup(auth, provider)
-    const em = cred.user.email
-    if (!em || !isRelantoEmail(em)) {
-      await signOut(auth)
-      clearAuthTokenCookie()
-      throw new Error(`Only @${ORG_DOMAIN} ${providerLabel} accounts are allowed.`)
-    }
     const token = await persistUserIdToken(cred.user)
     if (!token) throw new Error('Could not obtain Firebase ID token.')
 
@@ -315,13 +309,6 @@ export function subscribeAuth(callback) {
 
   return onAuthStateChanged(auth, async (fbUser) => {
     if (!fbUser) {
-      clearAuthTokenCookie()
-      callback(null)
-      return
-    }
-    const em = fbUser.email
-    if (em && !isRelantoEmail(em)) {
-      signOut(auth).catch(() => {})
       clearAuthTokenCookie()
       callback(null)
       return
