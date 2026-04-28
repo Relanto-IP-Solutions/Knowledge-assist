@@ -42,18 +42,51 @@ _EXTRACTION_RULES = """\
 
 1. Extract only what is explicitly stated. Do not infer, assume, or generalise.
 2. If a field is not addressed in the context, set `answer` to null.
-3. Set `conflict` to true ONLY when two or more sources make explicitly opposite \
-or directly contradictory claims about the same fact — for example:
-   - Source A says "Yes, X is in scope" and Source B says "No, X is not in scope".
-   - Source A says the value is 100 and Source B says the value is 200.
-   - Source A says the vendor is Zscaler and Source B says the vendor is Netskope.
-   Do NOT flag a conflict merely because one source mentions fewer items than \
-another, or because one source provides less detail. A conflict requires an \
-explicit negation or direct factual disagreement. When a conflict is detected, \
-populate `conflict_details` with each contradicting value, its source name, and \
-a verbatim excerpt, and set `answer` to null.
-4. For picklist fields, return one of the listed option strings exactly as \
-written, or null.
+3. CANONICALIZE FIRST (always) — before writing ANY value anywhere in your response \
+(in `answer`, in `conflict_details[].value`, or anywhere else), convert raw mentions into \
+canonical values so you do NOT create duplicate candidates.
+   - Canonicalization means: remove surface-form differences that do not change meaning \
+and keep ONE best representation (usually the most explicit / complete).
+   - Apply canonicalization to BOTH `answer` and every `conflict_details[].value`.
+   - After canonicalizing across all sources, compute how many DISTINCT canonical values remain:
+     - ONE distinct value → `conflict=false`, set `answer` to that value.
+     - TWO OR MORE distinct values → `conflict=true`, set `answer=null`, and write EXACTLY \
+       one `conflict_details` entry per distinct canonical value (no duplicates/paraphrases).
+
+   General canonicalization patterns (examples):
+   - Same number + same unit expressed differently → ONE value:
+     "24" = "24h" = "24 hours" = "within 24 hours" → "24 hours"
+   - Same range expressed differently → ONE value:
+     "24-48" = "24 to 48 hours" = "24–48 hours" → "24-48 hours"
+   - Same percentage expressed differently → ONE value:
+     "99.9" = "99.9%" = "99.9 percent" → "99.9%"
+   - Case/format noise does not create new values:
+     "annually" = "Annually" (for picklists: output MUST match an option exactly)
+
+   Keep values separate (these are genuinely different facts and MUST be conflicts):
+   - Different numbers or ranges: "24 hours" vs "48 hours" vs "24-48 hours"
+   - Different frequencies: "Quarterly" vs "Annually" vs "Continuous"
+   - Different vendors/products: "Zscaler" vs "Palo Alto"
+   - Yes vs No: "in scope" vs "not in scope"
+   - Any two distinct picklist option values
+
+   Picklist mapping example:
+   Options: Quarterly, Semi-Annually, Annually, Continuous
+   Text: "annual external testing and quarterly internal testing"
+   → conflict with values "Annually" and "Quarterly" (exact option strings); do NOT combine \
+     into a descriptive sentence.
+4. For picklist fields:
+   - The `answer` MUST be one of the exact option strings listed in ``options``, \
+or null. NEVER return a description, paraphrase, or combined phrase — even if the \
+document text uses different wording, you must map it to the closest matching option \
+string or null.
+   - In ``conflict_details``, every ``value`` entry MUST also be one of the exact \
+option strings, not free text.
+   - If the document mentions content that maps to TWO OR MORE different picklist \
+options (e.g. "annual external audit and quarterly internal red team" maps to both \
+"Annually" and "Quarterly"), treat this as a conflict: set `answer` to null, \
+`conflict` to true, and list each applicable picklist option as a separate entry \
+in `conflict_details`.
 5. For multi-select fields, return a JSON array of matching option strings, or null.
 6. For integer fields, return a number or null.\
 """
@@ -79,7 +112,10 @@ Every field in the JSON object has this structure:
 (e.g. "acme_overview.pdf states Cortex XDR is in scope while the Zoom transcript \
 explicitly states it is not part of this opportunity"). Set to null when conflict=false.
 - `conflict_details`: when conflict=true, each entry has value, source, excerpt, \
-and source_type (from the context header, e.g. 'zoom_transcript', 'pdf').
+and source_type (from the context header, e.g. 'zoom_transcript', 'pdf'). \
+CRITICAL: every `value` in this list must be unique — no two entries may \
+express the same underlying fact with different phrasing. Canonicalize first \
+(see Rule 3), then write one entry per distinct canonical value only.
 - `answer_basis`: the specific source(s) and verbatim excerpt(s) that directly \
 produced the final answer. Include source_type from the context header \
 (e.g. 'zoom_transcript', 'document', 'slack_message'). Leave as [] when `answer` is null.\
@@ -142,6 +178,55 @@ _FEW_SHOT_EXAMPLES = """\
     {"source": "acme_overview.pdf", "excerpt": "In-scope products: Prisma Access and Prisma SD-WAN for Phase 1.", "source_type": "document"}
   ],
   "sources": ["acme_overview.pdf", "slack://channel/opp-q1"]
+}
+```
+
+**Example 3c — NOT a conflict (same fact, different phrasings — canonicalize to most complete)**
+Sources say "24", "24 hours", "24-hour notification" — all mean the same thing.
+```json
+{
+  "answer": "24-hour notification",
+  "conflict": false,
+  "conflict_reason": null,
+  "conflict_details": [],
+  "answer_basis": [
+    {"source": "breach_policy.pdf", "excerpt": "Customers must be notified within 24 hours of a confirmed breach.", "source_type": "document"}
+  ],
+  "sources": ["breach_policy.pdf", "content.txt"]
+}
+```
+
+**Example 3d — IS a conflict (genuinely different numbers/ranges)**
+Sources say "24", "24 hours", "24-48 hours", and "24-48" — first canonicalize: "24" = "24 hours" (ONE entry), "24-48" = "24-48 hours" (ONE entry). After canonicalization there are two distinct values: "24 hours" vs "24-48 hours". These are different ranges → flag as conflict with exactly TWO entries (not four).
+```json
+{
+  "answer": null,
+  "conflict": true,
+  "conflict_reason": "content.txt states 24-hour notification while sla_addendum.pdf states a 24-48 hour window.",
+  "conflict_details": [
+    {"value": "24 hours", "source": "content.txt", "excerpt": "Notification within 24 hours of confirmed breach.", "source_type": "document"},
+    {"value": "24-48 hours", "source": "sla_addendum.pdf", "excerpt": "SLA requires breach notification within 24-48 hours.", "source_type": "document"}
+  ],
+  "answer_basis": [],
+  "sources": ["content.txt", "sla_addendum.pdf"]
+}
+```
+
+**Example 3e — picklist field: document mentions two different option values**
+Question is a picklist with options: `Quarterly`, `Semi-Annually`, `Annually`, `Continuous`.
+Document says: "annual external pen test by Trail of Bits and quarterly internal red team exercises".
+Both "Annually" and "Quarterly" are distinct picklist options → conflict; do NOT combine into a description.
+```json
+{
+  "answer": null,
+  "conflict": true,
+  "conflict_reason": "Document references both annual external testing and quarterly internal testing, mapping to two distinct picklist options.",
+  "conflict_details": [
+    {"value": "Annually", "source": "security_policy.pdf", "excerpt": "Annual external pen test by Trail of Bits.", "source_type": "document"},
+    {"value": "Quarterly", "source": "security_policy.pdf", "excerpt": "Quarterly internal red team exercises.", "source_type": "document"}
+  ],
+  "answer_basis": [],
+  "sources": ["security_policy.pdf"]
 }
 ```
 

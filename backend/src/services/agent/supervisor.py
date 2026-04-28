@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import ast
 from typing import Any
 
-import ast
 from configs.settings import get_settings
 from src.services.agent.field_loader import get_field_def_by_question_id
+from src.services.agent.form_output import answer_dedupe_key
 from src.services.agent.state import AgentState, CandidateAnswer
 from src.utils.logger import get_logger
 
@@ -73,12 +74,10 @@ class Supervisor:
 
         for qid, candidates in by_q.items():
             values = []
+
             for c in candidates:
                 v = c.get("candidate_answer")
                 if v is not None:
-                    def _norm_token(x: Any) -> str:
-                        return str(x).strip().casefold()
-
                     if isinstance(v, str):
                         s = v.strip()
                         if s.startswith("[") and s.endswith("]"):
@@ -89,9 +88,16 @@ class Supervisor:
                             if isinstance(parsed, list):
                                 v = parsed
                     if isinstance(v, list):
-                        values.append(tuple(sorted(_norm_token(x) for x in v)))
+                        values.append(
+                            tuple(sorted(answer_dedupe_key(x) for x in v))
+                        )
                     else:
-                        values.append(_norm_token(v))
+                        values.append(answer_dedupe_key(v))
+                for detail in c.get("conflict_details") or []:
+                    detail_value = detail.get("value")
+                    if detail_value is None:
+                        continue
+                    values.append(answer_dedupe_key(detail_value))
 
             # Some workers set `conflict=true` via heuristic keyword matching. If the underlying
             # candidate values are effectively identical (case/order-insensitive), do not surface

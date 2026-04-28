@@ -285,8 +285,52 @@ class WorkerRunner:
                 entry["conflict"] = True
                 entry["conflict_reason"] = value.get("conflict_reason")
                 q_chunks = batch_chunks.get(field_def.q_id) or []
+                # IMPORTANT:
+                # If the model sets conflict=true but also provides a non-null `answer`, we must
+                # not lose that value. Downstream persistence expects all distinct values to be
+                # present in conflict_details/conflicts[] when a question is in conflict mode.
+                raw_details = list(value.get("conflict_details", []) or [])
+                model_answer = value.get("answer")
+                if model_answer is not None and str(model_answer).strip():
+                    try:
+                        from src.services.agent.form_output import answer_dedupe_key
+
+                        want_key = answer_dedupe_key(model_answer)
+                    except Exception:
+                        want_key = str(model_answer).strip().casefold()
+
+                    seen_keys: set[str] = set()
+                    for d in raw_details:
+                        if not isinstance(d, dict):
+                            try:
+                                d = d.model_dump()  # type: ignore[union-attr]
+                            except Exception:
+                                continue
+                        try:
+                            from src.services.agent.form_output import answer_dedupe_key
+
+                            seen_keys.add(answer_dedupe_key(d.get("value")))
+                        except Exception:
+                            v = d.get("value")
+                            seen_keys.add("" if v is None else str(v).strip().casefold())
+
+                    if want_key and want_key not in seen_keys:
+                        basis0 = answer_basis[0] if isinstance(answer_basis, list) and answer_basis else {}
+                        raw_details.append(
+                            {
+                                "value": model_answer,
+                                "source": (basis0.get("source") or "").strip(),
+                                "excerpt": basis0.get("excerpt") or "",
+                                "source_type": basis0.get("source_type"),
+                                "confidence_score": 0.0,
+                                "source_file": basis0.get("source_file"),
+                                "chunk_id": basis0.get("chunk_id"),
+                                "rerank_score": basis0.get("rerank_score"),
+                            }
+                        )
+
                 entry["conflict_details"] = self._enrich_conflict_details(
-                    value.get("conflict_details", []),
+                    raw_details,
                     chunk_lookup,
                     fallback_chunks=q_chunks,
                 )
