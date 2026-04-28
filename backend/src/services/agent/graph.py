@@ -14,9 +14,11 @@ from langgraph.graph import END, START, StateGraph
 
 from configs.settings import get_settings
 from src.services.agent.form_output import (
+    answer_dedupe_key,
     build_full_answers_payload,
     extract_conflict_alternatives,
     norm_val_str,
+    prefer_answer_display,
     write_form_output_gcs,
 )
 from src.services.agent.state import AgentState
@@ -135,7 +137,6 @@ def _form_output_node(state: AgentState) -> dict[str, Any]:
     final_answers = state.get("final_answers") or {}
     candidate_answers = state.get("candidate_answers") or []
     accumulated = state.get("accumulated_conflict_alternatives") or {}
-    retrievals = state.get("retrievals") or {}
     form_output = build_full_answers_payload(
         opportunity_id, final_answers, candidate_answers, accumulated
     )
@@ -165,6 +166,94 @@ def persist_rag_answers_from_agent_output(
     _persist_rag_answers_to_db(oid, form_output, retrievals, pipeline_version_id)
 
 
+def _citation_for_persistence(citation: dict[str, Any]) -> dict[str, Any]:
+    """Map form_output citation shape to DB citation shape."""
+    return {
+        "source_type": citation.get("source_type", "unknown"),
+        "source_file": citation.get("source_file")
+        or citation.get("source_document")
+        or "",
+        "source_name": citation.get("source_name") or citation.get("source_document"),
+        "context": citation.get("context"),
+        "page_number": citation.get("page_number"),
+        "timestamp_str": citation.get("timestamp_str") or citation.get("timestamp"),
+        "speaker": citation.get("speaker"),
+        "chunk_id": citation.get("chunk_id") or "",
+        "quote": citation.get("source_chunk") or citation.get("excerpt") or "",
+        "relevance_score": citation.get("confidence_score")
+        or citation.get("similarity_score")
+        or 0.0,
+    }
+
+
+def _build_answers_list_for_persistence(
+    payload: dict[str, Any],
+) -> tuple[list[dict[str, Any]], bool, int]:
+    """Convert one form_output answer payload into DB answer candidates."""
+    answers_list: list[dict[str, Any]] = []
+    dedupe_key_to_index: dict[str, int] = {}
+
+    def add_answer(
+        value: Any,
+        *,
+        confidence_score: float,
+        reasoning: str,
+        citations: list[dict[str, Any]],
+    ) -> None:
+        key = answer_dedupe_key(value)
+        if not key:
+            return
+        display = str(value).strip()
+        if key in dedupe_key_to_index:
+            idx = dedupe_key_to_index[key]
+            prev = answers_list[idx]["answer_text"]
+            prev_s = "" if prev is None else str(prev).strip()
+            answers_list[idx]["answer_text"] = prefer_answer_display(display, prev_s)
+            return
+        dedupe_key_to_index[key] = len(answers_list)
+        answers_list.append({
+            "answer_text": display,
+            "confidence_score": confidence_score,
+            "reasoning": reasoning,
+            "citations": [_citation_for_persistence(c) for c in citations],
+        })
+
+    answer_value = payload.get("answer_value")
+    has_direct_answer = answer_value is not None and str(answer_value).strip() != ""
+
+    if has_direct_answer:
+        add_answer(
+            answer_value,
+            confidence_score=payload.get("confidence_score") or 0.0,
+            reasoning="FINAL_ANSWER",
+            citations=payload.get("citations") or [],
+        )
+
+    for conflict_entry in payload.get("conflicts") or []:
+        conflict_value = conflict_entry.get("answer_value")
+        if conflict_value is None or str(conflict_value).strip() == "":
+            continue
+        add_answer(
+            conflict_value,
+            confidence_score=conflict_entry.get("confidence_score") or 0.0,
+            reasoning="CONFLICT_ALT",
+            citations=conflict_entry.get("citations") or [],
+        )
+
+    question_has_conflicts = len(answers_list) > 1
+
+    if not answers_list and not has_direct_answer:
+        answers_list.append({
+            "answer_text": None,
+            "confidence_score": 0.0,
+            "reasoning": "NO_ANSWER_GENERATED",
+            "citations": [],
+        })
+
+    explicit_conflict_count = len(answers_list) if question_has_conflicts else 0
+    return answers_list, question_has_conflicts, explicit_conflict_count
+
+
 def _persist_rag_answers_to_db(
     opportunity_id: str,
     form_output: dict[str, Any],
@@ -174,8 +263,8 @@ def _persist_rag_answers_to_db(
     """Persist final answer-generation payload to the database.
 
     Rules:
-      - If ``answer_value`` exists for a question, insert exactly one answers row.
-      - If ``answer_value`` is null and ``conflicts`` has N entries, insert N answers rows.
+      - If ``answer_value`` exists for a question, insert it as one candidate.
+      - If ``conflicts`` has N distinct entries, insert those as additional candidates.
       - Conflict groups are then created from active answers for that question.
     """
     answers_by_question: dict[str, dict[str, Any]] = {}
@@ -246,79 +335,11 @@ def _persist_rag_answers_to_db(
     persisted_ok = 0
     persist_failed = 0
     for question_id, payload in answers_by_question.items():
-        answers_list = []
-        answer_value = payload.get("answer_value")
-        direct_citations = payload.get("citations") or []
-        conflict_entries = payload.get("conflicts") or []
-        has_direct_answer = answer_value is not None and str(answer_value).strip() != ""
-
-        if has_direct_answer:
-            answers_list.append({
-                "answer_text": str(answer_value),
-                "confidence_score": payload.get("confidence_score") or 0.0,
-                "reasoning": "FINAL_ANSWER",
-                "citations": [
-                    {
-                        "source_type": c.get("source_type", "unknown"),
-                        "source_file": c.get("source_file")
-                        or c.get("source_document")
-                        or "",
-                        "source_name": c.get("source_name") or c.get("source_document"),
-                        "context": c.get("context"),
-                        "page_number": c.get("page_number"),
-                        "timestamp_str": c.get("timestamp_str") or c.get("timestamp"),
-                        "speaker": c.get("speaker"),
-                        "chunk_id": c.get("chunk_id") or "",
-                        "quote": c.get("source_chunk") or c.get("excerpt") or "",
-                        "relevance_score": c.get("confidence_score")
-                        or c.get("similarity_score")
-                        or 0.0,
-                    }
-                    for c in direct_citations
-                ],
-            })
-        else:
-            for conflict_entry in conflict_entries:
-                conflict_value = conflict_entry.get("answer_value")
-                if conflict_value is None or str(conflict_value).strip() == "":
-                    continue
-                answers_list.append({
-                    "answer_text": str(conflict_value),
-                    "confidence_score": conflict_entry.get("confidence_score") or 0.0,
-                    "reasoning": "CONFLICT_ALT",
-                    "citations": [
-                        {
-                            "source_type": c.get("source_type", "unknown"),
-                            "source_file": c.get("source_file")
-                            or c.get("source_document")
-                            or "",
-                            "source_name": c.get("source_name")
-                            or c.get("source_document"),
-                            "context": c.get("context"),
-                            "page_number": c.get("page_number"),
-                            "timestamp_str": c.get("timestamp_str")
-                            or c.get("timestamp"),
-                            "speaker": c.get("speaker"),
-                            "chunk_id": c.get("chunk_id") or "",
-                            "quote": c.get("source_chunk") or c.get("excerpt") or "",
-                            "relevance_score": c.get("confidence_score")
-                            or c.get("similarity_score")
-                            or 0.0,
-                        }
-                        for c in (conflict_entry.get("citations") or [])
-                    ],
-                })
-
-        question_has_conflicts = not has_direct_answer and len(answers_list) > 1
-        explicit_conflict_count = len(answers_list) if question_has_conflicts else 0
-
-        if not answers_list and not has_direct_answer:
-            answers_list.append({
-                "answer_text": None,
-                "confidence_score": 0.0,
-                "reasoning": "NO_ANSWER_GENERATED",
-                "citations": [],
-            })
+        (
+            answers_list,
+            question_has_conflicts,
+            explicit_conflict_count,
+        ) = _build_answers_list_for_persistence(payload)
 
         try:
             total_citations = sum(len(a.get("citations") or []) for a in answers_list)
