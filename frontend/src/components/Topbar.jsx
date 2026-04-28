@@ -3,6 +3,7 @@ import { MODULES } from '../App'
 
 export default function Topbar({ activeModule, onLogoClick, onSwitchModule, user, isAdmin = false, onLogout, onNavigate }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [pressedAdminPath, setPressedAdminPath] = useState(null)
   const menuRef = useRef(null)
 
   useEffect(() => {
@@ -194,20 +195,33 @@ export default function Topbar({ activeModule, onLogoClick, onSwitchModule, user
                     <button
                       key={item.path}
                       type="button"
-                      onClick={() => { setMenuOpen(false); onNavigate?.(item.path) }}
+                      onMouseDown={() => setPressedAdminPath(item.path)}
+                      onMouseUp={() => setPressedAdminPath(null)}
+                      onMouseLeave={() => setPressedAdminPath(null)}
+                      onClick={() => {
+                        setPressedAdminPath(item.path)
+                        window.setTimeout(() => {
+                          setMenuOpen(false)
+                          setPressedAdminPath(null)
+                          onNavigate?.(item.path)
+                        }, 90)
+                      }}
                       style={{
                         width: '100%',
                         textAlign: 'left',
                         padding: '8px 0',
                         border: 'none',
-                        background: 'transparent',
-                        color: 'var(--text1)',
+                        background: pressedAdminPath === item.path ? 'rgba(27,38,79,.08)' : 'transparent',
+                        color: pressedAdminPath === item.path ? 'var(--si-navy, #1B264F)' : 'var(--text1)',
                         fontSize: 12,
                         fontFamily: 'var(--font)',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         gap: 8,
+                        borderRadius: 8,
+                        transform: pressedAdminPath === item.path ? 'translateY(1px)' : 'translateY(0)',
+                        transition: 'background .12s ease, color .12s ease, transform .08s ease',
                       }}
                     >
                       {item.label === 'Opportunity Requests' && (

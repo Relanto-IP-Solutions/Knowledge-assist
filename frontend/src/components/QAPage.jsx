@@ -19,6 +19,7 @@ import { apiAnswerNeedsConflictClarify, buildQuestionCardModelFromApiAnswer } fr
 import {
   applyPostIdAlignmentToSelections,
   buildOpportunityReviewUpdates,
+  hasExtractedAnswerConflicts,
   isReviewMultiSelectMode,
   isReviewPicklistRadiosMode,
   mergeApiSelectionsForSubmit,
@@ -114,6 +115,70 @@ function writeAcceptedAnswers(oppId, acceptedMap) {
   } catch {
     /* noop */
   }
+}
+
+// ── Session-based accepted-answer saves (per section) ─────────────────────────
+// Stores only accepted answers in sessionStorage so they survive navigation
+// within the tab but clear automatically when the browser session ends.
+// Separate from the broader qaProgress snapshot — this holds only the "explicitly
+// saved" accepted entries (no pending / temporary state).
+const KA_SESSION_SAVE_KEY_PREFIX = 'ka:sectionSave:v1'
+
+function getSessionSaveKey(oppId) {
+  const key = String(oppId ?? '').trim()
+  if (!key) return ''
+  return `${KA_SESSION_SAVE_KEY_PREFIX}:${key}`
+}
+
+function readSessionSaves(oppId) {
+  const storageKey = getSessionSaveKey(oppId)
+  if (!storageKey) return []
+  try {
+    const raw = sessionStorage.getItem(storageKey)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function writeSessionSaves(oppId, answers) {
+  const storageKey = getSessionSaveKey(oppId)
+  if (!storageKey) return
+  try {
+    sessionStorage.setItem(storageKey, JSON.stringify(answers))
+  } catch { /* noop */ }
+}
+
+function clearSessionSaves(oppId) {
+  const storageKey = getSessionSaveKey(oppId)
+  if (!storageKey) return
+  try {
+    sessionStorage.removeItem(storageKey)
+  } catch { /* noop */ }
+}
+
+/**
+ * Wipe every QA-related storage entry across all opportunities.
+ * Call this on user logout so no session or progress data is left behind.
+ */
+export function clearAllQaStorage() {
+  try {
+    const keysToRemove = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (
+        k &&
+        (k.startsWith(QA_PROGRESS_STORAGE_PREFIX) || k.startsWith('accepted_'))
+      ) {
+        keysToRemove.push(k)
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k))
+    // sessionStorage holds all KA_SESSION_SAVE_KEY_PREFIX entries
+    sessionStorage.clear()
+  } catch { /* noop */ }
 }
 
 function buildAcceptedMapFromState(qState) {
@@ -611,6 +676,8 @@ function initQAState(oppId) {
       if (sig.type === 'ai') sig.qs.forEach(q => {
         state[q.id] = {
           status: q.status,
+          isAccepted: q.status === 'accepted' || q.status === 'overridden',
+          isEdited: q.status === 'overridden',
           override: q.override || '',
           editedAnswer: '',
           acceptedAnswerValue: '',
@@ -628,6 +695,8 @@ function initQAState(oppId) {
 
 const DEFAULT_API_Q_STATE = {
   status: 'pending',
+  isAccepted: false,
+  isEdited: false,
   override: '',
   editedAnswer: '',
   acceptedAnswerValue: '',
@@ -656,10 +725,48 @@ function normalizeBooleanLike(value) {
   return null
 }
 
-/** Submitted opportunity only: filter rows using GET /answers `is_user_override` on the payload. */
-function shouldIncludeAnswerBySubmittedPayloadFilter(row, filterId) {
-  if (filterId === 'ai') return normalizeBooleanLike(row?.is_user_override) !== true
-  if (filterId === 'human') return normalizeBooleanLike(row?.is_user_override) === true
+/**
+ * Submitted opportunity filter must reflect the currently shown accepted label.
+ * Prefer payload `is_user_override`, but fall back to local accepted value vs backend AI comparison.
+ */
+function shouldIncludeAnswerBySubmittedPayloadFilter({
+  row,
+  filterId,
+  qStateEntry,
+  reviewQuestion,
+}) {
+  const payloadOverride = normalizeBooleanLike(row?.is_user_override)
+  let isHumanAnswer = payloadOverride === true
+
+  if (payloadOverride == null) {
+    const fallbackQuestion =
+      reviewQuestion ||
+      opportunityAnswerRowToReviewQuestion(row || {}, {
+        questionText: row?.question_text,
+      })
+    const acceptedValue = String(
+      qStateEntry?.acceptedAnswerValue ||
+      qStateEntry?.override ||
+      qStateEntry?.editedAnswer ||
+      '',
+    ).trim()
+    const backendValue = String(
+      resolveSelectionToDisplayValue(
+        fallbackQuestion,
+        row?.answer_value ?? row?.answer ?? '',
+      ) || '',
+    ).trim()
+    const localUserSource = String(qStateEntry?.answerSource ?? '').trim().toLowerCase() === 'user'
+    const overriddenStatus = String(qStateEntry?.status ?? '').trim().toLowerCase() === 'overridden'
+    const acceptedLooksEdited =
+      acceptedValue !== '' &&
+      isOverrideAgainstBackend(fallbackQuestion, row, acceptedValue, backendValue)
+
+    isHumanAnswer = localUserSource || overriddenStatus || acceptedLooksEdited
+  }
+
+  if (filterId === 'ai') return !isHumanAnswer
+  if (filterId === 'human') return isHumanAnswer
   return true
 }
 
@@ -787,9 +894,16 @@ export function applyAcceptAllToQState(prevQState, {
     const finalDiffersFromBackend =
       finalText !== '' &&
       isOverrideAgainstBackend(rq, a, finalText, backendText)
-    const answerSource = hasManualOverride || hasManualDraft || hasSelectionEdit || finalDiffersFromBackend
+    const answerSourceDerived = hasManualOverride || hasManualDraft || hasSelectionEdit || finalDiffersFromBackend
       ? 'user'
       : 'ai'
+    // Conflict resolution is always a deliberate user choice — ensure it is not misclassified
+    // as a pure AI accept (which would be blocked when answer_value is null/absent).
+    const answerSource =
+      answerSourceDerived === 'ai' && cur.conflictResolved && hasExtractedAnswerConflicts(a)
+        ? 'user'
+        : answerSourceDerived
+    const isEdited = answerSource === 'user'
     console.log('[Accept All]', {
       qid: qidKey,
       draftAnswer: draftAnswer || null,
@@ -829,8 +943,10 @@ export function applyAcceptAllToQState(prevQState, {
     next[qidKey] = {
       ...cur,
       status: 'accepted',
+      isAccepted: true,
+      isEdited,
       override: '',
-      editedAnswer: answerSource === 'user' ? finalText : '',
+      editedAnswer: isEdited ? finalText : '',
       acceptedAnswerValue: aiCommittedText,
       answerSource,
       userCleared: false,
@@ -995,7 +1111,10 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false)
   const [showSubmitSuccess, setShowSubmitSuccess] = useState(false)
   const [submitBusy, setSubmitBusy] = useState(false)
+  const [saveBusy, setSaveBusy] = useState(false)
+  const [pressedFooterAction, setPressedFooterAction] = useState(null)
   const [submitError, setSubmitError] = useState(null)
+  const [saveToast, setSaveToast] = useState(null)
   /** @type {[Record<string, string|string[]>, Function]} */
   const [apiSelections, setApiSelections] = useState(() => ({}))
   const [submitConfirmValidation, setSubmitConfirmValidation] = useState('')
@@ -1007,7 +1126,20 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
   const [showConflicts, setShowConflicts] = useState(false)
   const [resolvedConflicts, setResolvedConflicts] = useState({})
   const isSubmitting = submitBusy
+  const saveToastTimerRef = useRef(null)
   const isOpportunityReadOnly = Boolean(isOpportunityLocked)
+
+  const showSaveToast = useCallback((message, type = 'success') => {
+    setSaveToast({ message: String(message ?? '').trim(), type })
+    if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current)
+    saveToastTimerRef.current = setTimeout(() => setSaveToast(null), 3000)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current)
+    }
+  }, [])
 
   // reviewQuestionsWithAccepted: enriches each question with is_accepted flag derived from
   // qState (which is kept in sync with accepted_<oppId> in localStorage).
@@ -1043,7 +1175,25 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     setActiveSec(saved.activeSec != null ? String(saved.activeSec) : null)
     setQState(
       saved.qState && typeof saved.qState === 'object' && !Array.isArray(saved.qState)
-        ? { ...initQAState(oppId), ...saved.qState }
+        ? Object.fromEntries(
+            Object.entries({ ...initQAState(oppId), ...saved.qState }).map(([qid, entry]) => {
+              const status = String(entry?.status ?? 'pending').trim().toLowerCase()
+              const normalizedAccepted = status === 'accepted' || status === 'overridden'
+              const normalizedEdited =
+                typeof entry?.isEdited === 'boolean'
+                  ? entry.isEdited
+                  : String(entry?.answerSource ?? '').trim().toLowerCase() === 'user'
+              return [
+                qid,
+                {
+                  ...DEFAULT_API_Q_STATE,
+                  ...(entry || {}),
+                  isAccepted: normalizedAccepted,
+                  isEdited: normalizedEdited,
+                },
+              ]
+            }),
+          )
         : initQAState(oppId),
     )
     setApiSelections(
@@ -1100,31 +1250,100 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     })
   }, [reviewQuestions, apiQData?.questions, apiData?.answers])
 
-  // Hydrate accepted status from accepted_<oppId> when API answers load.
-  // Merges stored accepted question IDs into qState without overwriting already-accepted rows.
-  // Adds is_accepted semantics: any question found in localStorage is treated as accepted.
+  // Hydrate accepted status from BOTH localStorage (accepted_<oppId>) and sessionStorage
+  // (ka:sectionSave:v1:<oppId>) whenever API answers load or the opportunity changes.
+  //
+  // This is the authoritative restoration step that runs AFTER the API seeding effect
+  // so it can correct any stale-prev race where the seeding effect received an initial
+  // (pending) qState and overwrote a not-yet-committed localStorage restore.
   useEffect(() => {
     if (!apiData?.answers?.length) return
+
+    // --- localStorage: accepted qids flag map ---
     const storedAccepted = readAcceptedAnswers(oppId)
-    const storedQids = Object.keys(storedAccepted)
-    if (!storedQids.length) return
+
+    // --- sessionStorage: accepted entries with actual selectedAnswer values ---
+    const sessionSaved = readSessionSaves(oppId)
+    const sessionAnswerByQid = {}
+    for (const entry of sessionSaved) {
+      if (entry.status === 'accepted' && entry.question_id) {
+        sessionAnswerByQid[String(entry.question_id)] = String(entry.selectedAnswer ?? '').trim()
+      }
+    }
+
+    // Union: every qid marked accepted in either storage source
+    const allAcceptedQids = new Set([
+      ...Object.keys(storedAccepted),
+      ...Object.keys(sessionAnswerByQid),
+    ])
+    if (!allAcceptedQids.size) return
+
     setQState(prev => {
       let changed = false
       const next = { ...prev }
-      for (const qid of storedQids) {
+      for (const qid of allAcceptedQids) {
         const cur = next[qid]
-        // Skip if already accepted/overridden or server-locked (do not regress state).
-        if (cur?.status === 'accepted' || cur?.status === 'overridden' || cur?.serverLocked) continue
         const row = apiData.answers.find(a => String(a.question_id) === qid)
+        // Respect explicit user undo/clear actions in this session.
+        // Without this guard, a stale accepted_<oppId> snapshot can immediately
+        // rehydrate the question back to accepted after Undo.
+        if (cur?.userCleared === true) continue
+        // For already-accepted rows: do not regress any fields, but DO repair a missing
+        // conflictResolved flag (can be false when the row was persisted by an older code path
+        // that didn't write this field, or when localStorage was partially cleared).
+        if (cur?.status === 'accepted' || cur?.status === 'overridden' || cur?.serverLocked) {
+          if (row && apiAnswerNeedsConflictClarify(row) && !cur?.conflictResolved) {
+            next[qid] = { ...cur, conflictResolved: true }
+            changed = true
+          }
+          continue
+        }
         if (!row) continue
+        const hasBackendConflict = apiAnswerNeedsConflictClarify(row)
+        const persistedSelection = selectionRecordGet(apiSelections, qid)
+        const persistedConflictAnswerId = Array.isArray(persistedSelection)
+          ? String(persistedSelection[0] ?? '').trim()
+          : String(persistedSelection ?? '').trim()
+        // Prefer the explicitly saved answer from sessionStorage, then fall back to
+        // whatever the current qState draft or backend value has.
+        const sessionAnswer = sessionAnswerByQid[qid] || ''
         const fallbackValue = String(
-          cur?.editedAnswer || cur?.override || row.answer_value || '',
+          sessionAnswer || cur?.acceptedAnswerValue || cur?.editedAnswer || cur?.override || row.answer_value || '',
         ).trim()
+        /**
+         * If this question is in the accepted map it was previously accepted via acceptQ.
+         * acceptQ always sets conflictResolved=true for conflict rows, so it is safe to restore
+         * that flag here when we have no other evidence (storage may have been partially cleared).
+         * Collect the best available conflict branch id from multiple sources.
+         */
+        const pinnedCaid =
+          String(cur?.conflictAnswerId ?? '').trim() ||
+          persistedConflictAnswerId ||
+          String(row?.answer_id ?? '').trim() ||
+          // Last resort: first substantive conflict option UUID from the raw row
+          (() => {
+            const conflicts = Array.isArray(row?.conflicts) ? row.conflicts : []
+            for (const c of conflicts) {
+              const id = String(c?.answer_id ?? '').trim()
+              const val = String(c?.answer_value ?? c?.answer ?? c?.value ?? '').trim()
+              if (id && val) return id
+            }
+            return null
+          })() ||
+          null
         next[qid] = {
           ...(cur || DEFAULT_API_Q_STATE),
           status: 'accepted',
+          isAccepted: true,
+          isEdited: String(cur?.answerSource ?? '').trim() === 'user',
           complete: true,
           acceptedAnswerValue: fallbackValue,
+          /**
+           * A question that is in the accepted map was definitely accepted via acceptQ, which
+           * always sets conflictResolved=true for conflict rows. So it's safe to restore true here.
+           */
+          conflictResolved: hasBackendConflict ? true : Boolean(cur?.conflictResolved),
+          conflictAnswerId: hasBackendConflict ? pinnedCaid : (cur?.conflictAnswerId ?? null),
           userCleared: false,
           is_accepted: true,
         }
@@ -1132,7 +1351,31 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
       }
       return changed ? next : prev
     })
-  }, [oppId, apiData?.answers])
+  }, [oppId, apiData?.answers, apiSelections])
+
+  useEffect(() => {
+    if (!oppId) return
+    const acceptedMap = buildAcceptedMapFromState(qState)
+    persistQaProgress(oppId, {
+      activeSec,
+      qState,
+      apiSelections,
+      updatedAt: Date.now(),
+    })
+    writeAcceptedAnswers(oppId, acceptedMap)
+  }, [oppId, activeSec, qState, apiSelections])
+
+  const persistProgressSnapshot = useCallback(() => {
+    if (!oppId) return
+    const acceptedMap = buildAcceptedMapFromState(qState)
+    persistQaProgress(oppId, {
+      activeSec,
+      qState,
+      apiSelections,
+      updatedAt: Date.now(),
+    })
+    writeAcceptedAnswers(oppId, acceptedMap)
+  }, [oppId, activeSec, qState, apiSelections])
 
   const useApiLayout =
     apiFeatureOn &&
@@ -1313,6 +1556,8 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
         ...cur,
         editedAnswer: value ?? '',
         answerSource: text ? (draftIsOverride ? 'user' : 'ai') : 'ai',
+        isAccepted: false,
+        isEdited: text ? draftIsOverride : false,
         complete: isValidAnswer(text),
         status: cur.status || 'pending',
       }
@@ -1441,11 +1686,18 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
         !hasManualOverride
       const hasManualValue =
         manualValueFromExtra !== ''
+      // For structured accept without manual text, compute source from current selection
+      // vs AI only, and ignore previous override/draft flags.
+      const selectionOnlyComparison =
+        hasAssistSelection &&
+        manualValueFromExtra === ''
+      const effectiveHasManualOverride = selectionOnlyComparison ? false : hasManualOverride
       const hasManualSelection =
         !acceptFromUneditedAssistSelection &&
         selectedLabel !== '' &&
         isOverrideAgainstBackend(rq, row, selectedLabel, backendAnswerText)
       const hasManualDraft =
+        !selectionOnlyComparison &&
         String(current.editedAnswer ?? '').trim() !== '' &&
         !acceptFromUneditedAssistSelection &&
         isOverrideAgainstBackend(rq, row, current.editedAnswer, backendAnswerText)
@@ -1453,10 +1705,18 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
         finalAnswerText !== '' &&
         !acceptFromUneditedAssistSelection &&
         isOverrideAgainstBackend(rq, row, finalAnswerText, backendAnswerText)
-      const answerSource =
-        hasManualOverride || hasManualValue || hasManualSelection || hasManualDraft || finalDiffersFromBackend
+      const answerSourceDerived =
+        effectiveHasManualOverride || hasManualValue || hasManualSelection || hasManualDraft || finalDiffersFromBackend
           ? 'user'
           : 'ai'
+      // Conflict resolution is always a deliberate user choice — even when the selected conflict
+      // option happens to match an AI candidate (it always will, since all options come from the
+      // conflicts[] array). Without this, accepting a conflict-resolved answer where answer_value
+      // is null gets silently blocked by the ai-accept qualification guard below.
+      const answerSource =
+        answerSourceDerived === 'ai' && current.conflictResolved && hasExtractedAnswerConflicts(row)
+          ? 'user'
+          : answerSourceDerived
 
       if (answerSource === 'ai' && !answerRowQualifiesForPureAiAccept(row)) {
         console.log('[Manual Accept blocked]', {
@@ -1492,6 +1752,8 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
           acceptedAnswerValue: finalAnswerText,
           answerSource,
           status: 'accepted',
+          isAccepted: true,
+          isEdited: answerSource === 'user',
           complete: true,
           override: '',
           conflictResolved: row && apiAnswerNeedsConflictClarify(row) ? true : current.conflictResolved,
@@ -1507,26 +1769,32 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
 
     const row = apiData?.answers?.find(a => String(a.question_id) === qidKey)
     const hasPureAiAnswer = answerRowQualifiesForPureAiAccept(row)
-    const currentEdited = String(current.editedAnswer ?? '').trim()
-    const preserveUserDraftOnUndo =
-      currentEdited !== '' && (current.answerSource === 'user' || !hasPureAiAnswer)
+    const restoredDraftValue = String(
+      current.editedAnswer || current.acceptedAnswerValue || current.override || '',
+    ).trim()
+    const restoredAnswerSource =
+      restoredDraftValue && !hasPureAiAnswer
+        ? 'user'
+        : (String(current.answerSource ?? '').trim() || 'ai')
 
     updateQ(qid, {
       status: 'pending',
+      isAccepted: false,
+      isEdited: false,
       override: '',
-      editedAnswer: preserveUserDraftOnUndo ? current.editedAnswer : '',
+      editedAnswer: restoredDraftValue,
       acceptedAnswerValue: '',
-      answerSource: preserveUserDraftOnUndo ? 'user' : 'ai',
-      userCleared: false,
-      conflictResolved: false,
-      conflictAnswerId: null,
+      answerSource: restoredAnswerSource,
+      userCleared: true,
+      conflictResolved: current.conflictResolved,
+      conflictAnswerId: current.conflictAnswerId ?? null,
     })
   }
   const saveOverride = (qid, text) => {
     if (qState[qid]?.serverLocked) return
     const t = String(text || '').trim()
     if (!t) {
-      updateQ(qid, { status: 'pending', override: '', editedAnswer: '', acceptedAnswerValue: '', answerSource: 'ai', userCleared: true })
+      updateQ(qid, { status: 'pending', isAccepted: false, isEdited: false, override: '', editedAnswer: '', acceptedAnswerValue: '', answerSource: 'ai', userCleared: true })
       return
     }
     const qidKey = String(qid)
@@ -1541,8 +1809,8 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     updateQ(
       qid,
       overrideMatchesBackend
-        ? { status: 'accepted', override: '', editedAnswer: '', acceptedAnswerValue: backendDisplay || t, answerSource: 'ai', userCleared: false }
-        : { status: 'overridden', override: text, editedAnswer: text, acceptedAnswerValue: t, answerSource: 'user', userCleared: false },
+        ? { status: 'accepted', isAccepted: true, isEdited: false, override: '', editedAnswer: '', acceptedAnswerValue: backendDisplay || t, answerSource: 'ai', userCleared: false }
+        : { status: 'overridden', isAccepted: true, isEdited: true, override: text, editedAnswer: text, acceptedAnswerValue: t, answerSource: 'user', userCleared: false },
     )
     /**
      * Conflict override: keep apiSelections pinned to the resolved conflict branch id
@@ -1557,7 +1825,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
   }
   const editOverride = (qid) => {
     if (qState[qid]?.serverLocked) return
-    updateQ(qid, { status: 'pending', acceptedAnswerValue: '' })
+    updateQ(qid, { status: 'pending', isAccepted: false, acceptedAnswerValue: '' })
   }
   const saveEdit = (qid, text) => {
     if (qState[qid]?.serverLocked) return
@@ -1569,7 +1837,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     }
     const t = String(text || '').trim()
     if (!t) {
-      updateQ(qid, { editedAnswer: '', override: '', acceptedAnswerValue: '', status: 'pending', answerSource: 'ai', userCleared: true })
+      updateQ(qid, { editedAnswer: '', override: '', acceptedAnswerValue: '', status: 'pending', isAccepted: false, isEdited: false, answerSource: 'ai', userCleared: true })
       return
     }
     /**
@@ -1584,6 +1852,8 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     updateQ(qid, {
       editedAnswer: text,
       acceptedAnswerValue: '',
+      isAccepted: false,
+      isEdited: true,
       answerSource: 'user',
       status: 'pending',
       userCleared: false,
@@ -1635,6 +1905,8 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     // Picking a conflict option should only set the draft answer; acceptance is explicit (Accept / Accept all).
     updateQ(qid, {
       editedAnswer: text,
+      isAccepted: false,
+      isEdited: answerSource === 'user',
       answerSource,
       conflictResolved: true,
       conflictAnswerId: id,
@@ -2071,7 +2343,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     sections.forEach(sec =>
       sec.signals.forEach(sig =>
         sig.qs.forEach(q => {
-          if (qState[q.id]?.status === 'pending') patch[q.id] = { status: 'accepted', override: '', answerSource: 'ai' }
+          if (qState[q.id]?.status === 'pending') patch[q.id] = { status: 'accepted', isAccepted: true, isEdited: false, override: '', answerSource: 'ai' }
         }),
       ),
     )
@@ -2110,37 +2382,152 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     setSubmitConfirmOpen(true)
   }
 
-  const handleSaveNextClick = useCallback(() => {
-    if (isOpportunityReadOnly) return
-    const acceptedMap = buildAcceptedMapFromState(qState)
-    persistQaProgress(oppId, {
-      activeSec,
-      qState,
-      apiSelections,
-      updatedAt: Date.now(),
-    })
-    writeAcceptedAnswers(oppId, acceptedMap)
-    // Surface the persistence so users know their progress was captured before
-    // we change sections. Without this the section flip looks like the only
-    // effect of the click, which is what made the save feel "lost".
-    setSubmitNotice(`Saved ${Object.keys(acceptedMap).length} answers`)
-    setTimeout(() => setSubmitNotice(null), 1800)
-    handleSaveNextSection()
-  }, [handleSaveNextSection, isOpportunityReadOnly, oppId, activeSec, qState, apiSelections])
+  const saveCurrentSectionToBackend = useCallback(async () => {
+    const sectionQids = Array.from(
+      new Set(
+        (currentSectionQuestionsForCompletion || [])
+          .map(questionCompletionKey)
+          .filter(Boolean)
+          .map(String),
+      ),
+    )
+    if (sectionQids.length === 0) return 0
+    const sectionReviewQuestions = sectionQids
+      .map(qid => reviewQuestionById.get(String(qid)))
+      .filter(Boolean)
+    if (sectionReviewQuestions.length === 0) return 0
 
-  const handleSaveClick = useCallback(() => {
-    if (isOpportunityReadOnly) return
-    const acceptedMap = buildAcceptedMapFromState(qState)
-    persistQaProgress(oppId, {
-      activeSec,
-      qState,
+    // Keep merged selections computation available for future section-level save flows.
+    mergeApiSelectionsForSubmit(
+      sectionReviewQuestions,
       apiSelections,
-      updatedAt: Date.now(),
-    })
-    writeAcceptedAnswers(oppId, acceptedMap)
-    setSubmitNotice('Saved')
-    setTimeout(() => setSubmitNotice(null), 1800)
-  }, [isOpportunityReadOnly, oppId, activeSec, qState, apiSelections])
+      apiData?.answers || [],
+      qState,
+      { questionsCatalog: apiQData?.questions || [] },
+    )
+    return sectionReviewQuestions.length
+  }, [currentSectionQuestionsForCompletion, reviewQuestionById, apiSelections, apiData?.answers, qState, apiQData?.questions])
+
+  const saveAcceptedAnswersToSession = useCallback(() => {
+    if (!oppId) return
+    const existing = Array.isArray(readSessionSaves(oppId)) ? readSessionSaves(oppId) : []
+    const byQid = new Map(
+      existing
+        .filter(entry => entry && entry.question_id != null)
+        .map(entry => [String(entry.question_id), entry]),
+    )
+    const sectionQids = Array.from(
+      new Set(
+        (currentSectionQuestionsForCompletion || [])
+          .map(questionCompletionKey)
+          .filter(Boolean)
+          .map(String),
+      ),
+    )
+    const rawByQid = new Map((apiData?.answers || []).map(r => [String(r?.question_id ?? ''), r]))
+    for (const qid of sectionQids) {
+      const st = qState?.[qid]
+      const status = String(st?.status ?? '').trim().toLowerCase()
+      if (status !== 'accepted' && status !== 'overridden') {
+        byQid.delete(qid)
+        continue
+      }
+      const q = reviewQuestionById.get(qid)
+      const sel = selectionRecordGet(apiSelections, qid)
+      const selectedAnswer =
+        Array.isArray(sel)
+          ? sel
+              .map(v => {
+                const sid = String(v ?? '').trim()
+                if (!sid) return ''
+                const hit = q ? reviewAnswerOptions(q).find(o => String(o.id ?? '').trim() === sid || String(o.text ?? '').trim() === sid) : null
+                return String(hit?.text ?? sid).trim()
+              })
+              .filter(Boolean)
+              .join(', ')
+          : (() => {
+              const sid = String(sel ?? '').trim()
+              if (!sid) return ''
+              const hit = q ? reviewAnswerOptions(q).find(o => String(o.id ?? '').trim() === sid || String(o.text ?? '').trim() === sid) : null
+              return String(hit?.text ?? sid).trim()
+            })()
+      const row = rawByQid.get(qid)
+      const backendAnswer = row?.answer_value ?? row?.answer ?? ''
+      const finalAnswer =
+        String(st?.acceptedAnswerValue ?? '').trim() ||
+        String(st?.editedAnswer ?? '').trim() ||
+        String(st?.override ?? '').trim() ||
+        String(selectedAnswer ?? '').trim() ||
+        (Array.isArray(backendAnswer) ? backendAnswer.map(v => String(v ?? '').trim()).filter(Boolean).join(', ') : String(backendAnswer ?? '').trim())
+      byQid.set(qid, {
+        question_id: qid,
+        status: 'accepted',
+        selectedAnswer: finalAnswer,
+      })
+    }
+    writeSessionSaves(oppId, Array.from(byQid.values()))
+  }, [oppId, currentSectionQuestionsForCompletion, apiData?.answers, qState, reviewQuestionById, apiSelections])
+
+  const handleSaveClick = useCallback(async () => {
+    if (isOpportunityReadOnly || saveBusy) return
+    setSubmitError(null)
+    setSaveBusy(true)
+    try {
+      // Store accepted answers locally — no backend call here.
+      // Submit is the only action that sends data to the server.
+      saveAcceptedAnswersToSession()
+      persistProgressSnapshot()
+      showSaveToast('Saved.', 'success')
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e))
+      setSubmitError(err)
+      showSaveToast(err.message || 'Save failed.', 'error')
+    } finally {
+      setSaveBusy(false)
+    }
+  }, [
+    isOpportunityReadOnly,
+    saveBusy,
+    saveAcceptedAnswersToSession,
+    persistProgressSnapshot,
+    showSaveToast,
+  ])
+
+  const handleSaveNextClick = useCallback(async () => {
+    if (isOpportunityReadOnly || saveBusy) return
+    setSubmitError(null)
+    setSaveBusy(true)
+    try {
+      // Save locally first, then advance to the next review section.
+      saveAcceptedAnswersToSession()
+      persistProgressSnapshot()
+      handleSaveNextSection()
+      showSaveToast('Saved. Moved to next section.', 'success')
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e))
+      setSubmitError(err)
+      showSaveToast(err.message || 'Save failed.', 'error')
+    } finally {
+      setSaveBusy(false)
+    }
+  }, [
+    isOpportunityReadOnly,
+    saveBusy,
+    saveAcceptedAnswersToSession,
+    persistProgressSnapshot,
+    handleSaveNextSection,
+    showSaveToast,
+  ])
+
+  const handleBackToDashboard = useCallback(() => {
+    persistProgressSnapshot()
+    if (typeof onBack === 'function') onBack()
+  }, [persistProgressSnapshot, onBack])
+
+  const handleBackToConnectors = useCallback(() => {
+    persistProgressSnapshot()
+    if (typeof onBackToDataConnectors === 'function') onBackToDataConnectors()
+  }, [persistProgressSnapshot, onBackToDataConnectors])
 
   const handleSubmitClick = useCallback(() => {
     if (isOpportunityReadOnly) return
@@ -2353,6 +2740,8 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
           onReviewSaved()
         }
         /** Fresh GET /answers has UUIDs; old apiSelections may still hold studio ids / labels → merge memo would spam "Unmapped". */
+        // Clear session-based section saves now that the backend has the data.
+        clearSessionSaves(oppId)
         setApiSelections({})
         setShowSubmitSuccess(true)
         const totalEnd = performance.now()
@@ -2505,10 +2894,17 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
   }, [useApiLayout, apiData?.answers, qState])
   const filteredActiveApiAnswers = useMemo(() => {
     if (!isOpportunityAlreadySubmitted) return activeApiAnswers
-    return activeApiAnswers.filter((answerRow) =>
-      shouldIncludeAnswerBySubmittedPayloadFilter(answerRow, answerFilter),
-    )
-  }, [activeApiAnswers, answerFilter, isOpportunityAlreadySubmitted])
+    return activeApiAnswers.filter((answerRow) => {
+      const qid = String(answerRow?.question_id ?? '')
+      const reviewQuestion = reviewQuestionById.get(qid) || null
+      return shouldIncludeAnswerBySubmittedPayloadFilter({
+        row: answerRow,
+        filterId: answerFilter,
+        qStateEntry: qState[qid],
+        reviewQuestion,
+      })
+    })
+  }, [activeApiAnswers, answerFilter, isOpportunityAlreadySubmitted, reviewQuestionById, qState])
 
   useEffect(() => {
     if (!isOpportunityAlreadySubmitted) setAnswerFilter('all')
@@ -2516,6 +2912,22 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
 
   useEffect(() => {
     if (!apiFeatureOn || !apiData?.answers?.length) return
+
+    // Read both storage layers BEFORE entering setQState so we can guard against the
+    // stale-prev race: this effect sometimes fires before React commits the [oppId]
+    // localStorage-restore, leaving `prev` as the blank initial qState.  Reading storage
+    // here lets us honour saved accepted answers even when prev.status is still empty.
+    const _storedAccepted = readAcceptedAnswers(oppId)
+    const _sessionSaved = readSessionSaves(oppId)
+    const _sessionAcceptedQids = new Set(
+      _sessionSaved
+        .filter(e => e.status === 'accepted')
+        .map(e => String(e.question_id ?? ''))
+        .filter(Boolean),
+    )
+    const isStoredAccepted = (qid) =>
+      Boolean(_storedAccepted[qid]) || _sessionAcceptedQids.has(String(qid))
+
     setQState(prev => {
       const next = { ...prev }
       let changed = false
@@ -2524,21 +2936,13 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
           const qid = String(a.question_id)
           const payloadFeedbackVote = feedbackVoteFromAnswerRow(a)
           const payloadFeedbackText = feedbackTextFromAnswerRow(a)
-          // CRITICAL: preserve qState restored from localStorage (qaProgress_<oid>).
-          // Effect 1033 (oppId-keyed) runs on mount and rehydrates accepted /
-          // overridden / editedAnswer / override fields. This seed effect runs
-          // when apiData?.answers arrives — without spreading `restored` first,
-          // we'd unconditionally reset every slot to status:'pending' and the
-          // user's "Save & next" persistence would silently disappear after any
-          // reload. Status falls back to 'pending' only when nothing is restored.
-          const restored = prev[qid]
           next[qid] = {
             ...DEFAULT_API_Q_STATE,
-            ...(restored || {}),
             serverLocked: isBackendAnswerActive(a),
-            status: restored?.status || 'pending',
-            feedback: restored?.feedback ?? payloadFeedbackVote,
-            feedbackText: restored?.feedbackText ?? payloadFeedbackText,
+            // Never map API `active` → local `accepted`; “active” is row lifecycle, not QA review completion.
+            status: 'pending',
+            feedback: payloadFeedbackVote,
+            feedbackText: payloadFeedbackText,
           }
           changed = true
         }
@@ -2625,6 +3029,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     fontFamily: 'var(--font)',
     cursor: 'pointer',
     boxSizing: 'border-box',
+    transition: 'transform .08s ease, box-shadow .12s ease, filter .12s ease',
   }
 
   const currentSessionNumber = activeSectionIdx >= 0 ? activeSectionIdx + 1 : 1
@@ -2901,11 +3306,11 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
             }}
           >
             <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 200px' }}>
-              <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font)', color: 'var(--text3)', fontSize: 11, fontWeight: 500 }}>
+              <button type="button" onClick={handleBackToDashboard} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font)', color: 'var(--text3)', fontSize: 11, fontWeight: 500 }}>
                 Knowledge Assist
               </button>
               <span style={{ color: 'var(--border)', userSelect: 'none' }}>&gt;</span>
-              <button type="button" onClick={onBackToDataConnectors} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font)', color: 'var(--text3)', fontSize: 11, fontWeight: 500 }}>
+              <button type="button" onClick={handleBackToConnectors} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--font)', color: 'var(--text3)', fontSize: 11, fontWeight: 500 }}>
                 Data Connectors
               </button>
               <span style={{ color: 'var(--border)', userSelect: 'none' }}>&gt;</span>
@@ -3256,7 +3661,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
                       q={q}
                       oppId={oppId}
                       readOnly={isOpportunityReadOnly}
-                      qState={qState[q.id] || { status: q.status, override: '', editedAnswer: '', answerSource: 'ai', feedback: null, feedbackText: '', notes: '', conflictResolved: false, serverLocked: false }}
+                      qState={qState[q.id] || { status: q.status, isAccepted: false, isEdited: false, override: '', editedAnswer: '', answerSource: 'ai', feedback: null, feedbackText: '', notes: '', conflictResolved: false, serverLocked: false }}
                       onAccept={acceptQ}
                       onUndo={undoQ}
                       onSaveOverride={saveOverride}
@@ -3306,6 +3711,9 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
                   <button
                     type="button"
                     onClick={handleAcceptAll}
+                    onMouseDown={() => setPressedFooterAction('accept-all')}
+                    onMouseUp={() => setPressedFooterAction(null)}
+                    onMouseLeave={() => setPressedFooterAction(null)}
                     disabled={submitBusy || isOpportunityAlreadySubmitted || isOpportunityReadOnly}
                     title="Accept every pending question using your current MCQ selections and sentence edits. Does not send to the server — use Submit for that."
                     style={{
@@ -3313,9 +3721,10 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
                       border: '1px solid rgba(27,38,79,.22)',
                       background: 'var(--bg2)',
                       color: SI_NAVY,
-                      boxShadow: 'none',
+                      boxShadow: pressedFooterAction === 'accept-all' ? 'inset 0 2px 8px rgba(15,23,42,.14)' : 'none',
                       opacity: submitBusy || isOpportunityAlreadySubmitted || isOpportunityReadOnly ? 0.7 : 1,
                       cursor: submitBusy || isOpportunityAlreadySubmitted || isOpportunityReadOnly ? 'not-allowed' : 'pointer',
+                      transform: pressedFooterAction === 'accept-all' ? 'translateY(1px) scale(0.99)' : 'translateY(0) scale(1)',
                     }}
                   >
                     Accept all answers
@@ -3325,36 +3734,46 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
                   <button
                     type="button"
                     onClick={handleSaveNextClick}
-                    disabled={isOpportunityReadOnly}
+                    onMouseDown={() => setPressedFooterAction('save-next')}
+                    onMouseUp={() => setPressedFooterAction(null)}
+                    onMouseLeave={() => setPressedFooterAction(null)}
+                    disabled={isOpportunityReadOnly || saveBusy}
                     style={{
                       ...footBarBtnBase,
                       border: 'none',
-                      background: !isOpportunityReadOnly ? SI_ORANGE : 'var(--bg3)',
-                      color: !isOpportunityReadOnly ? '#fff' : 'var(--text3)',
-                      boxShadow: !isOpportunityReadOnly ? '0 2px 10px rgba(232,83,46,.28)' : 'none',
-                      cursor: !isOpportunityReadOnly ? 'pointer' : 'not-allowed',
-                      opacity: !isOpportunityReadOnly ? 1 : 0.7,
+                      background: !isOpportunityReadOnly && !saveBusy ? SI_ORANGE : 'var(--bg3)',
+                      color: !isOpportunityReadOnly && !saveBusy ? '#fff' : 'var(--text3)',
+                      boxShadow: !isOpportunityReadOnly && !saveBusy
+                        ? (pressedFooterAction === 'save-next' ? '0 1px 6px rgba(232,83,46,.22)' : '0 2px 10px rgba(232,83,46,.28)')
+                        : 'none',
+                      cursor: !isOpportunityReadOnly && !saveBusy ? 'pointer' : 'not-allowed',
+                      opacity: !isOpportunityReadOnly && !saveBusy ? 1 : 0.7,
+                      transform: pressedFooterAction === 'save-next' ? 'translateY(1px) scale(0.99)' : 'translateY(0) scale(1)',
                     }}
                   >
-                    Save &amp; next
+                    {saveBusy ? 'Saving...' : 'Save & Next'}
                   </button>
                 )}
                 {showSaveOnFinalSection && (
                   <button
                     type="button"
                     onClick={handleSaveClick}
-                    disabled={isOpportunityReadOnly}
+                    onMouseDown={() => setPressedFooterAction('save')}
+                    onMouseUp={() => setPressedFooterAction(null)}
+                    onMouseLeave={() => setPressedFooterAction(null)}
+                    disabled={isOpportunityReadOnly || saveBusy}
                     style={{
                       ...footBarBtnBase,
                       border: '1px solid rgba(27,38,79,.22)',
                       background: 'var(--bg2)',
                       color: SI_NAVY,
-                      boxShadow: 'none',
-                      opacity: !isOpportunityReadOnly ? 1 : 0.7,
-                      cursor: !isOpportunityReadOnly ? 'pointer' : 'not-allowed',
+                      boxShadow: pressedFooterAction === 'save' ? 'inset 0 2px 8px rgba(15,23,42,.14)' : 'none',
+                      opacity: !isOpportunityReadOnly && !saveBusy ? 1 : 0.7,
+                      cursor: !isOpportunityReadOnly && !saveBusy ? 'pointer' : 'not-allowed',
+                      transform: pressedFooterAction === 'save' ? 'translateY(1px) scale(0.99)' : 'translateY(0) scale(1)',
                     }}
                   >
-                    Save
+                    {saveBusy ? 'Saving...' : 'Save'}
                   </button>
                 )}
                 {showSubmitButton && (
@@ -3445,12 +3864,8 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
             : null
         }
         omitPrimaryRecommendation={!bulkResolveIncludeResolved}
-        onPrev={bulkConflictIndex > 0 ? () => setBulkConflictIndex(i => Math.max(0, i - 1)) : undefined}
-        onNext={
-          bulkConflictIndex < bulkConflictCandidates.length - 1
-            ? () => setBulkConflictIndex(i => Math.min(bulkConflictCandidates.length - 1, i + 1))
-            : undefined
-        }
+        onPrev={() => setBulkConflictIndex(i => Math.max(0, i - 1))}
+        onNext={() => setBulkConflictIndex(i => Math.min(bulkConflictCandidates.length - 1, i + 1))}
         hasPrev={bulkConflictIndex > 0}
         hasNext={bulkConflictIndex < bulkConflictCandidates.length - 1}
         onConfirm={(chosen) => {
@@ -3491,6 +3906,38 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
           setBulkConflictIndex(Math.min(oldIdx, newLen - 1))
         }}
       />
+
+      {saveToast?.message ? (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            top: 72,
+            right: 24,
+            zIndex: 12000,
+            padding: '12px 18px',
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 700,
+            fontFamily: 'var(--font)',
+            color: saveToast.type === 'error' ? '#991B1B' : '#14532D',
+            background: saveToast.type === 'error' ? '#FEE2E2' : '#DCFCE7',
+            border: saveToast.type === 'error' ? '1px solid #FCA5A5' : '1px solid #86EFAC',
+            boxShadow: '0 8px 28px rgba(15,23,42,.18)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            animation: 'fadeUp .18s ease',
+            pointerEvents: 'none',
+          }}
+        >
+          <span aria-hidden style={{ fontSize: 16 }}>
+            {saveToast.type === 'error' ? '✕' : '✓'}
+          </span>
+          {saveToast.message}
+        </div>
+      ) : null}
 
       {submitConfirmOpen && (
         <div
@@ -3648,7 +4095,7 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
                 type="button"
                 onClick={() => {
                   setShowSubmitSuccess(false)
-                  if (typeof onBack === 'function') onBack()
+                  handleBackToDashboard()
                 }}
                 style={{
                   ...btnGhost,
