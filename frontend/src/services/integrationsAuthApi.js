@@ -8,6 +8,17 @@ import { traced } from './connectorTrace'
 
 /** Full backend URL for OAuth redirect URIs (always needs real host, not proxy). */
 const BACKEND_BASE = String(import.meta.env.VITE_API_BASE || 'http://localhost:8000').replace(/\/$/, '')
+/** Canonical frontend origin used for OAuth return URLs across all connectors. */
+const FRONTEND_BASE = (() => {
+  const explicit = import.meta.env.VITE_FRONTEND_APP_URL
+  if (explicit != null && String(explicit).trim() !== '') {
+    return String(explicit).trim().replace(/\/$/, '')
+  }
+  if (typeof window !== 'undefined') {
+    return String(window.location.origin || '').replace(/\/$/, '')
+  }
+  return ''
+})()
 
 /** Set before redirecting to provider; App reads this to reopen the create-opportunity screen (no query on redirect_uri). */
 export const OAUTH_RETURN_CREATE_OPP_KEY = 'pzf_after_oauth_page'
@@ -30,9 +41,7 @@ export function getOAuthRedirectUri() {
   if (explicit != null && String(explicit).trim() !== '') {
     return String(explicit).trim()
   }
-  if (typeof window === 'undefined') return ''
-  const origin = String(window.location.origin || '').replace(/\/$/, '')
-  return `${origin}/`
+  return `${FRONTEND_BASE}/`
 }
 
 /**
@@ -70,27 +79,21 @@ export function getGmailFrontendResultUrl() {
   if (explicit != null && String(explicit).trim() !== '') {
     return String(explicit).trim()
   }
-  if (typeof window === 'undefined') return ''
-  const origin = String(window.location.origin || '').replace(/\/$/, '')
-  return `${origin}/gmail-result`
+  return `${FRONTEND_BASE}/gmail-result`
 }
 
 /**
  * return_url for per-opportunity Gmail connect OAuth — user lands at /sources/:oid.
  */
 export function getGmailSourcesReturnUrl(oid) {
-  if (typeof window === 'undefined') return ''
-  const origin = String(window.location.origin || '').replace(/\/$/, '')
-  return `${origin}/sources/${oid}`
+  return `${FRONTEND_BASE}/sources/${oid}`
 }
 
 /**
  * return_url for per-opportunity Drive connect OAuth — user lands at /sources/:oid.
  */
 export function getDriveSourcesReturnUrl(oid) {
-  if (typeof window === 'undefined') return ''
-  const origin = String(window.location.origin || '').replace(/\/$/, '')
-  return `${origin}/sources/${oid}`
+  return `${FRONTEND_BASE}/sources/${oid}`
 }
 
 /**

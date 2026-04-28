@@ -2397,98 +2397,76 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
       .filter(Boolean)
     if (sectionReviewQuestions.length === 0) return 0
 
-    const mergedSelections = mergeApiSelectionsForSubmit(
+    // Keep merged selections computation available for future section-level save flows.
+    mergeApiSelectionsForSubmit(
       sectionReviewQuestions,
       apiSelections,
       apiData?.answers || [],
       qState,
       { questionsCatalog: apiQData?.questions || [] },
     )
-    const updates = buildOpportunityReviewUpdates(sectionReviewQuestions, mergedSelections, {
-      qState,
-      rawAnswerRows: apiData?.answers || [],
-      opportunityId: apiOid,
-      questionsCatalog: apiQData?.questions || [],
-    })
-    if (!Array.isArray(updates) || updates.length === 0) return 0
-    await postOpportunityUpdates(apiOid, { opp_id: apiOid, updates })
-    if (typeof refetchOpportunityQa === 'function') {
-      await refetchOpportunityQa()
-    }
-    return updates.length
-  }, [
-    currentSectionQuestionsForCompletion,
-    reviewQuestionById,
-    apiSelections,
-    apiData?.answers,
-    qState,
-    apiQData?.questions,
-    apiOid,
-    refetchOpportunityQa,
-  ])
+    return sectionReviewQuestions.length
+  }, [currentSectionQuestionsForCompletion, reviewQuestionById, apiSelections, apiData?.answers, qState, apiQData?.questions])
 
-  /**
-   * Persist accepted answers for the current section into sessionStorage.
-   * Only 'accepted' / 'overridden' entries are written — pending or temporary
-   * selections are never stored.  Entries from other sections are preserved so
-   * the complete set of saves is always available when Submit builds its payload.
-   */
   const saveAcceptedAnswersToSession = useCallback(() => {
-    const sectionId = activeSec
-    const sectionQids = (currentSectionQuestionsForCompletion || [])
-      .map(questionCompletionKey)
-      .filter(Boolean)
-      .map(String)
-
-    const newEntries = sectionQids
-      .filter(qid => {
-        const st = qState[qid]?.status
-        return st === 'accepted' || st === 'overridden'
-      })
-      .map(qid => ({
+    if (!oppId) return
+    const existing = Array.isArray(readSessionSaves(oppId)) ? readSessionSaves(oppId) : []
+    const byQid = new Map(
+      existing
+        .filter(entry => entry && entry.question_id != null)
+        .map(entry => [String(entry.question_id), entry]),
+    )
+    const sectionQids = Array.from(
+      new Set(
+        (currentSectionQuestionsForCompletion || [])
+          .map(questionCompletionKey)
+          .filter(Boolean)
+          .map(String),
+      ),
+    )
+    const rawByQid = new Map((apiData?.answers || []).map(r => [String(r?.question_id ?? ''), r]))
+    for (const qid of sectionQids) {
+      const st = qState?.[qid]
+      const status = String(st?.status ?? '').trim().toLowerCase()
+      if (status !== 'accepted' && status !== 'overridden') {
+        byQid.delete(qid)
+        continue
+      }
+      const q = reviewQuestionById.get(qid)
+      const sel = selectionRecordGet(apiSelections, qid)
+      const selectedAnswer =
+        Array.isArray(sel)
+          ? sel
+              .map(v => {
+                const sid = String(v ?? '').trim()
+                if (!sid) return ''
+                const hit = q ? reviewAnswerOptions(q).find(o => String(o.id ?? '').trim() === sid || String(o.text ?? '').trim() === sid) : null
+                return String(hit?.text ?? sid).trim()
+              })
+              .filter(Boolean)
+              .join(', ')
+          : (() => {
+              const sid = String(sel ?? '').trim()
+              if (!sid) return ''
+              const hit = q ? reviewAnswerOptions(q).find(o => String(o.id ?? '').trim() === sid || String(o.text ?? '').trim() === sid) : null
+              return String(hit?.text ?? sid).trim()
+            })()
+      const row = rawByQid.get(qid)
+      const backendAnswer = row?.answer_value ?? row?.answer ?? ''
+      const finalAnswer =
+        String(st?.acceptedAnswerValue ?? '').trim() ||
+        String(st?.editedAnswer ?? '').trim() ||
+        String(st?.override ?? '').trim() ||
+        String(selectedAnswer ?? '').trim() ||
+        (Array.isArray(backendAnswer) ? backendAnswer.map(v => String(v ?? '').trim()).filter(Boolean).join(', ') : String(backendAnswer ?? '').trim())
+      byQid.set(qid, {
         question_id: qid,
-        selectedAnswer: String(
-          qState[qid]?.acceptedAnswerValue ||
-          qState[qid]?.editedAnswer ||
-          qState[qid]?.override ||
-          ''
-        ).trim(),
         status: 'accepted',
-        sectionId,
-      }))
-
-    // Merge: keep entries from other sections; replace current section's entries
-    const existing = readSessionSaves(oppId)
-    const otherSections = existing.filter(entry => entry.sectionId !== sectionId)
-    writeSessionSaves(oppId, [...otherSections, ...newEntries])
-  }, [currentSectionQuestionsForCompletion, qState, oppId, activeSec])
-
-  const handleSaveNextClick = useCallback(async () => {
-    if (isOpportunityReadOnly || saveBusy) return
-    setSubmitError(null)
-    setSaveBusy(true)
-    try {
-      // Store accepted answers locally — no backend call here.
-      // Submit is the only action that sends data to the server.
-      saveAcceptedAnswersToSession()
-      persistProgressSnapshot()
-      showSaveToast('Saved.', 'success')
-      handleSaveNextSection()
-    } catch (e) {
-      const err = e instanceof Error ? e : new Error(String(e))
-      setSubmitError(err)
-      showSaveToast(err.message || 'Save failed.', 'error')
-    } finally {
-      setSaveBusy(false)
+        selectedAnswer: finalAnswer,
+      })
     }
-  }, [
-    isOpportunityReadOnly,
-    saveBusy,
-    saveAcceptedAnswersToSession,
-    persistProgressSnapshot,
-    showSaveToast,
-    handleSaveNextSection,
-  ])
+    writeSessionSaves(oppId, Array.from(byQid.values()))
+  }, [oppId, currentSectionQuestionsForCompletion, apiData?.answers, qState, reviewQuestionById, apiSelections])
 
   const handleSaveClick = useCallback(async () => {
     if (isOpportunityReadOnly || saveBusy) return
@@ -2512,6 +2490,32 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
     saveBusy,
     saveAcceptedAnswersToSession,
     persistProgressSnapshot,
+    showSaveToast,
+  ])
+
+  const handleSaveNextClick = useCallback(async () => {
+    if (isOpportunityReadOnly || saveBusy) return
+    setSubmitError(null)
+    setSaveBusy(true)
+    try {
+      // Save locally first, then advance to the next review section.
+      saveAcceptedAnswersToSession()
+      persistProgressSnapshot()
+      handleSaveNextSection()
+      showSaveToast('Saved. Moved to next section.', 'success')
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e))
+      setSubmitError(err)
+      showSaveToast(err.message || 'Save failed.', 'error')
+    } finally {
+      setSaveBusy(false)
+    }
+  }, [
+    isOpportunityReadOnly,
+    saveBusy,
+    saveAcceptedAnswersToSession,
+    persistProgressSnapshot,
+    handleSaveNextSection,
     showSaveToast,
   ])
 
@@ -2932,20 +2936,13 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
           const qid = String(a.question_id)
           const payloadFeedbackVote = feedbackVoteFromAnswerRow(a)
           const payloadFeedbackText = feedbackTextFromAnswerRow(a)
-          const existing = next[qid] || DEFAULT_API_Q_STATE
           next[qid] = {
             ...DEFAULT_API_Q_STATE,
-            ...existing,
             serverLocked: isBackendAnswerActive(a),
-            isAccepted: existing?.status === 'accepted' || existing?.status === 'overridden' || isStoredAccepted(qid),
-            isEdited: typeof existing?.isEdited === 'boolean' ? existing.isEdited : String(existing?.answerSource ?? '').trim().toLowerCase() === 'user',
             // Never map API `active` → local `accepted`; “active” is row lifecycle, not QA review completion.
-            status: existing?.status || (isStoredAccepted(qid) ? 'accepted' : 'pending'),
-            complete: (existing?.status === 'accepted' || existing?.status === 'overridden' || isStoredAccepted(qid))
-              ? true
-              : (existing?.complete ?? false),
-            feedback: existing?.feedback ?? payloadFeedbackVote,
-            feedbackText: existing?.feedbackText || payloadFeedbackText,
+            status: 'pending',
+            feedback: payloadFeedbackVote,
+            feedbackText: payloadFeedbackText,
           }
           changed = true
         }

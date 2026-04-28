@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,104 @@ def norm_val_str(val: Any) -> str:
     if isinstance(val, list):
         return ",".join(sorted(_norm_token(x) for x in val))
     return _norm_token(val)
+
+
+def prefer_answer_display(a: str, b: str) -> str:
+    """When two strings share the same dedupe key, keep the clearer representation."""
+    ca, cb = (a or "").strip(), (b or "").strip()
+    if not cb:
+        return ca
+    if not ca:
+        return cb
+    if "%" in ca and "%" not in cb:
+        return ca
+    if "%" in cb and "%" not in ca:
+        return cb
+    if ca.casefold() == cb.casefold():
+        if ca.isupper() and not cb.isupper():
+            return cb
+        if cb.isupper() and not ca.isupper():
+            return ca
+    return ca if len(ca) >= len(cb) else cb
+
+
+def _answer_dedupe_key_scalar(raw: str) -> str | None:
+    """Return a structural key for plain strings, or None to fall back to ``norm_val_str``."""
+    t = raw.strip()
+    if not t:
+        return None
+    compact = re.sub(r"\s+", "", t.casefold())
+
+    # Range hours: 24-48, 24-48hours, 24-48h
+    m = re.fullmatch(
+        r"(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)(?:hours?|hrs?|h)?",
+        compact,
+    )
+    if m:
+        a, b = float(m.group(1)), float(m.group(2))
+        return f"_hrs_range:{a:.10g}:{b:.10g}"
+
+    # Single value with hour unit
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)(?:hours?|hrs?|h)", compact)
+    if m:
+        return f"_hrs:{float(m.group(1)):.10g}"
+
+    # Explicit percentage
+    if "%" in t or compact.endswith("percent"):
+        num_part = compact.removesuffix("percent").rstrip("%")
+        try:
+            num = float(num_part)
+        except ValueError:
+            return None
+        return f"_pct:{num:.10g}"
+
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)", compact)
+    if not m:
+        return None
+    try:
+        num = float(m.group(1))
+    except ValueError:
+        return None
+
+    # Standalone decimals in [99, 100] are almost always SLA / uptime percentages
+    if 99.0 <= num <= 100.0:
+        return f"_pct:{num:.10g}"
+
+    # Plain numbers in a plausible "hours" window (integer or fractional hours)
+    if 0 < num < 99.0:
+        if num == int(num) and 1 <= num <= 168:
+            return f"_hrs:{num:.10g}"
+        if num != int(num) and 0 < num <= 168:
+            return f"_hrs:{num:.10g}"
+
+    return None
+
+
+def answer_dedupe_key(val: Any) -> str:
+    """Normalize for deduplication: merges format variants LLMs often double-output.
+
+    Examples merged: ``99.9`` / ``99.9%``; ``99.95`` / ``99.95%``; ``24`` / ``24 hours``;
+    ``24-48`` / ``24-48 hours``. Multiselect / list-like values use ``norm_val_str``.
+    """
+    if val is None:
+        return ""
+    if isinstance(val, list):
+        return norm_val_str(val)
+    raw = str(val).strip()
+    if not raw:
+        return ""
+    if raw.startswith("[") and raw.endswith("]"):
+        try:
+            parsed = ast.literal_eval(raw)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, list):
+            return norm_val_str(val)
+
+    key = _answer_dedupe_key_scalar(raw)
+    if key is not None:
+        return key
+    return norm_val_str(val)
 
 
 def _canonicalize_multiselect_value(val: Any) -> Any:
@@ -251,11 +350,30 @@ class FormOutputBuilder:
                     "citations": [self._citation_from_basis(b) for b in cand_basis],
                 })
 
+            # Contract: if a question has conflicts, answer_value must be null and ALL
+            # distinct values must live in conflicts[] (including the selected value).
+            if conflicts_list:
+                if answer_val is not None and str(answer_val).strip():
+                    if selected_str and selected_str not in seen_conflict_values:
+                        seen_conflict_values.add(selected_str)
+                        conflicts_list.append({
+                            "answer_value": answer_val,
+                            "confidence_score": confidence,
+                            "citations": citations,
+                        })
+                answer_out = None
+                citations_out: list[dict[str, Any]] = []
+                confidence_out = 0.0
+            else:
+                answer_out = answer_val
+                citations_out = citations
+                confidence_out = confidence
+
             entry_out: dict = {
                 "question_id": q_id,
-                "answer_value": answer_val,
-                "confidence_score": confidence,
-                "citations": citations,
+                "answer_value": answer_out,
+                "confidence_score": confidence_out,
+                "citations": citations_out,
                 "conflicts": conflicts_list,
             }
             answers_list.append(entry_out)

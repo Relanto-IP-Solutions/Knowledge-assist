@@ -23,6 +23,7 @@ Async with Vertex AI context cache:
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from pathlib import Path
 from typing import TypeVar
@@ -451,11 +452,33 @@ class LLMClient:
         """
         self._ensure_genai_client()
 
+        def _full_prompt() -> str:
+            return f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
+
         for attempt in range(1, max_retries + 1):
             try:
                 raw = await asyncio.get_running_loop().run_in_executor(
                     None, self._sync_generate_with_cache, user_prompt, cache_name
                 )
+
+                # Fast pre-check: a JSON array means the cache is stale/corrupted
+                # (the LLM echoed back the field-definitions list instead of answering).
+                # Invalidate immediately — retrying the same cache would produce the
+                # same bad response.
+                if raw.lstrip().startswith("["):
+                    from src.services.agent.cache_manager import get_cache_manager
+
+                    get_cache_manager().invalidate_by_cache_name(cache_name)
+                    logger.warning(
+                        "generate_with_cache: cache={} returned a JSON array "
+                        "(stale/corrupted cache); invalidating and falling back "
+                        "to full-prompt path",
+                        cache_name,
+                    )
+                    return await self.generate_async(
+                        _full_prompt(), schema, response_schema=response_schema
+                    )
+
                 return schema.model_validate_json(raw)
             except LLMError:
                 raise
@@ -468,12 +491,9 @@ class LLMClient:
                         "generate_with_cache: cache expired (404), invalidated; "
                         "falling back to full-prompt path",
                     )
-                    full_prompt = (
-                        f"{system_prompt}\n\n{user_prompt}"
-                        if system_prompt
-                        else user_prompt
+                    return await self.generate_async(
+                        _full_prompt(), schema, response_schema=response_schema
                     )
-                    return await self.generate_async(full_prompt, schema)
                 logger.opt(exception=True).warning(
                     "generate_with_cache: attempt {}/{} failed (cache={}): {}",
                     attempt,
@@ -487,12 +507,9 @@ class LLMClient:
                         "falling back to full-prompt path",
                         cache_name,
                     )
-                    full_prompt = (
-                        f"{system_prompt}\n\n{user_prompt}"
-                        if system_prompt
-                        else user_prompt
+                    return await self.generate_async(
+                        _full_prompt(), schema, response_schema=response_schema
                     )
-                    return await self.generate_async(full_prompt, schema)
                 await asyncio.sleep(1)
 
         raise LLMError("generate_with_cache: unreachable")  # for type checkers

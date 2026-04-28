@@ -2257,6 +2257,24 @@ function preferWireAnswerIdFromGetRow(qid, coercedVal, idMaps, rawRow) {
   return coercedVal
 }
 
+/** Drop orphan `is_user_override: true` rows (no non-empty `override_value`) before id finalization. */
+function stripInvalidOrphanUserOverride(updates) {
+  return (updates || []).map(u => {
+    if (u == null || u.is_user_override !== true) return u
+    const ov = u.override_value
+    const ovEmpty =
+      ov == null ||
+      (typeof ov === 'string' && String(ov).trim() === '') ||
+      (Array.isArray(ov) && ov.length === 0)
+    if (!ovEmpty) return u
+    const next = { ...u, is_user_override: false }
+    if (Object.prototype.hasOwnProperty.call(next, 'override_value')) {
+      delete next.override_value
+    }
+    return next
+  })
+}
+
 function finalizePostUpdatesAnswerIds(updates, idMaps, rawByQ) {
   return updates.map(u => {
     const qid = String(u.q_id ?? '')
@@ -2660,7 +2678,6 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
     const forceUserOverrideFromState =
       String(st?.status ?? '').trim().toLowerCase() === 'overridden' &&
       manualCurrentValue !== ''
-    const preserveUserOverrideIntent = persistedUserOverride || forceUserOverrideFromState
     const hasDirtyManualInput =
       manualCurrentValue !== '' &&
       isAnswerOverride(manualCurrentValue, backendAnswerValue, {
@@ -2682,6 +2699,7 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
     }
 
     const push = row => {
+      const rowBuiltAsNonOverride = row?.is_user_override === false
       const feedback = qState[qid]?.feedback
       const feedbackText = qState[qid]?.feedbackText || ''
       /** Preserve star score in comments; `feedback_type` is only the category integer for the DB. */
@@ -2713,7 +2731,7 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
             answer_id: aid,
             conflict_id: conflictId,
             conflict_answer_id: aid,
-            is_user_override: true,
+            is_user_override: false,
             override_value: undefined,
           }
         } else {
@@ -2722,7 +2740,7 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
             answer_id: aid,
             conflict_id: null,
             conflict_answer_id: null,
-            is_user_override: true,
+            is_user_override: false,
             override_value: undefined,
           }
         }
@@ -2775,17 +2793,27 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
           }
         }
       }
-      /**
-       * Only preserve the user-override intent when there is actually an override_value to send.
-       * Setting is_user_override=true without override_value causes a backend validation error.
-       */
-      if (preserveUserOverrideIntent && payload.is_user_override !== true) {
+      // Only re-sync GET `is_user_override` when the row is not an explicit non-override Accept.
+      // Merging `forceUserOverrideFromState` here caused `is_user_override: true` with no
+      // `override_value` (422) — that flag is handled in the `forceUserOverrideFromState` block above.
+      if (persistedUserOverride && payload.is_user_override !== true && !rowBuiltAsNonOverride) {
         const hasOverrideVal =
           payload.override_value != null &&
           !(typeof payload.override_value === 'string' && String(payload.override_value).trim() === '') &&
           !(Array.isArray(payload.override_value) && payload.override_value.length === 0)
-        if (hasOverrideVal) {
-          payload.is_user_override = true
+        if (hasOverrideVal) payload.is_user_override = true
+      }
+      if (payload.is_user_override === true) {
+        const ov = payload.override_value
+        const ovEmpty =
+          ov == null ||
+          (typeof ov === 'string' && String(ov).trim() === '') ||
+          (Array.isArray(ov) && ov.length === 0)
+        if (ovEmpty) {
+          payload.is_user_override = false
+          if (Object.prototype.hasOwnProperty.call(payload, 'override_value')) {
+            delete payload.override_value
+          }
         }
       }
       payload.answer_value = sanitizeAnswerValueForWire(
@@ -3686,5 +3714,5 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
     coveredQids.add(k)
   }
 
-  return finalizePostUpdatesAnswerIds(updates, idMaps, rawByQ)
+  return finalizePostUpdatesAnswerIds(stripInvalidOrphanUserOverride(updates), idMaps, rawByQ)
 }
