@@ -20,11 +20,24 @@ const EMAIL_RE   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const SS_EMAIL          = (oid) => `pzf_onedrive_email_${oid}`
 const SS_PENDING_OID    = 'pzf_onedrive_pending_oid'
 const SS_PENDING_EMAIL  = 'pzf_onedrive_pending_email'
+const SS_AUTH_DONE      = (oid) => `pzf_onedrive_auth_done_${oid}`
 // Persists the "no OneDrive folder for this OID" signal across reloads.
 // Backend returns a 404 on connect when the folder is missing; once the user
 // navigates away and back the 404 isn't re-issued, so without this flag the
 // hint would silently disappear.
 const SS_FOLDER_MISSING = (oid) => `pzf_onedrive_folder_missing_${oid}`
+
+function isOneDriveMissingFolderError(detail, status) {
+  if (status === 404) return true
+  const msg = String(detail ?? '').trim().toLowerCase()
+  if (!msg) return false
+  return (
+    (msg.includes('onedrive') && msg.includes('folder') && msg.includes('not found')) ||
+    msg.includes('no project folder found') ||
+    msg.includes("couldn't find a folder") ||
+    msg.includes('please create it manually')
+  )
+}
 
 function ssGet(k) { try { return sessionStorage.getItem(k) } catch { return null } }
 function ssSet(k, v) { try { sessionStorage.setItem(k, v) } catch { /**/ } }
@@ -219,6 +232,12 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
   // a Resync the button's disabled+spinner state is sufficient feedback.
   const [isResync, setIsResync]             = useState(false)
   const [folderMissing, setFolderMissing]   = useState(() => ssGet(SS_FOLDER_MISSING(oid)) === '1')
+  // UI-level connection state: do not rely solely on metrics.status because
+  // connect can succeed (or return folder-missing) before metrics carry ACTIVE.
+  const [isConnected, setIsConnected]       = useState(() => {
+    const cached = getCachedOneDriveMetrics(oid)
+    return String(cached?.status ?? '').toUpperCase() === 'ACTIVE' || ssGet(SS_FOLDER_MISSING(oid)) === '1'
+  })
   const [copiedOid, setCopiedOid]           = useState(false)
 
   const mountedRef = useRef(true)
@@ -227,17 +246,29 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
 
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false } }, [])
 
-  const isActive = String(metrics?.status ?? '').toUpperCase() === 'ACTIVE'
+  const isActive = isConnected || String(metrics?.status ?? '').toUpperCase() === 'ACTIVE'
 
   useEffect(() => { onStatusChange?.(isActive) }, [isActive, onStatusChange])
 
   // Load metrics on mount
   useEffect(() => {
+    const cached = getCachedOneDriveMetrics(oid)
+    setIsConnected(String(cached?.status ?? '').toUpperCase() === 'ACTIVE' || ssGet(SS_FOLDER_MISSING(oid)) === '1')
+    setFolderMissing(ssGet(SS_FOLDER_MISSING(oid)) === '1')
+  }, [oid])
+
+  useEffect(() => {
     let alive = true
     const hasCache = getCachedOneDriveMetrics(oid) !== null
     if (!hasCache) setMetricsLoading(true)
     fetchOneDriveMetrics(oid)
-      .then(m => { if (alive) { setMetrics(m); setMetricsLoading(false) } })
+      .then(m => {
+        if (alive) {
+          setMetrics(m)
+          if (String(m?.status ?? '').toUpperCase() === 'ACTIVE') setIsConnected(true)
+          setMetricsLoading(false)
+        }
+      })
       .catch(() => { if (alive) setMetricsLoading(false) })
     return () => { alive = false }
   }, [oid])
@@ -251,7 +282,9 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
     ssDel(SS_PENDING_EMAIL)
     setUserEmail(pendingEmail)
     ssSet(SS_EMAIL(oid), pendingEmail)
-    void runConnectAndMetrics(oid, pendingEmail)
+    ssSet(SS_AUTH_DONE(oid), '1')
+    // Keep post-redirect flow in-place. Next Connect/Resync proceeds directly
+    // to sync without forcing OAuth again.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -267,7 +300,8 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
   // /metrics silently (without writing to UI state) and watch for
   // last_synced_at to become non-null. Only when sync is verifiably
   // complete do we fetch the metrics one final time and reveal them.
-  const runConnectAndMetrics = useCallback(async (runOid, email) => {
+  const runConnectAndMetrics = useCallback(async (runOid, email, options = {}) => {
+    const allowOAuthRedirect = options.allowOAuthRedirect !== false
     if (!mountedRef.current) return
     setBusy(true)
     setNotice(null)
@@ -275,6 +309,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
 
     try {
       await connectOneDrive(runOid, email)
+      setIsConnected(true)
       // Reached only on 2xx — backend confirmed the folder exists and queued
       // the background sync. Clear any persisted "missing folder" hint so a
       // user who just created the folder and re-synced sees the success path.
@@ -286,14 +321,20 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       const detail = e?.response?.data?.detail ?? ''
 
       if (status === 401 || status === 400) {
-        // Token expired/missing — redirect to OAuth.
-        setPhase('authorizing')
-        try {
-          const auth = await getMicrosoftOAuthUrl(getOneDriveOAuthRedirectUri(), email, runOid)
-          if (auth?.auth_url) { doRedirect(runOid, email, auth.auth_url); return }
-        } catch { /**/ }
+        if (allowOAuthRedirect) {
+          // First-time flow: no valid token/connection yet, route to OAuth.
+          setPhase('authorizing')
+          try {
+            const auth = await getMicrosoftOAuthUrl(getOneDriveOAuthRedirectUri(), email, runOid)
+            if (auth?.auth_url) { doRedirect(runOid, email, auth.auth_url); return }
+          } catch { /**/ }
+        }
         if (mountedRef.current) {
-          setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
+          setIsConnected(false)
+          setNotice({
+            type: 'error',
+            msg: allowOAuthRedirect ? 'Please login to OneDrive first.' : 'Unable to sync OneDrive right now. Try Resync again.',
+          })
           setPhase('idle')
           setIsResync(false)
           setBusy(false)
@@ -302,6 +343,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       }
 
       if (status === 403) {
+        setIsConnected(false)
         setNotice({ type: 'error', msg: 'Only @relanto.ai accounts are permitted.' })
         setPhase('idle')
         setIsResync(false)
@@ -309,11 +351,11 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
         return
       }
 
-      // 404 folder-not-found — short-circuit, no point polling for sync
-      // because the background task won't have anything to ingest. Persist
-      // the signal so the hint sticks across page reloads (the /metrics
-      // endpoint can't tell us the folder is missing).
-      if (status === 404) {
+      // Missing-folder response — typically 404, but we also match the
+      // backend message text so any status/detail drift still shows the
+      // actionable banner instead of raw red inline errors.
+      if (isOneDriveMissingFolderError(detail, status)) {
+        setIsConnected(true)
         setFolderMissing(true)
         ssSet(SS_FOLDER_MISSING(runOid), '1')
         setNotice(null)
@@ -357,6 +399,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
     if (!mountedRef.current || oidRef.current !== runOid) return
 
     if (finalMetrics) setMetrics(finalMetrics)
+    if (String(finalMetrics?.status ?? '').toUpperCase() === 'ACTIVE') setIsConnected(true)
 
     // Once the source is connected, the green "Active" pill in the header
     // (and the metrics block, if last_synced_at is set) is the entire
@@ -375,10 +418,25 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
     ssSet(SS_EMAIL(oid), email)
     setBusy(true)
     setNotice(null)
-    setPhase('authorizing')
+    // If the user just returned from Microsoft OAuth (or is already connected),
+    // skip the extra authorize hop and go straight to connect+sync.
+    setPhase('connecting')
 
+    try {
+      const info = await getOneDriveAuthorizeInfo(oid, email)
+      if (info?.has_onedrive_connection === true) {
+        ssSet(SS_AUTH_DONE(oid), '1')
+        await runConnectAndMetrics(oid, email, { allowOAuthRedirect: false })
+        return
+      }
+    } catch {
+      // Non-fatal: fall through to OAuth URL check below.
+    }
+
+    const hasAuthedBefore = ssGet(SS_AUTH_DONE(oid)) === '1'
     let auth = null
     try {
+      setPhase('authorizing')
       auth = await getMicrosoftOAuthUrl(getOneDriveOAuthRedirectUri(), email, oid)
     } catch (e) {
       if (!mountedRef.current) return
@@ -401,10 +459,17 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
     if (!mountedRef.current) return
 
     if (auth?.already_connected === true) {
+      ssSet(SS_AUTH_DONE(oid), '1')
       // runConnectAndMetrics will move phase from 'authorizing' -> 'connecting'.
-      await runConnectAndMetrics(oid, email)
+      await runConnectAndMetrics(oid, email, { allowOAuthRedirect: false })
     } else if (auth?.auth_url) {
-      doRedirect(oid, email, auth.auth_url)
+      if (hasAuthedBefore) {
+        // User already completed first-time login for this OID — do not
+        // auto-redirect to auth again.
+        await runConnectAndMetrics(oid, email, { allowOAuthRedirect: false })
+      } else {
+        doRedirect(oid, email, auth.auth_url)
+      }
     } else {
       setNotice({ type: 'error', msg: 'Please login to OneDrive first.' })
       setPhase('idle')
@@ -446,7 +511,9 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
 
     if (!mountedRef.current || oidRef.current !== oid) return
 
-    if (authorizeInfo?.has_onedrive_connection === false) {
+    const hasAuthedBefore = ssGet(SS_AUTH_DONE(oid)) === '1'
+    if (authorizeInfo?.has_onedrive_connection === false && !hasAuthedBefore) {
+      setIsConnected(false)
       // No connection — route to OAuth
       try {
         const auth = await getMicrosoftOAuthUrl(getOneDriveOAuthRedirectUri(), email, oid)
@@ -459,8 +526,10 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
       return
     }
 
-    // Connection exists (or unknown) — run connect + metrics
-    await runConnectAndMetrics(oid, email)
+    // Connection exists (or unknown) — always allow one OAuth recovery hop on
+    // auth failures (400/401). This handles token-expired/deleted scenarios
+    // for users who were connected previously.
+    await runConnectAndMetrics(oid, email, { allowOAuthRedirect: true })
   }, [oid, userEmail, doRedirect, runConnectAndMetrics])
 
   const totalFilesCount = Number(metrics?.total_files ?? 0)
@@ -559,7 +628,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
             onMouseLeave={e => { e.currentTarget.style.opacity = busy ? '0.55' : '1' }}
           >
             {busy && <SpinIcon size={11} />}
-            Resync Items
+            Resync
           </button>
         )}
       </div>
@@ -596,7 +665,7 @@ export default function OneDriveOpportunityCard({ opportunityId, onStatusChange 
                 No project folder found in OneDrive
               </div>
               <div style={{ fontSize: 11.5, color: '#92400E', lineHeight: 1.55, marginBottom: 8 }}>
-                Create a folder in your OneDrive whose name includes this project id, drop your files in it, then click <strong>Resync Items</strong>. Acceptable names: <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{oid}</code>, <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`OID ${oid.replace(/^oid/i, '')}`}</code>, or <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`Project ${oid}`}</code>.
+                Create a folder in your OneDrive with this project id in the name, add your files there, then click <strong>Resync</strong>. Recommended names: <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{oid}</code>, <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`OID ${oid.replace(/^oid/i, '')}`}</code>, or <code style={{ background: 'rgba(146,64,14,.1)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{`Project ${oid}`}</code>.
               </div>
               <button type="button" onClick={handleCopyOid}
                 style={{

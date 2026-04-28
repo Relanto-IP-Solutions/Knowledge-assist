@@ -371,7 +371,7 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
             onMouseLeave={e => { e.currentTarget.style.opacity = busy ? '0.55' : '1' }}
           >
             {busy && <SpinIcon size={11} />}
-            {busy ? 'Syncing…' : 'Resync Drive'}
+            {busy ? 'Syncing…' : 'Resync'}
           </button>
         )}
       </div>

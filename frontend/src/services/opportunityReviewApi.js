@@ -142,6 +142,12 @@ function sanitizeOneAnswerUpdate(raw) {
 
   const aidNorm = normalizeAnswerIdForWire(raw.answer_id, multiFormat)
 
+  /** Backend rejects `is_user_override: true` without a non-empty `override_value`. */
+  const effectiveIsUserOverride =
+    isUserOverride &&
+    overrideValue != null &&
+    !(Array.isArray(overrideValue) && overrideValue.length === 0)
+
   /** @type {Record<string, unknown>} */
   const out = {
     q_id: qId,
@@ -165,14 +171,14 @@ function sanitizeOneAnswerUpdate(raw) {
   if (conflictId != null) out.conflict_id = conflictId
   if (conflictAnswerId != null) out.conflict_answer_id = conflictAnswerId
 
-  if (isUserOverride) {
+  if (effectiveIsUserOverride) {
     out.is_user_override = true
-    if (overrideValue != null) out.override_value = overrideValue
+    out.override_value = overrideValue
   }
 
   const hasConflictPair = Boolean(out.conflict_id && out.conflict_answer_id)
   /** Pure conflict resolution: selected branch UUID only on `conflict_answer_id` (no duplicate `answer_id`). */
-  if (hasConflictPair && !isUserOverride) {
+  if (hasConflictPair && !effectiveIsUserOverride) {
     delete out.answer_id
   }
 
@@ -180,10 +186,7 @@ function sanitizeOneAnswerUpdate(raw) {
     out.answer_id != null &&
     !(typeof out.answer_id === 'string' && String(out.answer_id).trim() === '') &&
     !(Array.isArray(out.answer_id) && out.answer_id.length === 0)
-  const hasOverride =
-    isUserOverride &&
-    overrideValue != null &&
-    !(Array.isArray(overrideValue) && overrideValue.length === 0)
+  const hasOverride = effectiveIsUserOverride
   if (!hasAnswer && !hasOverride && !hasConflictPair) return null
   if (!hasAnswer && !hasConflictPair && hasOverride) return null
 

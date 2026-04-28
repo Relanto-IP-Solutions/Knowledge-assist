@@ -308,8 +308,15 @@ async def microsoft_oauth_browser_callback(
             status_code=403,
         )
 
-    u = request.url
-    redirect_uri = f"{u.scheme}://{u.netloc}{u.path}"
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    path = request.url.path
+    if forwarded_proto:
+        if not path.startswith("/api/"):
+            path = f"/api{path}"
+        scheme = forwarded_proto
+    else:
+        scheme = request.url.scheme
+    redirect_uri = f"{scheme}://{request.url.netloc}{path}"
     try:
         await oauth_service.exchange_microsoft_code(code, redirect_uri, db, user_email)
     except ValueError as exc:
@@ -351,8 +358,15 @@ async def slack_oauth_browser_callback(
             },
             status_code=400,
         )
-    u = request.url
-    redirect_uri = f"{u.scheme}://{u.netloc}{u.path}"
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    path = request.url.path
+    if forwarded_proto:
+        if not path.startswith("/api/"):
+            path = f"/api{path}"
+        scheme = forwarded_proto
+    else:
+        scheme = request.url.scheme
+    redirect_uri = f"{scheme}://{request.url.netloc}{path}"
     try:
         result = await oauth_service.exchange_slack_code(code, redirect_uri, db, user_email)
         return JSONResponse({"ok": True, **result})

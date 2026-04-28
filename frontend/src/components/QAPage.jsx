@@ -2120,6 +2120,11 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
       updatedAt: Date.now(),
     })
     writeAcceptedAnswers(oppId, acceptedMap)
+    // Surface the persistence so users know their progress was captured before
+    // we change sections. Without this the section flip looks like the only
+    // effect of the click, which is what made the save feel "lost".
+    setSubmitNotice(`Saved ${Object.keys(acceptedMap).length} answers`)
+    setTimeout(() => setSubmitNotice(null), 1800)
     handleSaveNextSection()
   }, [handleSaveNextSection, isOpportunityReadOnly, oppId, activeSec, qState, apiSelections])
 
@@ -2519,13 +2524,21 @@ export default function QAPage({ oppId, onBack, onBackToDataConnectors, onReview
           const qid = String(a.question_id)
           const payloadFeedbackVote = feedbackVoteFromAnswerRow(a)
           const payloadFeedbackText = feedbackTextFromAnswerRow(a)
+          // CRITICAL: preserve qState restored from localStorage (qaProgress_<oid>).
+          // Effect 1033 (oppId-keyed) runs on mount and rehydrates accepted /
+          // overridden / editedAnswer / override fields. This seed effect runs
+          // when apiData?.answers arrives — without spreading `restored` first,
+          // we'd unconditionally reset every slot to status:'pending' and the
+          // user's "Save & next" persistence would silently disappear after any
+          // reload. Status falls back to 'pending' only when nothing is restored.
+          const restored = prev[qid]
           next[qid] = {
             ...DEFAULT_API_Q_STATE,
+            ...(restored || {}),
             serverLocked: isBackendAnswerActive(a),
-            // Never map API `active` → local `accepted`; “active” is row lifecycle, not QA review completion.
-            status: 'pending',
-            feedback: payloadFeedbackVote,
-            feedbackText: payloadFeedbackText,
+            status: restored?.status || 'pending',
+            feedback: restored?.feedback ?? payloadFeedbackVote,
+            feedbackText: restored?.feedbackText ?? payloadFeedbackText,
           }
           changed = true
         }
