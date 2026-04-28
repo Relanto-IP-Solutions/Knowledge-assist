@@ -2367,6 +2367,12 @@ export function validatePostUpdatesAnswerIdsBelongToOpportunity(
       }
       if (allowedHas(m, v)) continue
       if (looksLikeUuid(v) && optionUuidListedForQuestion(row, qid, v, questionsCatalog)) continue
+      // Multi-select/picklist catalogs can use numeric studio piclist row ids.
+      // Treat those as valid when they belong to this question's configured rows.
+      if (/^\d+$/.test(v)) {
+        const piclistRows = getPiclistAnswerRowsForQuestion(qid)
+        if (piclistRows.some(pr => String(pr?.answer_id ?? '').trim() === v)) continue
+      }
       bad.push({ qid: String(qid), field, value: v })
     }
   }
