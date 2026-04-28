@@ -271,23 +271,21 @@ export default function DriveOpportunityCard({ opportunityId, onStatusChange }) 
     setShowModal(true)
   }, [oid, userEmail, handleConnectWithEmail])
 
-  // Resync button handler — go straight to sync when we already know the
-  // account; otherwise open the Connect modal so the user can re-enter
-  // their Google email. The header only renders the Connect button while
-  // status != ACTIVE, so without this fallback an Active-but-locally-empty
-  // card (e.g. fresh browser session, cleared sessionStorage) would dead-
-  // end on a "use Connect" error pointing at a button that isn't visible.
-  // Re-using the modal funnels the user through getDriveAuthUrl, which
-  // either short-circuits via `already_connected` straight into runSync or
-  // kicks off OAuth (and the post-OAuth useEffect picks up sync on return).
+  // Resync button handler — always go through the same auth gate as Connect:
+  // 1) ask backend whether OAuth is needed (`getDriveAuthUrl`)
+  // 2) redirect if needed
+  // 3) otherwise sync directly.
+  //
+  // This prevents the "Please login to your Google Drive first" dead-end when
+  // tokens expire/deleted while the card still shows Active.
   const handleResync = useCallback(() => {
     setErr(null)
     setSyncStatus(null)
     setCopiedOid(false)
     const email = userEmail || ssGet(SS_EMAIL(oid)) || ''
     if (!email) { setShowModal(true); return }
-    void runSync(oid, email)
-  }, [oid, userEmail, runSync])
+    void handleConnectWithEmail(email)
+  }, [oid, userEmail, handleConnectWithEmail])
 
   const handleCopyOid = useCallback(async () => {
     try {
