@@ -26,6 +26,12 @@ _SYNC_LOOKBACK_DAYS = 90
 
 
 def _connector_user_id_for_list() -> str:
+    """Return the configured connector user email (DEPRECATED).
+
+    This function was previously used for single-user sync mode. As of the
+    all-users sync upgrade, sync_opportunity() now scans all Zoom account users
+    and no longer calls this helper. Kept for potential legacy/fallback paths.
+    """
     zcfg = get_settings().zoom
     connector_email = (zcfg.zoom_connector_user_email or "").strip()
     if not connector_email:
@@ -192,6 +198,59 @@ class ZoomSyncService:
 
         return True
 
+    async def _list_all_users_recordings(
+        self,
+        client: ZoomClient,
+        from_date: str,
+        to_date: str,
+    ) -> list[tuple[str, list[dict[str, Any]]]]:
+        """List recordings for ALL users in the Zoom account (concurrently).
+
+        Returns a list of tuples: (user_email, list_of_meetings).
+        """
+        users = await client.list_users()
+        if not users:
+            logger.info("Zoom sync: no users found in account.")
+            return []
+
+        logger.info("Zoom sync: scanning {} users for recordings...", len(users))
+
+        semaphore = asyncio.Semaphore(8)
+        out: list[tuple[str, list[dict[str, Any]]]] = []
+
+        async def _list_for_user(u: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+            uid = (str(u.get("id") or "")).strip() or (u.get("email") or "").strip()
+            email = u.get("email") or uid
+            if not uid:
+                return email, []
+            async with semaphore:
+                try:
+                    meetings = await client.list_recordings(
+                        from_date=from_date,
+                        to_date=to_date,
+                        user_id=uid,
+                    )
+                except Exception as exc:
+                    logger.warning("Zoom sync: failed listing recordings for user {}: {}", email, exc)
+                    return email, []
+            for m in meetings:
+                if isinstance(m, dict):
+                    m.setdefault("host_email", email)
+            return email, meetings
+
+        results = await asyncio.gather(
+            *(_list_for_user(u) for u in users if isinstance(u, dict)),
+            return_exceptions=True,
+        )
+
+        for r in results:
+            if isinstance(r, Exception):
+                logger.warning("Zoom sync: exception in gather: {}", r)
+                continue
+            out.append(r)
+
+        return out
+
     async def sync_opportunity(self, oid: str, db: Session | None = None) -> dict[str, Any]:
         normalized_oid = normalize_opportunity_oid(oid)
         _ = db  # Signature compatibility; this method now uses short-lived sessions only.
@@ -231,91 +290,113 @@ class ZoomSyncService:
                 )
 
             opp_db_id = int(opp.id)
-            # Master-only flow: always list recordings from connector account.
-            list_user = _connector_user_id_for_list()
 
         # 2) Long-running external work with no DB session open.
-        items_synced = 0
         to_d = date.today()
         from_d = to_d - timedelta(days=_SYNC_LOOKBACK_DAYS)
         client = ZoomClient()
-        recordings = await client.list_recordings(
+
+        # Fetch recordings from ALL users in the Zoom account (not just connector user).
+        user_recordings = await self._list_all_users_recordings(
+            client,
             from_date=from_d.isoformat(),
             to_date=to_d.isoformat(),
-            user_id=list_user,
         )
 
         storage = Storage()
-        for meeting in recordings:
-            if not isinstance(meeting, dict):
-                continue
-            topic = (meeting.get("topic") or "").strip()
+        items_synced = 0
+        users_with_matches = 0
 
-            # Robustly find OID applying the exact same regex/normalization as discovery.
-            extracted_oid = find_opportunity_oid(topic)
-            if not extracted_oid or normalize_opportunity_oid(extracted_oid) != normalized_oid:
-                continue
+        for user_email, recordings in user_recordings:
+            user_items = 0
+            for meeting in recordings:
+                if not isinstance(meeting, dict):
+                    continue
+                topic = (meeting.get("topic") or "").strip()
 
-            meeting_id = meeting.get("id")
-            if meeting_id is None:
-                logger.warning(
-                    "Zoom sync: skipping meeting without id (topic={!r})",
-                    topic[:120],
-                )
-                continue
-            mid_str = str(meeting_id)
+                # Robustly find OID applying the exact same regex/normalization as discovery.
+                extracted_oid = find_opportunity_oid(topic)
+                if not extracted_oid or normalize_opportunity_oid(extracted_oid) != normalized_oid:
+                    continue
 
-            recording_files: list[dict[str, Any]] = list(meeting.get("recording_files") or [])
-            if not recording_files:
-                try:
-                    detail = await client.get_recording_details(
-                        str(meeting.get("uuid") or mid_str)
+                meeting_id = meeting.get("id")
+                if meeting_id is None:
+                    logger.warning(
+                        "Zoom sync: skipping meeting without id (topic={!r})",
+                        topic[:120],
                     )
-                    recording_files = list(detail.get("recording_files") or [])
-                except Exception:
-                    logger.exception(
-                        "Zoom sync: failed to fetch recording details for meeting {}",
+                    continue
+                mid_str = str(meeting_id)
+
+                recording_files: list[dict[str, Any]] = list(meeting.get("recording_files") or [])
+                if not recording_files:
+                    try:
+                        detail = await client.get_recording_details(
+                            str(meeting.get("uuid") or mid_str)
+                        )
+                        recording_files = list(detail.get("recording_files") or [])
+                    except Exception:
+                        logger.exception(
+                            "Zoom sync: failed to fetch recording details for meeting {}",
+                            mid_str,
+                        )
+                        continue
+
+                transcript = _transcript_vtt_file(recording_files)
+                if not transcript:
+                    logger.debug(
+                        "Zoom sync: no TRANSCRIPT/VTT for meeting_id={} topic={!r}",
                         mid_str,
+                        topic[:120],
                     )
                     continue
 
-            transcript = _transcript_vtt_file(recording_files)
-            if not transcript:
-                logger.debug(
-                    "Zoom sync: no TRANSCRIPT/VTT for meeting_id={} topic={!r}",
-                    mid_str,
-                    topic[:120],
+                download_url = transcript.get("download_url")
+                if not download_url:
+                    continue
+
+                object_name = f"{mid_str}.vtt"
+                if storage.exists(
+                    tier="raw",
+                    opportunity_id=normalized_oid,
+                    source="zoom",
+                    object_name=object_name,
+                ):
+                    continue
+
+                content = await client.download_file(download_url)
+                storage.write(
+                    tier="raw",
+                    opportunity_id=normalized_oid,
+                    source="zoom",
+                    object_name=object_name,
+                    content=content,
+                    content_type="text/vtt",
                 )
-                continue
+                user_items += 1
+                logger.info(
+                    "Zoom sync: wrote raw/zoom/{} for oid={} (host={})",
+                    object_name,
+                    normalized_oid,
+                    user_email,
+                )
 
-            download_url = transcript.get("download_url")
-            if not download_url:
-                continue
+            if user_items > 0:
+                users_with_matches += 1
+                items_synced += user_items
+                logger.info(
+                    "Zoom sync: user {} contributed {} transcript(s) for oid={}",
+                    user_email,
+                    user_items,
+                    normalized_oid,
+                )
 
-            object_name = f"{mid_str}.vtt"
-            if storage.exists(
-                tier="raw",
-                opportunity_id=normalized_oid,
-                source="zoom",
-                object_name=object_name,
-            ):
-                continue
-
-            content = await client.download_file(download_url)
-            storage.write(
-                tier="raw",
-                opportunity_id=normalized_oid,
-                source="zoom",
-                object_name=object_name,
-                content=content,
-                content_type="text/vtt",
-            )
-            items_synced += 1
-            logger.info(
-                "Zoom sync: wrote gs raw/zoom/{} for oid={}",
-                object_name,
-                normalized_oid,
-            )
+        logger.info(
+            "Zoom sync complete for oid={}: {} transcript(s) from {} user(s)",
+            normalized_oid,
+            items_synced,
+            users_with_matches,
+        )
 
         # 3) Write-back DB step in a fresh short-lived session.
         with Session(get_engine()) as db_write:
@@ -333,4 +414,4 @@ class ZoomSyncService:
                 source.last_synced_at = now
                 db_write.commit()
 
-        return {"ok": True, "items_synced": items_synced}
+        return {"ok": True, "items_synced": items_synced, "users_scanned": len(user_recordings)}

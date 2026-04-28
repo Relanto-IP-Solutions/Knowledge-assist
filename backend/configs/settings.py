@@ -51,6 +51,13 @@ class AppSettings(_BaseEnvSettings):
         default="http://localhost:5173",
         alias="FRONTEND_APP_URL",
     )
+    # Explicit base URL for OAuth callbacks (e.g. https://myapp.com/api).
+    # When set, used for Microsoft/Slack OAuth redirect_uri instead of computing from request.
+    # Leave empty for local development (falls back to header-based detection).
+    oauth_callback_base_url: str = Field(
+        default="",
+        alias="OAUTH_CALLBACK_BASE_URL",
+    )
 
 
 class LoggingSettings(_BaseEnvSettings):
