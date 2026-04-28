@@ -110,7 +110,7 @@ export function buildSectionsFromQuestions(questions, answersMap = {}) {
           override: '',
           srcs: row?.sourceTypes?.length
             ? row.sourceTypes.map(t => {
-                const d = { zoom_transcript: { l: 'Zoom', c: '#2D8CFF', t: 'zoom' }, gdrive_doc: { l: 'Google Drive', c: '#34A853', t: 'gdrive' }, slack_messages: { l: 'Slack', c: '#E01E5A', t: 'slack' }, unknown: { l: 'AI Knowledge', c: '#A78BFA', t: 'ai' } }[t] || { l: t, c: '#8B949E', t: 'unknown' }
+                const d = { zoom_transcript: { l: 'Zoom', c: '#2D8CFF', t: 'zoom' }, gdrive_doc: { l: 'Google Drive', c: '#34A853', t: 'gdrive' }, slack_messages: { l: 'Slack', c: '#E01E5A', t: 'slack' }, unknown: { l: 'Knowledge Base', c: '#A78BFA', t: 'ai' } }[t] || { l: t, c: '#8B949E', t: 'unknown' }
                 return { name: d.l, color: d.c, type: d.t }
               })
             : [],

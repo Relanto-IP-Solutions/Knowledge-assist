@@ -792,7 +792,15 @@ export function validateReviewSelectionsForSubmit(questions, apiSelections, qSta
       ? resolveConflictIdForPost(rawRow, q, opportunityId)
       : null
 
-    if (hasBackendConflict && !st.conflictResolved) {
+    /**
+     * If the user manually entered an answer (answerSource === 'user' and editedAnswer is non-empty),
+     * treat it as a valid "Accepted User Response" — no conflict resolution required.
+     * Only enforce conflict resolution when there is no user-provided answer.
+     */
+    const hasValidManualAnswer =
+      String(st?.answerSource ?? '').trim().toLowerCase() === 'user' &&
+      String(st?.editedAnswer ?? '').trim() !== ''
+    if (hasBackendConflict && !st.conflictResolved && !hasValidManualAnswer) {
       errorsByQid[qid] = 'Resolve the conflict before accepting'
       if (import.meta.env.DEV) {
         const rawConflicts = Array.isArray(rawRow?.conflicts) ? rawRow.conflicts : []
@@ -802,6 +810,8 @@ export function validateReviewSelectionsForSubmit(questions, apiSelections, qSta
             status: st?.status ?? null,
             conflictResolved: st?.conflictResolved ?? null,
             serverLocked: st?.serverLocked ?? null,
+            answerSource: st?.answerSource ?? null,
+            editedAnswer: st?.editedAnswer ?? null,
           },
           rawRow: {
             status: rawRow?.status ?? null,
@@ -866,8 +876,28 @@ export function validateReviewSelectionsForSubmit(questions, apiSelections, qSta
         }
       }
       if (!id) {
+        /**
+         * After Accept (AI source), editedAnswer is reset to ''. Check fallbacks in order:
+         * 1. Pinned conflict branch id from resolveConflict
+         * 2. Accepted answer value stored at accept time
+         * 3. editedAnswer / override text
+         * 4. First substantive conflict option id (covers hydration-restored questions)
+         */
+        const caid = String(st?.conflictAnswerId ?? '').trim()
+        if (caid) continue
+        const acceptedVal = String(st?.acceptedAnswerValue ?? '').trim()
+        if (acceptedVal) continue
         const acceptedText = String(st.editedAnswer ?? st.override ?? '').trim()
         if (acceptedText) continue
+        // If this is a conflict row with options, any option is acceptable evidence of resolution
+        if (hasBackendConflict) {
+          const firstConflictOption = (Array.isArray(rawRow?.conflicts) ? rawRow.conflicts : [])
+            .find(c => {
+              const val = String(c?.answer_value ?? c?.answer ?? c?.value ?? '').trim()
+              return val.length > 0
+            })
+          if (firstConflictOption) continue
+        }
         errorsByQid[qid] = 'Please select an option'
       }
       continue
@@ -957,11 +987,35 @@ function backfillFromAcceptedState(q, out, qState) {
         return
       }
     }
+    /**
+     * After Accept with AI source, editedAnswer is reset to ''. Use the explicitly chosen conflict
+     * branch id that was pinned in qState during conflict resolution as the primary fallback,
+     * then fall through to the question's primary answer, and finally to the first substantive
+     * conflict branch so the POST body is never sent empty.
+     */
+    const caid = String(st?.conflictAnswerId ?? '').trim()
+    if (caid) {
+      out[qKey] = caid
+      return
+    }
     const aid =
       q.final_answer_id != null && String(q.final_answer_id).trim() !== ''
         ? String(q.final_answer_id).trim()
         : null
-    if (aid) out[qKey] = aid
+    if (aid) {
+      out[qKey] = aid
+      return
+    }
+    // Last resort: first conflict option that has both an id and a meaningful value
+    const firstConflictId = (() => {
+      for (const o of reviewAnswerOptions(q)) {
+        const id = String(o?.id ?? '').trim()
+        const txt = String(o?.text ?? '').trim()
+        if (id && txt) return id
+      }
+      return null
+    })()
+    if (firstConflictId) out[qKey] = firstConflictId
     return
   }
   if (pick) {
@@ -1027,12 +1081,28 @@ export function mergeApiSelectionsForSubmit(questions, apiSelections, answersRow
     if (!isSelectionEmpty(sel, pick, multi, conflictId)) continue
 
     if (conflictId) {
-      const aid =
-        row?.answer_id != null && String(row.answer_id).trim() !== ''
+      /**
+       * For conflict rows where apiSelections is empty, seed from:
+       * 1. The pinned conflict branch id from qState (set during resolveConflict)
+       * 2. The raw row's primary answer_id
+       * 3. The review question's final_answer_id
+       * 4. First substantive option from the conflict choices list (last resort)
+       */
+      const stEntry = qState?.[String(qKey)]
+      const caid = String(stEntry?.conflictAnswerId ?? '').trim()
+      const aid = caid ||
+        (row?.answer_id != null && String(row.answer_id).trim() !== ''
           ? String(row.answer_id).trim()
           : q.final_answer_id != null && String(q.final_answer_id).trim() !== ''
             ? String(q.final_answer_id).trim()
-            : null
+            : (() => {
+                for (const o of reviewAnswerOptions(q)) {
+                  const id = String(o?.id ?? '').trim()
+                  const txt = String(o?.text ?? '').trim()
+                  if (id && txt) return id
+                }
+                return null
+              })())
       if (aid) out[qKey] = aid
       continue
     }
@@ -2160,7 +2230,11 @@ function finalizePostUpdatesAnswerIds(updates, idMaps, rawByQ) {
     }
     if (Object.prototype.hasOwnProperty.call(u, 'conflict_answer_id')) {
       const coerced = coercePostAnswerIdField(qid, u.conflict_answer_id, idMaps)
-      next.conflict_answer_id = raw ? preferWireAnswerIdFromGetRow(qid, coerced, idMaps, raw) : coerced
+      /**
+       * Do not remap `conflict_answer_id` back to raw GET row `answer_id`.
+       * Conflict resolution must preserve the exact selected branch id from payload.
+       */
+      next.conflict_answer_id = coerced
     }
     return next
   })
@@ -2655,8 +2729,18 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
           }
         }
       }
+      /**
+       * Only preserve the user-override intent when there is actually an override_value to send.
+       * Setting is_user_override=true without override_value causes a backend validation error.
+       */
       if (preserveUserOverrideIntent && payload.is_user_override !== true) {
-        payload.is_user_override = true
+        const hasOverrideVal =
+          payload.override_value != null &&
+          !(typeof payload.override_value === 'string' && String(payload.override_value).trim() === '') &&
+          !(Array.isArray(payload.override_value) && payload.override_value.length === 0)
+        if (hasOverrideVal) {
+          payload.is_user_override = true
+        }
       }
       payload.answer_value = sanitizeAnswerValueForWire(
         q,
@@ -3386,13 +3470,17 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
     if (st?.status === 'pending') continue
     const rawRowForQ = rawByQ.get(k) || {}
     const conflictId = resolveConflictIdForPost(rawRowForQ, q, opportunityId)
-    if (conflictId && !st?.conflictResolved) continue
+    const hasManualAnswer =
+      String(st?.answerSource ?? '').trim().toLowerCase() === 'user' &&
+      String(st?.editedAnswer ?? '').trim() !== ''
+    if (conflictId && !st?.conflictResolved && !hasManualAnswer) continue
     const opts = reviewAnswerOptions(q)
     const n = opts.length
     const multi = isReviewMultiSelectMode(q, n, Boolean(conflictId))
     const derived = deriveAcceptedSelectionFromRawRow(q, rawRowForQ)
     const hasBaseline = hasServerBaselineAnswerId(rawRowForQ) || derived != null
-    if (!hasBaseline) continue
+    // For non-extracted questions with a user-entered answer, allow even without a baseline
+    if (!hasBaseline && !hasManualAnswer) continue
 
     const applyFeedback = base => {
       const feedback = qState[qid]?.feedback
@@ -3452,16 +3540,31 @@ export function buildOpportunityReviewUpdates(questions, apiSelections, options 
           : typeof derived === 'string'
             ? derived
             : null
-      if (!baseId) continue
-      updates.push(
-        applyFeedback({
-          q_id: qid,
-          answer_id: baseId,
-          conflict_id: null,
-          conflict_answer_id: null,
-          is_user_override: false,
-        }),
-      )
+      if (!baseId && !hasManualAnswer) continue
+      if (hasManualAnswer && !baseId) {
+        // Non-extracted question with user-entered answer but no backend baseline —
+        // emit as a user override so the manual answer is submitted.
+        updates.push(
+          applyFeedback({
+            q_id: qid,
+            answer_id: null,
+            conflict_id: null,
+            conflict_answer_id: null,
+            is_user_override: true,
+            override_value: String(st.editedAnswer).trim(),
+          }),
+        )
+      } else {
+        updates.push(
+          applyFeedback({
+            q_id: qid,
+            answer_id: baseId,
+            conflict_id: null,
+            conflict_answer_id: null,
+            is_user_override: false,
+          }),
+        )
+      }
     }
     coveredQids.add(k)
   }
