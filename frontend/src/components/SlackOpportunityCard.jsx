@@ -18,6 +18,49 @@ const SLACK_COLOR = '#4A154B'
 const NAVY = '#1B264F'
 const GREEN = '#10B981'
 const BLUE = '#3B82F6'
+const SLACK_CHANNEL_NAME_GUIDANCE =
+  "Channel names may only contain lowercase letters, numbers, hyphens, and underscores, and must be 80 characters or less."
+
+function slackErrorDetailToText(detail) {
+  if (detail == null) return ''
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) return detail.map(slackErrorDetailToText).filter(Boolean).join(' ')
+  if (typeof detail === 'object') {
+    return [
+      detail?.detail,
+      detail?.error,
+      detail?.message,
+      detail?.msg,
+      detail?.code,
+      detail?.slack_error,
+      detail?.slack_code,
+      detail?.reason,
+    ]
+      .map(v => (v == null ? '' : String(v)))
+      .filter(Boolean)
+      .join(' ')
+  }
+  return String(detail)
+}
+
+function mapSlackChannelNameError(err, fallbackMessage) {
+  const detailText = slackErrorDetailToText(err?.response?.data?.detail)
+  const dataText = slackErrorDetailToText(err?.response?.data)
+  const errText = slackErrorDetailToText(err?.message)
+  const combined = `${detailText} ${dataText} ${errText}`.toLowerCase()
+  const isInvalidChannelName =
+    combined.includes('invalid_name') ||
+    combined.includes('invalid name') ||
+    combined.includes('invalid_name_maxlength') ||
+    combined.includes('invalid_name_punctuation') ||
+    combined.includes('invalid_name_specials') ||
+    combined.includes('channel name') ||
+    combined.includes('unallowed special characters') ||
+    combined.includes('upper case characters')
+
+  if (isInvalidChannelName) return SLACK_CHANNEL_NAME_GUIDANCE
+  return detailText || errText || fallbackMessage
+}
 
 function timeAgo(iso) {
   if (!iso) return null
@@ -61,6 +104,47 @@ function Dot({ state }) {
   )
 }
 
+function ErrorNotice({ message, compact = false, tone = 'error' }) {
+  if (!message) return null
+  const isInfo = tone === 'info'
+  const border = isInfo ? '1px solid rgba(59,130,246,.3)' : '1px solid rgba(220,38,38,.28)'
+  const bg = isInfo ? 'rgba(59,130,246,.08)' : 'rgba(220,38,38,.08)'
+  const icon = isInfo ? '#2563EB' : '#DC2626'
+  const text = isInfo ? '#1D4ED8' : '#B91C1C'
+  return (
+    <div
+      style={{
+        marginTop: compact ? 8 : 0,
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 8,
+        padding: compact ? '8px 10px' : '10px 12px',
+        borderRadius: 8,
+        border,
+        background: bg,
+      }}
+    >
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={icon}
+        strokeWidth="2"
+        strokeLinecap="round"
+        style={{ flexShrink: 0, marginTop: 1 }}
+      >
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="7" x2="12" y2="13" />
+        <line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
+      <span style={{ fontSize: compact ? 11 : 12, color: text, lineHeight: 1.45, fontWeight: 600 }}>
+        {message}
+      </span>
+    </div>
+  )
+}
+
 export default function SlackOpportunityCard({ opportunityId, onStatusChange }) {
   const oid = useMemo(() => toApiOpportunityId(opportunityId), [opportunityId])
 
@@ -81,15 +165,24 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
   const [orchestrateBusy, setOrchestrateBusy] = useState(false)
   const [orchestrateResult, setOrchestrateResult] = useState(null)
   const [orchestrateErr, setOrchestrateErr] = useState(null)
+  const [highlightOidHint, setHighlightOidHint] = useState(false)
 
   const mountedRef = useRef(true)
   /** Tracks the opportunity currently shown; connect/resync started for `runOid` may finish after navigation — still persist via API cache. */
   const oidRef = useRef(oid)
+  const oidHintRef = useRef(null)
+  const oidBlinkTimerRef = useRef(null)
   oidRef.current = oid
 
   useEffect(() => {
     mountedRef.current = true
-    return () => { mountedRef.current = false }
+    return () => {
+      mountedRef.current = false
+      if (oidBlinkTimerRef.current) {
+        clearTimeout(oidBlinkTimerRef.current)
+        oidBlinkTimerRef.current = null
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -174,7 +267,7 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
       }
     } catch (e) {
       if (mountedRef.current && oidRef.current === runOid)
-        setErr(e?.response?.data?.detail ?? e?.message ?? 'Slack setup failed. Try again.')
+        setErr(mapSlackChannelNameError(e, 'Slack setup failed. Try again.'))
     } finally {
       if (mountedRef.current && oidRef.current === runOid) {
         setBusy(false)
@@ -186,6 +279,21 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
   const handleCreateChannel = useCallback(async () => {
     const runOid = oid
     const name = channelName.trim() || oid
+    const includesOid = name.toLowerCase().includes(String(runOid).toLowerCase())
+    if (!includesOid) {
+      setShowCreateChannel(false)
+      setErr(`Channel name must include ${runOid}.`)
+      setOrchestrateErr(null)
+      setOrchestrateResult(null)
+      setHighlightOidHint(true)
+      oidHintRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (oidBlinkTimerRef.current) clearTimeout(oidBlinkTimerRef.current)
+      oidBlinkTimerRef.current = setTimeout(() => {
+        setHighlightOidHint(false)
+        oidBlinkTimerRef.current = null
+      }, 2600)
+      return
+    }
     const emails = teamEmailsInput
       .split(/[\n,]+/)
       .map(e => e.trim())
@@ -198,7 +306,9 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
       if (mountedRef.current) setOrchestrateResult(result)
     } catch (e) {
       if (mountedRef.current)
-        setOrchestrateErr(e?.response?.data?.detail ?? e?.message ?? 'Channel creation failed. Try again.')
+        setOrchestrateErr(
+          mapSlackChannelNameError(e, 'Channel creation failed. Try again.'),
+        )
     } finally {
       if (mountedRef.current) setOrchestrateBusy(false)
     }
@@ -228,7 +338,7 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
       }
     } catch (e) {
       if (mountedRef.current && oidRef.current === runOid) {
-        setErr(e?.response?.data?.detail ?? e?.message ?? 'Resync failed. Try again.')
+        setErr(mapSlackChannelNameError(e, 'Resync failed. Try again.'))
       }
     } finally {
       if (mountedRef.current && oidRef.current === runOid) {
@@ -260,6 +370,11 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
         @keyframes pulse { 0%, 100% { opacity: .45 } 50% { opacity: 1 } }
+        @keyframes slackOidBlink {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); background: transparent; }
+          35% { box-shadow: 0 0 0 4px rgba(37,99,235,.18); background: rgba(59,130,246,.08); }
+          70% { box-shadow: 0 0 0 2px rgba(37,99,235,.1); background: rgba(59,130,246,.05); }
+        }
       `}</style>
 
       <div style={{
@@ -281,7 +396,18 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
             <span style={{ fontSize: 11, color: statusColor, fontWeight: 600 }}>{statusText}</span>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text3)' }}>Workspace Channels</div>
-          <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
+          <div
+            ref={oidHintRef}
+            style={{
+              fontSize: 10.5,
+              color: '#64748B',
+              marginTop: 2,
+              borderRadius: 6,
+              padding: '2px 6px',
+              marginInline: -6,
+              animation: highlightOidHint ? 'slackOidBlink .8s ease-in-out 3' : 'none',
+            }}
+          >
             Discover the channel for project <strong>{oid}</strong>, then synchronous ingest to storage. 
           </div>
         </div>
@@ -429,7 +555,10 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
 
       {err && (
         <div style={{ padding: '0 22px 14px 80px' }}>
-          <span style={{ fontSize: 12, color: '#DC2626' }}>{err}</span>
+          <ErrorNotice
+            message={err}
+            tone={String(err).toLowerCase().includes('channel name must include') ? 'info' : 'error'}
+          />
         </div>
       )}
 
@@ -527,7 +656,7 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
               </div>
             )}
             {orchestrateErr && (
-              <div style={{ marginTop: 8, fontSize: 11, color: '#DC2626' }}>{orchestrateErr}</div>
+              <ErrorNotice message={orchestrateErr} compact />
             )}
           </div>
         )}
