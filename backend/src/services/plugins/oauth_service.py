@@ -119,6 +119,11 @@ async def get_google_auth_url(
     )
     if state:
         url += f"&state={quote_plus(state)}"
+    logger.info(
+        "Google OAuth authorize URL generated | provider={} redirect_uri={}",
+        (provider or "combined"),
+        redirect_uri,
+    )
     return url
 
 
@@ -129,6 +134,11 @@ async def exchange_google_code(
     provider_key = (provider or "").strip().lower()
     if provider_key not in {"gmail", "drive"}:
         raise ValueError("Google OAuth provider must be 'gmail' or 'drive'.")
+    logger.info(
+        "Google OAuth token exchange start | provider={} redirect_uri={}",
+        provider_key,
+        redirect_uri,
+    )
     o = _oauth()
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -142,6 +152,12 @@ async def exchange_google_code(
             },
         )
     if resp.status_code != 200:
+        logger.warning(
+            "Google OAuth token exchange failed | provider={} redirect_uri={} status={}",
+            provider_key,
+            redirect_uri,
+            resp.status_code,
+        )
         raise ValueError(f"Google Token Exchange Failed: {resp.text}")
 
     token_data = resp.json()
