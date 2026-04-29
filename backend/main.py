@@ -144,6 +144,35 @@ def _normalize_google_redirect_uri(uri: str) -> str:
     return urlunsplit((p.scheme, netloc, p.path, p.query, p.fragment))
 
 
+def _build_external_google_redirect_uri(request: Request, callback_path: str) -> str:
+    """Build stable external Google callback URI for token exchange."""
+    settings = get_settings()
+    oauth_base = (settings.app.oauth_callback_base_url or "").strip().rstrip("/")
+    if oauth_base:
+        uri = f"{oauth_base}{callback_path}"
+        return _normalize_google_redirect_uri(uri)
+
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").strip().split(",")[0]
+    forwarded_host = (request.headers.get("x-forwarded-host") or "").strip().split(",")[0]
+    forwarded_prefix = (request.headers.get("x-forwarded-prefix") or "").strip()
+
+    scheme = forwarded_proto or request.url.scheme
+    host = forwarded_host or request.url.netloc
+    path = callback_path
+
+    if forwarded_prefix:
+        prefix = forwarded_prefix if forwarded_prefix.startswith("/") else f"/{forwarded_prefix}"
+        path = f"{prefix.rstrip('/')}{callback_path}"
+    elif host and "localhost" not in host and "127.0.0.1" not in host and not path.startswith("/api/"):
+        path = f"/api{callback_path}"
+
+    if scheme == "http" and host and "localhost" not in host and "127.0.0.1" not in host:
+        scheme = "https"
+
+    uri = f"{scheme}://{host}{path}"
+    return _normalize_google_redirect_uri(uri)
+
+
 @app.get("/auth/google/callback")
 async def google_oauth_browser_callback(
     request: Request,
@@ -161,8 +190,8 @@ async def google_oauth_browser_callback(
             status_code=400,
         )
     provider, oid_from_state = oauth_service.parse_google_oauth_state(state)
-    u = request.url
-    redirect_uri = _normalize_google_redirect_uri(f"{u.scheme}://{u.netloc}{u.path}")
+    redirect_uri = _build_external_google_redirect_uri(request, "/auth/google/callback")
+    logger.info("Google OAuth redirect_uri: {}", redirect_uri)
     try:
         result = await oauth_service.exchange_google_code(
             code, redirect_uri, db, provider=provider
