@@ -27,6 +27,35 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 external_router = APIRouter(tags=["auth"])
 
 
+def _build_external_oauth_redirect_uri(request: Request, callback_path: str) -> str:
+    """Build a stable external OAuth callback URI for token exchange."""
+    settings = get_settings()
+    oauth_base = (settings.app.oauth_callback_base_url or "").strip().rstrip("/")
+    if oauth_base:
+        return f"{oauth_base}{callback_path}"
+
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").strip().split(",")[0]
+    forwarded_host = (request.headers.get("x-forwarded-host") or "").strip().split(",")[0]
+    forwarded_prefix = (request.headers.get("x-forwarded-prefix") or "").strip()
+
+    scheme = forwarded_proto or request.url.scheme
+    host = forwarded_host or request.url.netloc
+    path = callback_path
+
+    if forwarded_prefix:
+        prefix = forwarded_prefix if forwarded_prefix.startswith("/") else f"/{forwarded_prefix}"
+        path = f"{prefix.rstrip('/')}{callback_path}"
+    elif host and "localhost" not in host and "127.0.0.1" not in host and not path.startswith("/api/"):
+        # Production ingress often strips /api before forwarding to FastAPI.
+        path = f"/api{callback_path}"
+
+    if scheme == "http" and host and "localhost" not in host and "127.0.0.1" not in host:
+        # Public OAuth callback must use HTTPS in production.
+        scheme = "https"
+
+    return f"{scheme}://{host}{path}"
+
+
 def _derive_display_role(roles_assigned) -> str:
     """Return "Admin" if roles_assigned contains ADMIN (case-insensitive), else "User"."""
     if not roles_assigned:
@@ -309,18 +338,7 @@ async def microsoft_oauth_browser_callback(
         )
 
     settings = get_settings()
-    oauth_base = (settings.app.oauth_callback_base_url or "").strip().rstrip("/")
-    
-    if oauth_base:
-        # Production: use explicit base URL from environment
-        redirect_uri = f"{oauth_base}/oauth/microsoft/callback"
-    else:
-        # Local dev fallback: compute from request headers
-        forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
-        path = request.url.path
-        redirect_uri = f"{forwarded_proto}://{request.url.netloc}{path}"
-    
-    logger.info("Microsoft OAuth redirect_uri: {}", redirect_uri)
+    redirect_uri = _build_external_oauth_redirect_uri(request, "/oauth/microsoft/callback")
     
     try:
         await oauth_service.exchange_microsoft_code(code, redirect_uri, db, user_email)
@@ -363,17 +381,8 @@ async def slack_oauth_browser_callback(
             status_code=400,
         )
     settings = get_settings()
-    oauth_base = (settings.app.oauth_callback_base_url or "").strip().rstrip("/")
-    
-    if oauth_base:
-        # Production: use explicit base URL from environment
-        redirect_uri = f"{oauth_base}/oauth/slack/callback"
-    else:
-        # Local dev fallback: compute from request headers
-        forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
-        path = request.url.path
-        redirect_uri = f"{forwarded_proto}://{request.url.netloc}{path}"
-    
+    redirect_uri = _build_external_oauth_redirect_uri(request, "/oauth/slack/callback")
+
     logger.info("Slack OAuth redirect_uri: {}", redirect_uri)
     
     try:
