@@ -318,8 +318,6 @@ async def microsoft_oauth_browser_callback(
         # Local dev fallback: compute from request headers
         forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
         path = request.url.path
-        if not path.startswith("/api/"):
-            path = f"/api{path}"
         redirect_uri = f"{forwarded_proto}://{request.url.netloc}{path}"
     
     logger.info("Microsoft OAuth redirect_uri: {}", redirect_uri)
@@ -374,8 +372,6 @@ async def slack_oauth_browser_callback(
         # Local dev fallback: compute from request headers
         forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
         path = request.url.path
-        if not path.startswith("/api/"):
-            path = f"/api{path}"
         redirect_uri = f"{forwarded_proto}://{request.url.netloc}{path}"
     
     logger.info("Slack OAuth redirect_uri: {}", redirect_uri)

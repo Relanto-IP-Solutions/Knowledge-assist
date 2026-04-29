@@ -142,12 +142,6 @@ function sanitizeOneAnswerUpdate(raw) {
 
   const aidNorm = normalizeAnswerIdForWire(raw.answer_id, multiFormat)
 
-  /** Backend rejects `is_user_override: true` without a non-empty `override_value`. */
-  const effectiveIsUserOverride =
-    isUserOverride &&
-    overrideValue != null &&
-    !(Array.isArray(overrideValue) && overrideValue.length === 0)
-
   /** @type {Record<string, unknown>} */
   const out = {
     q_id: qId,
@@ -168,15 +162,30 @@ function sanitizeOneAnswerUpdate(raw) {
     out.answer_id = aidNorm.value
   }
 
-  if (conflictId != null) out.conflict_id = conflictId
-  if (conflictAnswerId != null) out.conflict_answer_id = conflictAnswerId
+  const hasConflictPair = Boolean(
+    conflictId != null && String(conflictId).trim() !== '' &&
+    conflictAnswerId != null && String(conflictAnswerId).trim() !== ''
+  )
+  if (hasConflictPair) {
+    out.conflict_id = conflictId
+    out.conflict_answer_id = conflictAnswerId
+  }
+
+  /**
+   * Backend rule: `override_value` is required whenever `is_user_override` is true.
+   * If the flag was persisted from a previous submit but we no longer have an override
+   * value (e.g. the user simply re-accepted without editing), downgrade to a plain accept
+   * so we never send an empty override_value to the server.
+   */
+  const effectiveIsUserOverride = isUserOverride && overrideValue != null &&
+    !(Array.isArray(overrideValue) && overrideValue.length === 0) &&
+    !(typeof overrideValue === 'string' && overrideValue.trim() === '')
 
   if (effectiveIsUserOverride) {
     out.is_user_override = true
     out.override_value = overrideValue
   }
 
-  const hasConflictPair = Boolean(out.conflict_id && out.conflict_answer_id)
   /** Pure conflict resolution: selected branch UUID only on `conflict_answer_id` (no duplicate `answer_id`). */
   if (hasConflictPair && !effectiveIsUserOverride) {
     delete out.answer_id
@@ -188,7 +197,6 @@ function sanitizeOneAnswerUpdate(raw) {
     !(Array.isArray(out.answer_id) && out.answer_id.length === 0)
   const hasOverride = effectiveIsUserOverride
   if (!hasAnswer && !hasOverride && !hasConflictPair) return null
-  if (!hasAnswer && !hasConflictPair && hasOverride) return null
 
   return out
 }

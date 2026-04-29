@@ -98,7 +98,7 @@ function findPrimaryRecommendationFullIndex(fullConflicts) {
 }
 
 /**
- * preferPrimaryRecommendation (default true): when no prior selection matches, pre-select the primary/AI row.
+ * preferPrimaryRecommendation (default false): when no prior selection matches, optionally pre-select the primary/AI row.
  * @param {{
  *   open: boolean,
  *   onClose: () => void,
@@ -126,7 +126,7 @@ export function ConflictResolutionModal({
   omitPrimaryRecommendation = false,
   initialSelectedAnswer = null,
   initialSelectedAnswerId = null,
-  preferPrimaryRecommendation = true,
+  preferPrimaryRecommendation = false,
   onPrev = null,
   onNext = null,
   hasPrev = false,
@@ -256,7 +256,7 @@ export function ConflictResolutionModal({
             const brand = c0
               ? classifyApiSourceType(c0.source_type, c0)
               : classifyApiSourceType(c.srcType, null)
-            const srcDisplay = brand ? CONFLICT_SRC_MODAL[brand] : { label: 'AI Knowledge', color: '#A78BFA', type: 'ai' }
+            const srcDisplay = brand ? CONFLICT_SRC_MODAL[brand] : { label: 'Knowledge Base', color: '#A78BFA', type: 'ai' }
             return (
               <div
                 key={i}

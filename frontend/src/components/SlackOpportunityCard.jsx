@@ -20,6 +20,23 @@ const GREEN = '#10B981'
 const BLUE = '#3B82F6'
 const SLACK_CHANNEL_NAME_GUIDANCE =
   "Channel names may only contain lowercase letters, numbers, hyphens, and underscores, and must be 80 characters or less."
+const SLACK_CHANNEL_INVALID_CHAR_MSG =
+  'Wrong character in channel name. Use only lowercase letters, numbers, "-" and "_".'
+const SLACK_CHANNEL_SPACE_MSG =
+  'You entered a space in the channel name. Spaces are not allowed; use "-" or "_" instead.'
+const SS_SLACK_ACTIVE = (oid) => `pzf_slack_active_${oid}`
+const SS_SLACK_METRICS = (oid) => `pzf_slack_metrics_view_${oid}`
+
+function ssGet(key) { try { return sessionStorage.getItem(key) } catch { return null } }
+function ssSet(key, val) { try { sessionStorage.setItem(key, val) } catch { /**/ } }
+function ssGetJson(key) {
+  try {
+    const raw = sessionStorage.getItem(key)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
 
 function slackErrorDetailToText(detail) {
   if (detail == null) return ''
@@ -147,12 +164,17 @@ function ErrorNotice({ message, compact = false, tone = 'error' }) {
 
 export default function SlackOpportunityCard({ opportunityId, onStatusChange }) {
   const oid = useMemo(() => toApiOpportunityId(opportunityId), [opportunityId])
+  const cachedInfo = getCachedSlackConnectInfo(oid)
+  const sessionMetrics = ssGetJson(SS_SLACK_METRICS(oid))
 
-  const [active, setActive] = useState(() => getCachedSlackConnectInfo(oid)?.status === 'ACTIVE')
-  const [metrics, setMetrics] = useState(() => getCachedSlackMetrics(oid))
+  const [active, setActive] = useState(() => (
+    cachedInfo?.status === 'ACTIVE'
+    || ssGet(SS_SLACK_ACTIVE(oid)) === '1'
+    || Boolean(sessionMetrics)
+  ))
+  const [metrics, setMetrics] = useState(() => getCachedSlackMetrics(oid) ?? sessionMetrics)
   const [metricsLoading, setMetricsLoading] = useState(() => {
-    const info = getCachedSlackConnectInfo(oid)
-    return info?.status === 'ACTIVE' && !getCachedSlackMetrics(oid)
+    return (cachedInfo?.status === 'ACTIVE' || ssGet(SS_SLACK_ACTIVE(oid)) === '1') && !(getCachedSlackMetrics(oid) ?? sessionMetrics)
   })
   const [busy, setBusy] = useState(false)
   /** 'discover' | 'connect' | 'metrics' — which API phase is running */
@@ -187,14 +209,51 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
 
   useEffect(() => {
     const info = getCachedSlackConnectInfo(oid)
-    const cachedM = getCachedSlackMetrics(oid)
-    setActive(info?.status === 'ACTIVE')
+    const cachedM = getCachedSlackMetrics(oid) ?? ssGetJson(SS_SLACK_METRICS(oid))
+    const persistedActive = ssGet(SS_SLACK_ACTIVE(oid)) === '1'
+    setActive(info?.status === 'ACTIVE' || persistedActive || Boolean(cachedM))
     setMetrics(cachedM ?? null)
-    setMetricsLoading(info?.status === 'ACTIVE' && !cachedM)
+    setMetricsLoading((info?.status === 'ACTIVE' || persistedActive) && !cachedM)
     setErr(null)
     setBusy(false)
     setIngestStep(null)
   }, [oid])
+
+  // Rehydrate from backend on revisit/new session so already-connected Slack
+  // sources don't depend solely on local/session cache.
+  useEffect(() => {
+    let alive = true
+    fetchSlackConnectInfo(oid)
+      .then((info) => {
+        if (!alive) return
+        const isNowActive = info?.status === 'ACTIVE'
+        setActive(isNowActive)
+        ssSet(SS_SLACK_ACTIVE(oid), isNowActive ? '1' : '0')
+        if (!isNowActive) {
+          setMetrics(null)
+          setMetricsLoading(false)
+          return
+        }
+        const cachedM = getCachedSlackMetrics(oid) ?? ssGetJson(SS_SLACK_METRICS(oid))
+        if (cachedM) {
+          setMetrics(cachedM)
+          setMetricsLoading(false)
+          return
+        }
+        setMetricsLoading(true)
+        return fetchSlackMetrics(oid)
+          .then((m) => { if (alive) setMetrics(m) })
+          .catch(() => { /**/ })
+          .finally(() => { if (alive) setMetricsLoading(false) })
+      })
+      .catch(() => { /**/ })
+    return () => { alive = false }
+  }, [oid])
+
+  useEffect(() => {
+    ssSet(SS_SLACK_ACTIVE(oid), active ? '1' : '0')
+    if (metrics) ssSet(SS_SLACK_METRICS(oid), JSON.stringify(metrics))
+  }, [oid, active, metrics])
 
   useEffect(() => {
     onStatusChange?.(active)
@@ -255,8 +314,11 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
       if (connected?.status === 'ACTIVE') { setActive(true); onStatusChange?.(true) }
 
       // Step 3: GET /integrations/slack/metrics/{oid}
-      setIngestStep('metrics')
+      // Keep this as a background refresh so the card becomes interactive
+      // right after connect/resync returns.
       setMetricsLoading(true)
+      setBusy(false)
+      setIngestStep(null)
       try {
         const m = await fetchSlackMetrics(runOid)
         if (mountedRef.current && oidRef.current === runOid) setMetrics(m)
@@ -279,6 +341,11 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
   const handleCreateChannel = useCallback(async () => {
     const runOid = oid
     const name = channelName.trim() || oid
+    if (/[^a-z0-9_-]/.test(name)) {
+      setOrchestrateErr(/\s/.test(name) ? SLACK_CHANNEL_SPACE_MSG : SLACK_CHANNEL_INVALID_CHAR_MSG)
+      setOrchestrateResult(null)
+      return
+    }
     const includesOid = name.toLowerCase().includes(String(runOid).toLowerCase())
     if (!includesOid) {
       setShowCreateChannel(false)
@@ -326,8 +393,10 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
       setActive(true)
       onStatusChange?.(true)
 
-      setIngestStep('metrics')
+      // Refresh metrics in background; do not keep the entire card blocked.
       setMetricsLoading(true)
+      setBusy(false)
+      setIngestStep(null)
       try {
         const m = await fetchSlackMetrics(runOid)
         if (mountedRef.current && oidRef.current === runOid) setMetrics(m)
@@ -364,6 +433,9 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
   else if (ingestStep === 'metrics') busyLabel = 'Metrics…'
 
   const totalFilesCount = Number(metrics?.total_files ?? 0)
+  const channelNameTrimmed = channelName.trim()
+  const channelNameHasSpace = /\s/.test(channelNameTrimmed)
+  const channelNameHasInvalidChars = channelNameTrimmed.length > 0 && /[^a-z0-9_-]/.test(channelNameTrimmed)
 
   return (
     <>
@@ -602,15 +674,23 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
               <input
                 type="text"
                 value={channelName}
-                onChange={e => setChannelName(e.target.value)}
+                onChange={e => {
+                  setChannelName(e.target.value)
+                  setOrchestrateErr(null)
+                }}
                 placeholder={oid}
                 style={{
                   width: '100%', boxSizing: 'border-box',
                   padding: '6px 10px', borderRadius: 8, fontSize: 12,
-                  border: '1.5px solid rgba(74,21,75,.2)', outline: 'none',
+                  border: channelNameHasInvalidChars ? '1.5px solid rgba(220,38,38,.45)' : '1.5px solid rgba(74,21,75,.2)', outline: 'none',
                   fontFamily: 'var(--font)', color: NAVY, background: '#fff',
                 }}
               />
+              {channelNameHasInvalidChars && (
+                <div style={{ marginTop: 4, fontSize: 11, fontWeight: 600, color: '#DC2626' }}>
+                  {channelNameHasSpace ? SLACK_CHANNEL_SPACE_MSG : SLACK_CHANNEL_INVALID_CHAR_MSG}
+                </div>
+              )}
             </div>
 
             <div style={{ marginBottom: 10 }}>

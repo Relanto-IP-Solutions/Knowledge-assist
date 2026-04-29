@@ -256,9 +256,9 @@ function getAcceptedHeading(question, qStateEntry) {
       options,
     })
   ) {
-    return 'EDITED RESPONSE'
+    return 'ACCEPTED USER RESPONSE'
   }
-  if (backendCandidates.length > 0) return 'AI RECOMMENDED RESPONSE'
+  if (backendCandidates.length > 0) return 'ACCEPTED AI RESPONSE'
   return 'ACCEPTED RESPONSE'
 }
 
@@ -513,6 +513,7 @@ export function QuestionCard({
   const [assistTextEditing, setAssistTextEditing] = useState(false)
 
   const st = qState.status
+  const isAcceptedLike = st === 'accepted' || st === 'overridden'
   const prevStatusRef = useRef(st)
   const isSubmittedLocked =
     qState?.serverLocked === true || String(q?.status ?? '').trim().toLowerCase() === 'active'
@@ -641,6 +642,11 @@ export function QuestionCard({
       }
     }
 
+    // Conflict resolution must start neutral: no preselected radio/checkbox values.
+    if (hasUnresolvedConflict) {
+      pickValue = ''
+      multiValue = []
+    }
     return { showMulti, showPick, opts, pickValue, multiValue, hasUnresolvedConflict }
     // Use conflict count, not q.conflicts reference — parent rebuilds `q` each render so [] is a new identity.
   }, [
@@ -662,18 +668,15 @@ export function QuestionCard({
   const [assistPickSel, setAssistPickSel] = useState('')
   const [assistMultiSel, setAssistMultiSel] = useState([])
   const handleAssistPickSelection = selected => {
+    if (isAcceptedLike || isSubmittedLocked) return
     const opts = assistAnswerStructured?.opts || []
     const normalized = resolvePickSelectionPayload(selected, opts)
     setAssistPickSel(normalized.answer_value || normalized.answer_id)
     const label = normalized.answer_value || formatAnswerForDisplay(normalized.answer_id, opts)
-    // After a conflict is resolved, changing the selection should become a user override.
-    if ((st === 'accepted' || st === 'overridden') && qState?.conflictResolved && !isSubmittedLocked) {
-      onSaveOverride?.(q.id, label)
-      return
-    }
     onDraftAnswerChange?.(q.id, label)
   }
   const handleAssistMultiSelection = value => {
+    if (isAcceptedLike || isSubmittedLocked) return
     const next = Array.isArray(value) ? [...value] : []
     setAssistMultiSel(next)
     const opts = assistAnswerStructured?.opts || []
@@ -729,7 +732,7 @@ export function QuestionCard({
     !assistAnswerStructured ||
     isReadOnly ||
     assistAnswerStructured?.hasUnresolvedConflict === true ||
-    // Allow edits after conflictResolved even when accepted/overridden.
+    isAcceptedLike ||
     (!qState?.conflictResolved && st !== 'pending')
   const displayAnswerResolved = useMemo(() => {
     const raw = displayAnswer == null ? '' : String(displayAnswer).trim()
@@ -950,7 +953,6 @@ export function QuestionCard({
   // Derive `answerSource` purely from value equality — ignore any stale flag
   // previously written to qState.answerSource.
   const answerSource = userHasEditedForLabel ? 'user' : 'ai'
-  const isAcceptedLike = st === 'accepted' || st === 'overridden'
   // Fix: do NOT use answerSource here — updateQDraft can corrupt it to 'user' even for pure AI
   // answers (draft-sync effect fires after accept and calls onDraftAnswerChange with the same text).
   // The only reliable signal is whether the stored text actually differs from the backend answer.
@@ -974,41 +976,45 @@ export function QuestionCard({
     st === 'overridden' ||
     Boolean(overrideText) ||
     acceptedValueLooksUserEdited
-  // `qState.answerSource` is set at accept-time in QAPage and is the most
-  // reliable signal for the current session.  The backend payload flag
-  // `is_user_override` is stale until submit + reload, so local answerSource
-  // must take priority when the user explicitly edited and accepted.
-  const localSourceIsUser = qState?.answerSource === 'user'
-  const acceptedByUserFromPayload = payloadIsUserOverride === true
-  const acceptedByAiFromPayload = payloadIsUserOverride === false
+  // Accepted labels must depend on current committed value vs AI baseline only.
   const acceptedByUser =
     isAcceptedLike &&
     (
-      // 1. Local answerSource='user' — user edited then accepted in this session
-      localSourceIsUser ||
-      // 2. Backend payload says user override (persisted after submit + reload)
-      acceptedByUserFromPayload ||
-      // 3. Value-comparison evidence (override text, edited value differs from AI)
+      // Value-comparison evidence (override text, edited value differs from AI)
       acceptedHasLocalUserEvidence ||
-      // 4. No backend AI at all but user provided a value
+      // No backend AI at all but user provided a value
       (!hasBackendAI && Boolean(acceptedComparableValue))
     )
-  // Only treat as AI-accepted when answerSource is NOT 'user' AND payload doesn't say user override
+  // AI accepted iff committed value is equivalent to AI baseline.
   const acceptedByAi = isAcceptedLike && !acceptedByUser
   const pendingHasUserEdits =
-    st === 'pending' && userHasEditedForLabel
+    st === 'pending' &&
+    (
+      userChangedStructuredSelection ||
+      userTypedDraft ||
+      manualComparedToAiIsOverride ||
+      (!hasBackendAI && assistUserHasAnyResponse)
+    )
+  /**
+   * Submitted/locked rows must keep a stable heading across filter toggles.
+   * Derive directly from payload `is_user_override` when available so transient local draft
+   * state cannot relabel AI responses as edited (or vice versa).
+   */
+  const payloadOverrideForSubmitted = normalizePayloadBooleanLike(q?.is_user_override)
   const reviewHeading =
-    isAcceptedLike
-      ? acceptedByAi
-        ? 'ACCEPTED AI RESPONSE'
-        : acceptedByUser
-          ? 'ACCEPTED EDITED RESPONSE'
-          : 'ACCEPTED RESPONSE'
-      : payloadIsUserOverride === true || pendingHasUserEdits
-        ? 'EDITED RESPONSE'
-        : payloadIsUserOverride === false || hasBackendAI
-          ? 'AI RECOMMENDED RESPONSE'
-          : 'NO EXTRACTED ANSWER'
+    isSubmittedLocked && payloadOverrideForSubmitted != null
+      ? (payloadOverrideForSubmitted ? 'EDITED RESPONSE' : (hasBackendAI ? 'AI RECOMMENDED RESPONSE' : 'NO EXTRACTED ANSWER'))
+      : isAcceptedLike
+        ? acceptedByAi
+          ? 'ACCEPTED AI RESPONSE'
+          : acceptedByUser
+            ? 'ACCEPTED USER RESPONSE'
+            : 'ACCEPTED RESPONSE'
+        : pendingHasUserEdits
+          ? 'EDITED RESPONSE'
+          : hasBackendAI
+            ? 'AI RECOMMENDED RESPONSE'
+            : 'NO EXTRACTED ANSWER'
   const acceptBtnLabel =
     userHasEdited ? 'Accept Answer' : hasBackendAI ? 'Accept AI Answer' : 'Accept Answer'
   const isAccepted = st === 'accepted'
@@ -1111,9 +1117,7 @@ export function QuestionCard({
       const ids = resolveMultiValuesToCanonicalIds(q.id, assistMultiSel, assistAnswerStructured.opts || [])
       const selectedLabel = formatAnswerForDisplay(assistMultiSel, assistAnswerStructured.opts || [])
       const shouldTreatMultiAcceptAsUserEdit =
-        userChangedStructuredSelection ||
-        userHasEditedForLabel ||
-        !hasBackendAI
+        userChangedStructuredSelection || !hasBackendAI
       if (ids.length === 0) {
         if (isValidAnswer(selectedLabel)) {
           onAccept?.(q.id, { manualValue: selectedLabel })
@@ -1145,9 +1149,7 @@ export function QuestionCard({
     const pickId = resolvePickValueToCanonicalId(q.id, assistPickSel, assistAnswerStructured.opts || [])
     const selectedLabel = formatAnswerForDisplay(assistPickSel, assistAnswerStructured.opts || [])
     const shouldTreatPickAcceptAsUserEdit =
-      userChangedStructuredSelection ||
-      userHasEditedForLabel ||
-      !hasBackendAI
+      userChangedStructuredSelection || !hasBackendAI
     if (!pickId) {
       if (isValidAnswer(selectedLabel)) {
         onAccept?.(q.id, { manualValue: selectedLabel })
@@ -1197,6 +1199,7 @@ export function QuestionCard({
   ).trim()
   const payloadHighlightOptionIds = useMemo(() => {
     if (!assistAnswerStructured) return []
+    if (hasUnresolvedConflict) return []
     const rawPayload = String(q?.answer_value ?? backendAnswerId ?? '').trim()
     if (!rawPayload || isPlaceholderAnswerText(rawPayload)) return []
     const opts = assistAnswerStructured?.opts || []
@@ -1241,6 +1244,8 @@ export function QuestionCard({
   const pendingPickValue =
     assistAnswerStructured?.showMulti
       ? ''
+      : hasUnresolvedConflict
+        ? ''
       : (
           assistAnswerStructured?.pickValue ||
           readonlyPickValue ||
@@ -1251,9 +1256,13 @@ export function QuestionCard({
   const pendingMultiValue =
     assistAnswerStructured?.showMulti
       ? (
-          assistAnswerStructured?.multiValue?.length
-            ? assistAnswerStructured.multiValue
-            : (readonlyMultiValue.length ? readonlyMultiValue : assistMultiSel)
+          hasUnresolvedConflict
+            ? []
+            : (
+                assistAnswerStructured?.multiValue?.length
+                  ? assistAnswerStructured.multiValue
+                  : (readonlyMultiValue.length ? readonlyMultiValue : assistMultiSel)
+              )
         )
       : []
   const pickRadioValue = st === 'accepted' || st === 'overridden'
@@ -1453,13 +1462,18 @@ export function QuestionCard({
             {q.conflicts?.length >= 2 && (
               <button
                 type="button"
-                onClick={() => setConflictOpen(true)}
+                onClick={() => {
+                  if (isAcceptedLike || isReadOnly) return
+                  setConflictOpen(true)
+                }}
+                disabled={isAcceptedLike || isReadOnly}
                 aria-label={`Open conflict options (${q?.conflicts?.length ?? 0})`}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700,
                   padding: '5px 11px', borderRadius: 20, background: '#FCE8E6', border: '1px solid rgba(185,28,28,.22)',
                   color: '#9F1239', lineHeight: 1,
-                  cursor: 'pointer',
+                  cursor: isAcceptedLike || isReadOnly ? 'not-allowed' : 'pointer',
+                  opacity: isAcceptedLike || isReadOnly ? 0.6 : 1,
                   fontFamily: 'var(--font)',
                 }}
               >
@@ -1620,10 +1634,16 @@ export function QuestionCard({
                       </span>
                     )}
                   </div>
-                  {!assistAnswerStructured && st === 'pending' && (q.conflicts?.length ?? 0) < 2 && !assistTextEditing && !isReadOnly ? (
+                  {!assistAnswerStructured && !assistTextEditing && !isReadOnly && !hasUnresolvedConflict ? (
                     <button
                       type="button"
-                      onClick={() => setAssistTextEditing(true)}
+                      onClick={() => {
+                        if (isAcceptedLike) {
+                          onUndo?.(q.id)
+                          setEditText(formatAnswerForDisplay(displayAnswerResolved != null ? String(displayAnswerResolved) : String(q.answer ?? '')))
+                        }
+                        setAssistTextEditing(true)
+                      }}
                       style={{
                         flexShrink: 0,
                         padding: '6px 12px',
@@ -1637,7 +1657,7 @@ export function QuestionCard({
                         color: SI_NAVY,
                       }}
                     >
-                      Edit answer
+                      Edit
                     </button>
                   ) : null}
                 </div>
@@ -1757,7 +1777,7 @@ export function QuestionCard({
             )}
 
             {/* Conflict: clarify beside accept (count in button label) */}
-            {q.conflicts?.length >= 2 && !qState.conflictResolved && !isReadOnly && (
+            {q.conflicts?.length >= 2 && !qState.conflictResolved && !isReadOnly && !isAcceptedLike && (
               <div style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8, marginTop: assist ? 8 : 10,
               }}>
@@ -1807,7 +1827,7 @@ export function QuestionCard({
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
                   Conflict resolved — selected response applied
                 </span>
-                {!isReadOnly ? (
+                {!isReadOnly && !isAcceptedLike ? (
                   <button
                     type="button"
                     onClick={() => setConflictOpen(true)}
@@ -2060,6 +2080,7 @@ export function QuestionCard({
             : null
         }
         onConfirm={(chosen) => {
+          if (isAcceptedLike || isReadOnly) return
           if (onResolveConflict) onResolveConflict(q.id, chosen)
           setConflictOpen(false)
         }}

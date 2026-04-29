@@ -289,12 +289,6 @@ export async function getZoomOAuthUrl(redirectUri) {
 
 // ── Drive connector API (authorize-info → connect → metrics) ───────────────
 
-/** POST /integrations/drive/connect/{oid} may run discovery + ingestion (10s+). */
-export const DRIVE_CONNECT_TIMEOUT_MS = (() => {
-  const n = Number(import.meta.env.VITE_DRIVE_CONNECT_TIMEOUT_MS)
-  return Number.isFinite(n) && n >= 5_000 ? Math.floor(n) : 60_000
-})()
-
 const _driveInfoCache    = new Map()
 const _driveMetricsCache = new Map()
 
@@ -457,7 +451,7 @@ export async function connectDrive(oid, userEmail) {
       const { data } = await api.post(
         `/integrations/drive/connect/${encodeURIComponent(oid)}`,
         {},
-        { params, timeout: DRIVE_CONNECT_TIMEOUT_MS },
+        { params },
       )
       const existing = getCachedDriveConnectInfo(oid) ?? {}
       const updated = { ...existing, ...data, status: data?.status ?? 'ACTIVE' }
@@ -810,12 +804,6 @@ export async function fetchZoomMetrics(oid) {
 
 // ── Slack connector API (professional ingestion: discover → connect → metrics) ─
 
-/** POST /integrations/slack/connect/{oid} can take 10–15s+; match Zoom client timeout */
-export const SLACK_CONNECT_TIMEOUT_MS = (() => {
-  const n = Number(import.meta.env.VITE_SLACK_CONNECT_TIMEOUT_MS)
-  return Number.isFinite(n) && n >= 5_000 ? Math.floor(n) : 60_000
-})()
-
 const _slackInfoCache    = new Map()
 const _slackMetricsCache = new Map()
 
@@ -907,7 +895,7 @@ export async function connectSlack(oid) {
   const { data } = await api.post(
     `/integrations/slack/connect/${encodeURIComponent(oidStr)}`,
     {},
-    { timeout: SLACK_CONNECT_TIMEOUT_MS },
+    {},
   )
   const existing = getCachedSlackConnectInfo(oidStr) ?? {}
   const updated = {

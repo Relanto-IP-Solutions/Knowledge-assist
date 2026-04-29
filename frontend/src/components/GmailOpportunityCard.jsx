@@ -627,6 +627,17 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
     }
   }, [onStatusChange, oid, resolveMailboxForResync, triggerGmailReauth])
 
+  const handleConnectClick = useCallback(async () => {
+    if (awaitingOAuthRef.current) return
+    setErr(null)
+    const email = await resolveMailboxForResync()
+    if (email) {
+      await runConnectPipeline(email)
+      return
+    }
+    setConnectModal(true)
+  }, [resolveMailboxForResync, runConnectPipeline])
+
   const handleCopyOid = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(oid)
@@ -705,7 +716,7 @@ export default function GmailOpportunityCard({ opportunityId, onStatusChange }) 
           <button
             type="button"
             disabled={busy}
-            onClick={() => { if (!awaitingOAuth) { setErr(null); setConnectModal(true) } }}
+            onClick={() => { void handleConnectClick() }}
             style={{
               flexShrink: 0,
               display: 'inline-flex', alignItems: 'center', gap: 6,
