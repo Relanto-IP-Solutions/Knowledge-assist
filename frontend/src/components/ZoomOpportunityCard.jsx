@@ -7,6 +7,7 @@ import { toApiOpportunityId } from '../config/opportunityApi'
 import {
   connectZoom,
   discoverZoom,
+  fetchZoomConnectInfo,
   fetchZoomMetrics,
   getCachedZoomConnectInfo,
   getCachedZoomMetrics,
@@ -115,6 +116,37 @@ export default function ZoomOpportunityCard({ opportunityId, onStatusChange }) {
     setErr(null)
     setBusy(false)
     setIngestStep(null)
+  }, [oid])
+
+  // Rehydrate from backend on revisit/new session so already-connected Zoom
+  // sources are restored even when local/session caches are empty.
+  useEffect(() => {
+    let alive = true
+    fetchZoomConnectInfo(oid)
+      .then((info) => {
+        if (!alive) return
+        const isNowActive = info?.status === 'ACTIVE'
+        setActive(isNowActive)
+        ssSet(SS_ZOOM_ACTIVE(oid), isNowActive ? '1' : '0')
+        if (!isNowActive) {
+          setMetrics(null)
+          setMetricsLoading(false)
+          return
+        }
+        const cachedM = getCachedZoomMetrics(oid) ?? ssGetJson(SS_ZOOM_METRICS(oid))
+        if (cachedM) {
+          setMetrics(cachedM)
+          setMetricsLoading(false)
+          return
+        }
+        setMetricsLoading(true)
+        return fetchZoomMetrics(oid)
+          .then((m) => { if (alive) setMetrics(m) })
+          .catch(() => { /**/ })
+          .finally(() => { if (alive) setMetricsLoading(false) })
+      })
+      .catch(() => { /**/ })
+    return () => { alive = false }
   }, [oid])
 
   useEffect(() => {
