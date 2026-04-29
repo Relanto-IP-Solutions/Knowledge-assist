@@ -219,6 +219,37 @@ export default function SlackOpportunityCard({ opportunityId, onStatusChange }) 
     setIngestStep(null)
   }, [oid])
 
+  // Rehydrate from backend on revisit/new session so already-connected Slack
+  // sources don't depend solely on local/session cache.
+  useEffect(() => {
+    let alive = true
+    fetchSlackConnectInfo(oid)
+      .then((info) => {
+        if (!alive) return
+        const isNowActive = info?.status === 'ACTIVE'
+        setActive(isNowActive)
+        ssSet(SS_SLACK_ACTIVE(oid), isNowActive ? '1' : '0')
+        if (!isNowActive) {
+          setMetrics(null)
+          setMetricsLoading(false)
+          return
+        }
+        const cachedM = getCachedSlackMetrics(oid) ?? ssGetJson(SS_SLACK_METRICS(oid))
+        if (cachedM) {
+          setMetrics(cachedM)
+          setMetricsLoading(false)
+          return
+        }
+        setMetricsLoading(true)
+        return fetchSlackMetrics(oid)
+          .then((m) => { if (alive) setMetrics(m) })
+          .catch(() => { /**/ })
+          .finally(() => { if (alive) setMetricsLoading(false) })
+      })
+      .catch(() => { /**/ })
+    return () => { alive = false }
+  }, [oid])
+
   useEffect(() => {
     ssSet(SS_SLACK_ACTIVE(oid), active ? '1' : '0')
     if (metrics) ssSet(SS_SLACK_METRICS(oid), JSON.stringify(metrics))
